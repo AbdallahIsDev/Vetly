@@ -320,27 +320,6 @@ Discovered by: sub-agent 1, session DR
 
 ---
 
-## DR-16 — Navigation label inconsistency: header "About Us" vs footer "About"
-
-Status: Open
-Category: Content & copy
-Severity: Low
-Location: `/` › Header nav (link "About Us") vs Footer Navigate column (link "About")
-
-Description:
-The header navigation uses the label "About Us" for the link to /about, while the footer Navigate column uses the shorter label "About" for the same destination. Both link to the same page (path `/about`), but the inconsistent labeling is a minor polish issue. Convention is to use one consistent label across all navigation surfaces.
-
-Evidence:
-VLM analysis of `header.png` returned nav links: "Home, Services, About Us, Blog, Contact". VLM analysis of `footer.png` returned Navigate column links: "Services, About, Blog, Contact". "About Us" vs "About" mismatch confirmed.
-
-Recommended Fix:
-Pick one label ("About" is shorter and more conventional for footers; "About Us" is more conversational for headers) — but use the same label in both places, or accept the convention that headers use the longer form and footers use the shorter form (in which case this is intentional and not a finding). If intentional, document the convention; if not, align them.
-
-Confidence: High
-Discovered by: sub-agent 1, session DR
-
----
-
 ## DR-18 — Team cards have no social media, email, or contact links for individual veterinarians
 
 Status: Open
@@ -401,78 +380,6 @@ Add a CTA to the "Why Us" section (e.g. "Learn More About Us" or "Read Our Story
 
 Confidence: High
 Discovered by: sub-agent 1, session DR
-
----
-
-## DR-21 — /booking page not in main nav (only accessible via CTA buttons)
-
-Status: Open
-Category: UX & conversion
-Severity: Low
-Location: `/` › Header nav (links: Home, Services, About Us, Blog, Contact — no Booking)
-
-Description:
-The /booking page is only reachable from the home page via the "Book Today" header CTA, "Book an Appointment" hero CTA, "Book Today" location-section CTA, and "Book Appointment" final CTA — but it's not in the main navigation. While this is a defensible design choice (booking is the primary conversion goal, so a prominent CTA button is appropriate), it means visitors on other pages who want to book have to find the CTA button rather than a nav link. Conventional veterinary/medical sites often include "Book" or "Book Appointment" as both a nav item AND a CTA button.
-
-Evidence:
-VLM analysis of `header.png` returned nav links "Home, Services, About Us, Blog, Contact" and explicitly noted "The word 'Book' does not appear in the main navigation links; it only appears in the CTA button ('Book Today')". Site map confirms /booking page exists (node `kdx64iDUQ`).
-
-Recommended Fix:
-This is a design choice, not a defect. If the clinic wants maximum booking discoverability, consider adding "Book" as a nav item (perhaps as a highlighted/nav-CTA style). If the current CTA-button-only approach is intentional, document it as a convention so future nav edits don't accidentally remove all booking entry points.
-
-Confidence: High
-Discovered by: sub-agent 1, session DR
-
----
-
-## DR-22 — Index Hero "Book an Appointment" primary button has no link target (dead CTA)
-
-Status: Open
-Category: UX & conversion
-Severity: Critical
-Location: `/services` (node `WBfQT22QS`) → Desktop → Main → Hero → Text Container → Primary Button instance `W_B9G7Iek` (component `ARbK0E6gq`)
-
-**Additional locations (merged findings):**
-- `/services` index card link `qZsOQyJnj` (correct) vs index hero button `W_B9G7Iek` (dead, DR-2-1) vs detail hero button `QDrNwNl7H` (dead, DR-2-2)
-
-Description:
-The primary CTA in the Services index hero is a "Book an Appointment" button with a calendar icon, but the instance has no `link` (or `$control__link`) attribute set. Clicking it does nothing — no navigation, no scroll, no modal. This is the page's single most prominent above-the-fold conversion action and it is completely inert. The same Primary Button component is used elsewhere with `link="/booking"` (e.g. the CTA component `GkwGTE6uU`'s embedded button `gcvNfm7HR` sets `link="/booking"`), so the fix is a single attribute addition.
-
-**Additional context (merged from DR-2-15):** Cross-page linking between the index and detail pages works at the card level — each Service Card's wrapping frame `qZsOQyJnj` has `link: { href: "/services/:slug#main", collectionItem: "var(--variable-Okr5FKpOz)", smoothScroll: true }`, so clicking a card navigates to the correct detail page. The visual design is also consistent between index and detail (same Hero layout: Heading + SubHeading + Buttons on left, Image on right; same Primary Button component; same color tokens). However, the CTA *behavior* is inconsistent: the card-level link works, the global CTA banner at the bottom works (`link="/booking"`), but the in-hero primary "Book an Appointment" button on both the index and the detail page is dead (DR-2-1, DR-2-2). A visitor who reads the hero and clicks the most prominent button gets no response — a jarring inconsistency with the otherwise-working CTAs elsewhere on the same page.
-
-Evidence:
-Full attribute dump of node `W_B9G7Iek` (via `framer.agent.getNode`) returns only `$control__variant`, `$control__title="Book an Appointment"`, `$control__newTab`, color/icon/padding/radius/shadow/position/width/height — no `link` or `$control__link` key is present. Compare to CTA section button `gcvNfm7HR` which explicitly sets `link="/booking"`.
-
-**Additional evidence (from DR-2-15):** Index card frame `qZsOQyJnj` attributes — `link: { href: "/services/:slug#main", collectionItem: "var(--variable-Okr5FKpOz)", smoothScroll: true }`. Detail page hero button `QDrNwNl7H` attributes — no `link` key. CTA section button `gcvNfm7HR` attributes — `link="/booking"`. Visual consistency verified via index and detail screenshots (VLM-confirmed identical hero layout, color, button styling).
-
-Recommended Fix:
-`SET W_B9G7Iek $control__link="/booking" $control__newTab="false";` on pagePath `/services`. Repeat the same on the Tablet (`V6aB4kmimW_B9G7Iek`) and Phone (`LqfGfjJJEW_B9G7Iek`) replicas.
-
-**Additional fix note (from DR-2-15):** Fix DR-2-1 and DR-2-2 (set `$control__link="/booking"` on both hero buttons and their replicas). After fix, every CTA on the Services pages will route to `/booking`, giving consistent conversion behavior.
-
-Confidence: High
-Discovered by: sub-agent 2, session DR
-
----
-
-## DR-23 — Detail Hero "Book Appointment" primary button has no link target (dead CTA)
-
-Status: Open
-Category: UX & conversion
-Severity: Critical
-Location: `/services/:Services` (node `lhpeg56oV`) → Desktop → Main → Hero → Text Container → Buttons → Primary Button instance `QDrNwNl7H` (component `ARbK0E6gq`)
-
-Description:
-Identical issue to DR-2-1 but on the CMS detail page. The hero "Book Appointment" button (with calendar icon) has no link target — clicking it does nothing. On a service detail page this is arguably worse than on the index, because the visitor has already expressed intent by clicking into a specific service and the only conversion action available is dead. The page does have a second button ("Call Now") and a global CTA banner further down, but the primary in-hero CTA must work.
-
-Evidence:
-Full attribute dump of node `QDrNwNl7H` returns `$control__title="Book Appointment"`, variant, colors, padding/radius/shadow, etc. — no `link` or `$control__link` key. Screenshot `lhpeg56oV` @ `/services/:Services` shows the button visible with calendar icon (VLM-confirmed: "Book Appointment (Blue button with a calendar icon)").
-
-Recommended Fix:
-`SET QDrNwNl7H $control__link="/booking" $control__newTab="false";` on pagePath `/services/:Services`. Repeat on Tablet (`ztYrtMPA5QDrNwNl7H`) and Phone (`kWpDPzsQWQDrNwNl7H`) replicas.
-
-Confidence: High
-Discovered by: sub-agent 2, session DR
 
 ---
 
