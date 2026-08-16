@@ -1,963 +1,1073 @@
 # EXECUTIVE AUDIT SUMMARY: BookingEngine.tsx
 
-**Audit Date:** 2026-08-15
-**Target:** `/home/z/my-project/upload/BookingEngine.tsx` (8 866 lines, TypeScript / React / Framer Code Component)
+**Audit Date:** 2026-08-16
+**Target:** `/home/z/my-project/upload/BookingEngine.tsx` (11,884 lines, TypeScript / React / Framer Code Component)
+**Audit Methodology:** Two-Wave Multi-Agent Architecture — Wave 1 (Investigation, 20 parallel sub-agents) followed by Wave 2 (Verification & Refinement, 20 parallel sub-agents), strictly sequential.
 
 ---
 
 ## TO-DO EXECUTION LOG
 
 - [x] **Phase 1: Environment & Architecture Initialization**
-  - [x] Read `BookingEngine.tsx` (8 866 lines), `component_review.md` (5 542 lines), `framer-code-component.md` (1 160 lines), `SKILL.md` (2 526 lines)
-  - [x] Map all 60+ top-level declarations, helpers, hooks, inlined components, property-control registration
-  - [x] Create worklog and directory structure
+  - [x] Verified file: 11,884 lines, 519 KB, single-file Framer code component
+  - [x] Read prior audit (`/home/z/my-project/upload/Audit-Report.md`, 963 lines, 120 KB) — 8,866-line baseline
+  - [x] Mapped top-level structure: imports (1–90) → color/time utilities (93–560) → `ChoiceGroupInline` (570–1327) → `CalendarCell` (1328–1530) → `CalendarGrid` (1531–1907) → `TimeSlotButton` + `TimeSlotList` (1908–2520) → `useKeyboardModality` + `useCalendarNavigation` (2521–2853) → `useTimeGrid` (2854–3073) → `DateAndTimeInline` (3074–3788) → type system (3789–4060) → main `BookingEngine` body (4060–10800) → `addPropertyControls` schema (10800–11884)
+  - [x] Initialized worklog at `/home/z/my-project/worklog.md`
 - [x] **Phase 2: Execution of Wave 1 (20 Sub-Agents Launched Simultaneously)**
   - [x] Sub-Agents 01–20 launched in ONE parallel batch — investigation of source code + raw audit findings
-  - [x] Collect raw candidate bugs, edge cases, accessibility flaws, hardcoded strings, memory leaks
-  - [x] BARRIER: Finalize Wave 1 synthesis (10 390 lines across 20 findings files) before Wave 2
+  - [x] Collected raw candidate bugs, edge cases, accessibility flaws, hardcoded strings, memory leaks
+  - [x] **BARRIER:** Finalized Wave 1 synthesis (20 findings files totaling ~120 KB) before Wave 2
 - [x] **Phase 3: Execution of Wave 2 (20 Sub-Agents Launched Simultaneously after Wave 1)**
   - [x] Sub-Agents 21–40 launched in ONE parallel batch — challenge and audit Wave 1 findings
-  - [x] Filter false positives, confirm severities, verify proposed fixes (9 660 lines across 20 findings files)
+  - [x] Filtered false positives, confirmed severities, verified proposed fixes (19 of 20 returned; W2-33 timed out)
+  - [x] Wrote a Node test script (`/home/z/my-project/scripts/test_regex.js`, 103 assertions) empirically verifying regex bugs
 - [x] **Phase 4: Final Synthesis & Categorized Report Generation**
-  - [x] Compile verified issues into structured categories with line/section references, root-cause analyses, and exact fix recommendations
-  - [x] Produce recommended fix phasing (5-phase plan), fix clusters (15 clusters), and already-fixed closeout list
+  - [x] Compiled verified issues into structured categories with line/section references, root-cause analyses, and exact fix recommendations
+  - [x] Merged duplicate findings across sub-agents (7 cross-agent merges)
+  - [x] Resolved severity disagreements between Wave 1 and Wave 2 (notably W1-08-F-08-02: HIGH → LOW after W2-22 found the cascade claim was incorrect)
+  - [x] Produced recommended fix phasing (5-phase plan) and verified-fixes closeout list
 
 ---
 
-## TOP 6 CRITICAL FINDINGS (Must-Fix-Before-Next-Release)
+## TOP 10 MUST-FIX-BEFORE-NEXT-RELEASE
 
-| # | Finding ID | Short Description | Location | Wave 1 Discovery | Wave 2 Verification |
+| # | ID | Short Description | Severity | Location | Wave 2 Verdict |
 |---|---|---|---|---|---|
-| 1 | **F-01-01** | Framer layout annotations (`@framerSupportedLayoutWidth any-prefer-fixed`, `@framerSupportedLayoutHeight auto`, `@framerIntrinsicWidth 850`, `@framerIntrinsicHeight 600`, `@framerDisableUnlink`) placed above the **non-exported** `AnimatedStepContent` helper instead of the **default-exported** `BookingEngine` function — all 5 annotations are dead code. — **✅ FIXED** (JSDoc moved above default export) | L4451–4464 (current, wrong) → should sit immediately above L5780 | Wave1-01 F-01-01 | Wave2-32 ✅ CONFIRMED CRITICAL |
-| 2 | **W1-04-C1 / D7** | `PHONE_REGEX` rejects its own UI placeholder `+1 (555) 555-5555` AND `+44 20 7946 0958` AND 6+ other valid international formats. Empirically verified via Node test: 8 of 13 valid formats rejected. — **✅ FIXED** (generalized group/paren regex; verified via Node against 18 valid formats) | L3174 | Wave1-04 W1-04-C1 | Wave2-24 ✅ confirmed (Node test); Wave2-39 H8 ✅ amplified |
-| 3 | **W1-11-A1 / D5** | CC-5 only half-fixed. The CSS rule `.be-input:focus-visible` was repaired, but the inline `outline: "none"` in `inputBaseStyle` overrides it by CSS specificity (inline `1,0,0,0` > class+pseudo-class `0,2,0`). **Keyboard focus ring STILL invisible on every form input.** WCAG 2.4.7 violation. — **✅ FIXED** (inline `outline: "none"` removed) | L7143 (inline override); L6396–6399 (the repaired-but-defeated CSS rule) | Wave1-11 W1-11-A1 | Wave2-28 F7 ✅ CONFIRMED CRITICAL; Wave2-29 ✅ CONFIRMED |
-| 4 | **W1-19-F-01** | Calendar grid uses `grid-template-columns: repeat(7, minmax(44px, 1fr))` AND root container has `overflow: hidden`. On ≤330px viewports (iPhone SE 320, Galaxy Fold cover 280), the Saturday column is clipped by overflow with no horizontal scroll affordance. — **✅ FIXED** (grid templates → `minmax(0, 1fr)`) | Calendar grid template (search L1939 region); DateAndTimeInline root `overflow: hidden` | Wave1-19 F-01 | Wave2-38 F-01 ✅ CONFIRMED CRITICAL |
-| 5 | **W1-04-H3 / D8** | `sessionStorage` restore advances `currentIndex` to its prior value **without re-validating** prior steps. A visitor who advanced to step 5 with an invalid step 2 can refresh the page and land on step 5, bypassing validation. Data-integrity risk. — **✅ FIXED** (restore re-validates prior steps, clamps to first invalid) | L4885–4891 (restore effect) | Wave1-04 W1-04-H3 | Wave2-24 ✅ CONFIRMED HIGH; escalated to Phase-1 fix |
-| 6 | **W1-06-F-06-1 / W2-25-F4** | POST body to Cal.com `/bookings` is missing the required `end` field. The `slot.end` value is already in scope (`BookingPayload.end` field at L1365, captured at L3820, consumed by `buildIcsDataUri` L4330 and `buildCalendarDeepLink` L4433) but never threaded into `submitCalcomBooking`'s POST body. Cal.com v2 will 400-reject **every booking attempt**. — **✅ FIXED** (`slotEnd` threaded through `submitCalcomBooking` → POST body) | `submitCalcomBooking` POST body construction (~L4006–4029) | Wave1-06 F-06-1 | Wave2-25 F4 ✅ CONFIRMED — "single most impactful defect in the entire Wave 2 audit" |
+| 1 | **SYN-01** | `validation` PropertyControl block is structurally **nested inside `copy.controls`** (brace-depth verified at L11752, sibling of `errorCopy`/`aria`) but the TypeScript interface declares it as a top-level sibling of `copy` (L4021) and the runtime destructures it from `props.validation` directly (L5963). **All 9 author-configurable validation message controls are silent no-ops** — every edit is discarded; published site always shows `DEFAULT_VALIDATION_COPY.*` fallbacks. TypeScript cannot catch this because the interface is structural. | 🔴 **Critical** | Schema L11752; Interface L4021; Destructure L5963; Memo L5999 | W2-21 ✅ CONFIRMED (brace-depth parse); W2-23 ✅ CONFIRMED (independent parser); W2-34 ✅ CONFIRMED (TS interface × schema cross-check) |
+| 2 | **SYN-04** | `stepAnnouncementText = \`${counterText}, ${completePct}% complete — ${currentStep.title}\`` at L7720 throws `TypeError` when `totalActive === 0` because `currentStep = activeSteps[0] = undefined`. The empty-pipeline guard at L8044 is **unreachable** — `useBookingEngineState` (called at L8027) crashes first. Reachable on canvas when author disables all steps. | 🟠 High | L7720, L8044 | ✅ COMPLETED — `currentStep ? … : ""` guard (~L7725); empty-pipeline guard reachable |
+| 3 | **SYN-05** | `handleFieldChange` uses `activeSteps.find(step => form\|datetime)?.fields.find(id === fieldId)` (L7115–7118). `Array.find` returns only the **FIRST** matching step. Fields in any later form step (or custom fields on a non-first datetime step) are not found → `setErrors` silently skipped → stale errors persist until next Continue click. Multi-form-step flows hit this; default flow does not. Node-verified. | 🟠 High | L7115–7118 | ✅ COMPLETED — for...of loop over all steps (L7166–7174), early break on match |
+| 4 | **SYN-06** | ~~GET uses `start`/`end` instead of documented `startTime`/`endTime`~~ **REFUTED 2026-08-16** — live OpenAPI (cal.com/docs) documents `start`/`end` as the required query params; code matches exactly. No change needed. | 🟠 High | L4906–4910 | ✅ RESOLVED — live-spec verification, no-op |
+| 5 | **SYN-07** | `isCalSlot` rejects non-`{start,end}` shapes → silent empty calendar. **Live spec showed the real gap:** engine never sent `format=range`, so the documented default (`time`) format returns bare strings / `{start}`-only objects that `isCalSlot` rejects; live response also nests date keys directly under `data`, not `data.slots`. Fixed: `&format=range`, date-map fallback, tolerant guard. | 🟠 High | L4733–4740 | ✅ COMPLETED 2026-08-16 — live-OpenAPI-driven fix |
+| 6 | **SYN-08** | `ChoiceGroupInline`'s `React.memo` (L668) is defeated: call site (L9870–9877) allocates a fresh `opts` array via `.map()` every parent render, and L9931 passes an inline `onChange` arrow. The cascade propagates into the mount-seed effect (L795–808) which pre-populates parent state with the first option → **required choice groups auto-pass validation without user interaction**. One fix (memoize `opts` + `useCallback onChange`) closes W1-08-F-08-02 + W1-08-F-08-05 + W1-16-P-16 + W1-20-F-1 simultaneously. | 🟠 High | L9870–9877, L9931, L795–808 | ✅ COMPLETED — `opts` via `useMemo` (L9730–9738), `handleChoiceChange` via `useCallback` (L9739–9742); memo holds, auto-pass regression closed |
+| 7 | **SYN-09** | `getPayload` `useCallback` (L3480) is missing `amLabel`/`pmLabel` deps but its body uses them in `formatTimeLabel(...)` (L3509–3510, L3521–3522). Author AM/PM copy edits in Framer leave stale `BookingPayload.timeLabel` — review/confirmation/ICS labels disagree with the live toggle. Same bug class as W2-33-A2 (already fixed for `fallbackErrorLabel`). | 🟠 High | L3480, dep array L3526 | ✅ COMPLETED — deps now include `amLabel`/`pmLabel` |
+| 8 | **SYN-02** | Three visitor-facing persistence-disclosure strings hardcoded as inline JSX literals (not exposed via PropertyControls): `"Answers are saved in this browser."` (L8629), `"Clear my saved answers"` (L8645), `"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected."` (L8657–8658). GDPR/CCPA disclosures cannot be localized. | 🟠 High | L8629, L8645, L8657 | ✅ COMPLETED — `copy.savedAnswersLabel` / `copy.clearSavedAnswersLabel` / `copy.saveFailedMessage` + schema controls + default constants; JSX now prop-driven |
+| 9 | **SYN-03** | The in-flight POST cancel button renders a hardcoded `Cancel` literal (L8734). Every other footer button (Back/Continue/Final/Retry/Restart) is configurable via `buttonLabels.*`; this one is the odd one out. Cannot be localized. | 🟠 High | L8734 | ✅ COMPLETED — `buttonLabels.cancelSubmitLabel` + schema control + `DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL`; footer button now prop-driven |
+| 10 | **SYN-10** | Hidden form-state `<input>` at L1156 binds `value={selected}` where `selected` is the W1-08-CG-01 presentation fallback (`parsedOptions[0]?.label` when `controlledValue` matches no option). The form-state dump submits the first option's label while the parent's React state holds a different value. Form submissions and any SSR dump disagree with React state. | 🟠 High | ChoiceGroupInline L723–730 (fallback) + L1156 (hidden input binding) | ✅ COMPLETED — `formValue` split from `selected`; hidden input binds the real controlled value |
 
 ---
 
 ## DETAILED FINDINGS BY CATEGORY
 
-> Full per-finding evidence, code snippets, and remediation code live in `/home/z/my-project/wave{1,2}_findings/subagent_XX.md`. The catalog below provides the canonical summary, severity, and recommended fix for every confirmed issue.
+> Per-finding evidence, code quotes, and remediation snippets live in `/home/z/my-project/wave1/subagent_XX.md` (Wave 1 raw findings) and `/home/z/my-project/wave2/subagent_XX.md` (Wave 2 verification). The catalog below is the canonical, conflict-resolved summary.
 
-### Category 1 — Framer Platform & Controls Isolation (5 issues)
+### Category 1 — Framer Platform & Controls Isolation (3 issues)
 
-#### Issue F-01-01: Framer Layout Annotations Misplaced
-- **Severity:** Critical
-- **Location:** BookingEngine.tsx:4451–4464 (current JSDoc location); 5780 (correct location — `BookingEngine` default export)
-- **Wave 1 Discovery:** Sub-Agent 01 found the JSDoc block containing `@framerSupportedLayoutWidth any-prefer-fixed`, `@framerSupportedLayoutHeight auto`, `@framerIntrinsicWidth 850`, `@framerIntrinsicHeight 600`, `@framerDisableUnlink` is placed directly above `AnimatedStepContent` (a non-exported helper) rather than the default-exported Framer code component `BookingEngine`. Per Framer docs and SKILL.md, annotations must sit immediately above the component function.
-- **Wave 2 Verification:** Wave2-32 ✅ re-confirmed via direct source read. All 5 annotations are effectively dead — Framer falls back to default sizing (`any × any`), no intrinsic 850×600, editors can unlink the component despite `@framerDisableUnlink`.
-- **Root Cause Analysis:** Likely a code-organization accident — the JSDoc was written for the default-export component but the file structure placed `AnimatedStepContent` (which uses `useIsStaticRenderer`) immediately above the default export.
-- **Impact:** Framer editor cannot apply intrinsic sizing; layout-width constraint doesn't apply; unlink protection disabled. Component may behave unpredictably in Framer's frame-system.
-- **Recommended Remediation:**
+#### Issue SYN-01 — `validation` PropertyControl Schema Mismatch (CRITICAL)
+- **Severity:** 🔴 Critical
+- **Location:** Schema L11752 (inside `copy.controls`); Interface L4021 (top-level sibling of `copy`); Destructure L5963 (`validation` from `props`); Memo L5999 (`const validationMessages = validation`)
+- **Wave 1 Discovery:** Sub-Agent 01 (W1-01-F-01) and Sub-Agent 02 (W1-02-F1) independently identified this via brace-depth parse of `addPropertyControls` and interface cross-reference. The `validation:` block (L11752–11809, 9 controls covering `requiredFieldError`, `invalidEmailError`, `invalidPhoneError`, `minLengthError`, `invalidFormatError`, `unknownError`, `errorFallbackMessage`, `errorSummaryTitle`, `errorRetryLabel`) sits inside `copy.controls` as a sibling of `errorCopy:` and `aria:`. Framer writes the values to `props.copy.validation.*`. But the runtime reads `props.validation` directly (always `undefined` for panel-managed instances) → every `?? DEFAULT_VALIDATION_COPY.X` fallback fires.
+- **Wave 2 Verification:** W2-23 wrote an independent Python-style brace-depth tokenizer confirming `validation` is at depth 4 (sibling of `errorCopy` at the same depth) inside `copy.controls`. W2-34 cross-checked the TS interface — `validation` is declared as a top-level prop at L4021, sibling of `copy`. **TS cannot catch this** because the interface is structural, not path-aware. All three Wave 2 verifiers escalated to CRITICAL.
+- **Root Cause Analysis:** Likely a copy-paste / refactor accident — the `validation` block was intended as a top-level sibling of `copy` (matching the interface) but was inadvertently nested one level too deep when the `copy` group was introduced to organize copy-related controls. The deeper 16-space visual indent of `validation:` (vs. 12 for `errorCopy:`) hid this from casual reading.
+- **Impact:** **Total.** Every author edit to the "Validation Messages" submenu in Framer's property panel is silently discarded. Published site always shows the hardcoded `DEFAULT_VALIDATION_COPY.*` English strings — no localization possible, no brand-voice customization, no error-message tuning. The feature appears to work in the panel (values are saved to the instance) but has zero runtime effect.
+- **Recommended Remediation (preferred — preserves already-saved author data):**
 ```typescript
-// STEP 1: Remove the JSDoc block at lines 4451–4464.
-// STEP 2: Re-insert it immediately above the BookingEngine default export (currently line 5780).
+// STEP 1: Move the `validation` block from inside `copy.controls` to be a sibling
+//         of `copy` in BookingEngineCopyProps (L3928+). This aligns the interface
+//         with where Framer is already writing the saved values.
+//         Wait — REVERSED. Framer writes to props.copy.validation.* (nested).
+//         So the FIX is to align the RUNTIME with the SCHEMA (not the other way).
 
-/**
- * @framerSupportedLayoutWidth any-prefer-fixed
- * @framerSupportedLayoutHeight auto
- * @framerIntrinsicWidth 850
- * @framerIntrinsicHeight 600
- * @framerDisableUnlink
- */
-export default function BookingEngine(props: BookingEngineProps) {
-  // ... existing implementation
+// STEP 1 (actual): In useBookingEngineState (L5963), change:
+//   const { ..., validation, ... } = props
+// to:
+//   const { ..., copy, ... } = props
+//   const validation = copy?.validation
+
+// STEP 2: At L5999, change:
+//   const validationMessages = validation
+// to:
+//   const validationMessages = copy?.validation   // (or just use `validation` from step 1)
+
+// STEP 3: Update any deps array that references `validation` to reference `copy?.validation`.
+
+// STEP 4: Update the TypeScript interface BookingEngineCopyProps (L3928+) to declare
+//         `validation` as a nested field of `copy` (matching the schema), NOT as a
+//         top-level sibling. This keeps TS in sync with the runtime path.
+```
+- **Alternative Remediation (more invasive — moves the schema):** Move the `validation:` block (L11752–11809) out of `copy.controls` to be a sibling of `copy` in `addPropertyControls`. This breaks already-saved author data (values stored at `props.copy.validation.*` will be orphaned). Not recommended.
+- **Status: Completed** — Runtime now reads `copy?.validation ?? props.validation` (destructure site ~L5963, memo deps unchanged since the local `validation` derivation is identity-stable with the old prop read). Interface at L4017–4030 redesigned: `validation?: Partial<ValidationCopy>` declared nested inside `copy` (schema-aligned) plus a legacy optional top-level fallback prop so pre-nesting instances keep working. Schema block (`copy.controls.validation`) untouched — already-saved author data preserved. All 9 validation message controls now round-trip to the published site.
+
+#### Issue W1-01-F-02 — Misplaced `@framerDisableUnlink` comment
+- **Severity:** 🟢 Low
+- **Location:** L5897 (comment); L7891 (actual annotation)
+- **Wave 1 Discovery:** Comment at L5897 says "above" but the `@framerDisableUnlink` annotation is ~2000 lines below, at L7891. The annotation itself is correctly placed immediately above `BookingEngine` (verified by W2-32 — prior critical F-01-01 is resolved).
+- **Wave 2 Verification:** W2-32 ✅ confirmed: JSDoc block at L7879–7892 sits immediately above default export `BookingEngine` at L7893. Only the comment at L5897 is dangling.
+- **Recommended Fix:** Delete or update the comment at L5897.
+- **Status: Completed** — the section-header comment now points at the real annotation location (JSDoc above the default export) without implying adjacency.
+
+#### Issue W1-01-F-05 — Unguarded `document.activeElement`
+- **Severity:** 🟢 Low
+- **Location:** L6157 (inside a `requestAnimationFrame` callback in a `useEffect`)
+- **Wave 1 Discovery:** Accesses `document.activeElement` without the `typeof document === "undefined"` guard used at L7153. The outer effect guards on `typeof window === "undefined"` (L6137) plus `window.visualViewport` existence (L6152), so `document` is implicitly defined whenever the rAF fires. Functionally safe in all Framer render targets; inconsistent with the surrounding defensive pattern.
+- **Wave 2 Verification:** W2-32 ✅ confirmed. Recommended fix: add `if (typeof document === "undefined") return` as the first line of the rAF callback for defense-in-depth consistency.
+- **Status: Completed** — exactly that guard is now the first line of the rAF callback (matches the L7153 pattern).
+
+---
+
+### Category 2 — Zero-Hardcoding & 100% Customizability (9 issues)
+
+#### Issue SYN-02 — Persistence-Disclosure Strings Hardcoded (HIGH)
+- **Severity:** 🟠 High
+- **Location:** L8629 (`"Answers are saved in this browser."`), L8645 (`"Clear my saved answers"`), L8657–8658 (`"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected."`)
+- **Wave 1 Discovery:** Sub-Agent 02 found three visitor-facing persistence-disclosure strings hardcoded as inline JSX literals. These render on the **published site** whenever `persistState` is ON. Not exposed via PropertyControls — GDPR/CCPA disclosures cannot be localized.
+- **Wave 2 Verification:** W2-23 ✅ confirmed all three lines. No corresponding PropertyControl exists in the `copy` group.
+- **Recommended Fix:** Add three new controls under `copy`:
+  - `savedAnswersLabel` (string, default `"Answers are saved in this browser."`)
+  - `clearSavedAnswersLabel` (string, default `"Clear my saved answers"`)
+  - `saveFailedMessage` (string, default `"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected."`)
+- **Status: Completed** — added `DEFAULT_COPY_SAVED_ANSWERS_LABEL` / `DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL` / `DEFAULT_COPY_SAVE_FAILED_MESSAGE` constants, the three `copy.*` interface fields, and `copy.controls` schema entries (near `requiredFieldsHint` ~L11550). JSX at ~L8695/L8711/L8723 now reads `copy.savedAnswersLabel ?? DEFAULT…` (with the shared constant as runtime fallback, per the W1-02-F24 single-source rule; renders with the English defaults for canvases saved before the controls existed).
+
+#### Issue SYN-03 — "Cancel" Submit Button Label Hardcoded (HIGH)
+- **Severity:** 🟠 High
+- **Location:** L8734
+- **Wave 1 Discovery:** The in-flight POST cancel button renders `Cancel` as a hardcoded literal. Every other footer button (Back/Continue/Final/Retry/Restart) is configurable via `buttonLabels.*`; this one is the odd one out.
+- **Wave 2 Verification:** W2-23 ✅ confirmed. The `buttonLabels` group has no `cancelSubmitLabel` control.
+- **Recommended Fix:** Add `cancelSubmitLabel` (string, default `"Cancel"`) to the `buttonLabels` group in `addPropertyControls`. Use it at L8734.
+- **Status: Completed** — `DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL = "Cancel"` constant; `buttonLabels.cancelSubmitLabel` added to the interface and the `buttonLabels.controls` schema (~L11248); BookingEngine derives `cancelSubmitLabel` with a constant fallback (~L8112) and the button (~L8798) renders it. All footer buttons are now author-localizable.
+
+#### Issue W1-02-F4 — sr-only Step Announcement Duplicates `% complete` (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L7720
+- **Wave 1 Discovery:** `${counterText}, ${completePct}% complete — ${currentStep.title}` hardcodes the `% complete` suffix and the `, ` / ` — ` separators, ignoring `copy.stepProgressLabel` (used at L8356 for the visible progress bar). Screen-reader copy diverges from visible copy when an author localizes `stepProgressLabel`.
+- **Wave 2 Verification:** W2-23 ✅ confirmed.
+- **Recommended Fix:** Add a `stepAnnouncementTemplate` control (string, default `"{counter}, {percent}% complete — {title}"`) and use it at L7720 with placeholder substitution.
+- **Status: Completed** — `DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE` + `copy.stepAnnouncementTemplate` control (schema + interface); `stepAnnouncementText` (~L8330) substitutes `{counter}`/`{percent}`/`{title}` with the constant as runtime fallback (W1-02-F24 single-source).
+
+#### Issue W1-02-F5 — Inline `|| "..."` Fallbacks Violate Single-Source Contract (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L10547 (`returnHomeLabel || "Done"`), L7688 (`font?.fontFamily || "Inter, system-ui, sans-serif"`)
+- **Wave 1 Discovery:** Two inline fallbacks without corresponding `DEFAULT_COPY_*` constants or PropertyControls. The font fallback in particular is a brand-voice concern.
+- **Wave 2 Verification:** W2-23 ✅ confirmed both lines. W2-23 classified the `"UTC"` tz-detection fallback (separate item) as acceptable.
+- **Recommended Fix:**
+  - Add `DEFAULT_COPY_RETURN_HOME_LABEL = "Done"` constant; add `returnHomeLabel` control (already exists at L10547 usage — just needs the constant).
+  - Add `DEFAULT_FONT_FAMILY = "Inter, system-ui, sans-serif"` constant; expose as `fontFallback` control OR document as intentional fallback.
+- **Status: Completed** — `DEFAULT_COPY_RETURN_HOME_LABEL` now backs both the schema default (was an inline `"Done"`) and the runtime `??` fallback; `DEFAULT_FONT_FAMILY` backs the `fontStack` fallback, documented as an intentional fallback (the font itself stays a Framer FontFamily control — a second fallback control would only shadow it).
+
+#### Issue W1-02-F6 — Textarea Character Counter Format Hardcoded (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L9789 (`{currentLen}/{maxLen}`)
+- **Wave 1 Discovery:** The textarea live character counter uses a hardcoded `{currentLen}/{maxLen}` format. Not localizable (e.g., German might prefer `{maxLen} Zeichen übrig`).
+- **Wave 2 Verification:** W2-23 ✅ confirmed. W2-28 also flagged the counter as lacking `aria-live` + `aria-describedby` association (W1-10-N5).
+- **Recommended Fix:** Add `characterCountTemplate` control (string, default `"{current}/{max}"`) with placeholder substitution.
+- **Status: Completed** — `DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE` + control; StepBody resolves it and threads it into FieldRenderer, which substitutes `{current}`/`{max}` in both the textarea and text-input counters (W1-10-N5 live regions untouched).
+
+#### Issue W1-02-F7 — Required-Field Marker `*` Hardcoded (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L9673
+- **Wave 1 Discovery:** The required-field indicator is a hardcoded asterisk `*`. Not configurable for accessibility (some designs prefer "(required)" text) or localization.
+- **Wave 2 Verification:** W2-23 ✅ confirmed.
+- **Recommended Fix:** Add `requiredFieldMarker` control (string, default `"*"`) and use it at L9673.
+- **Status: Completed** — `DEFAULT_COPY_REQUIRED_FIELD_MARKER` + control; FieldRenderer renders the marker in both the label and checkbox-label sites (e.g. an author can switch to `"(required)"`).
+
+#### Issue W1-02-F8–F12 — Non-Configurable Timing Values (LOW)
+- **Severity:** 🟢 Low
+- **Location:**
+  - L5085 — slots retry backoff `1000`/`3000` ms
+  - L6692 — sessionStorage debounce `300` ms
+  - L3031 — elapsed-slot tick `60000` ms (60s)
+  - L4169–4170 — progress-bar/toggle spring transitions
+  - L4180–4199 — `DEFAULT_DARK_THEME` colors not independently configurable
+- **Wave 1 Discovery:** Sub-Agent 02 found five categories of non-configurable timing/spring/theme values. Most are defensible as internal implementation details, but the dark-theme color tokens in particular should ideally be author-overridable.
+- **Wave 2 Verification:** W2-23 ✅ confirmed all locations; classified as LOW (defensible as internal, but the dark-theme tokens are a real customization gap).
+- **Recommended Fix:** Defer; if pursued, expose `darkThemeBackgroundColor`, `darkThemeSurfaceColor`, `darkThemeTextColor` as new controls under `styles`.
+- **Status: Accepted as-is (deferred per audit)** — timing/spring values are internal implementation details; the dark-theme tokens stay hardcoded defaults behind the existing colorMode auto-pick logic. (W2-36-N1's dark accent is separately fixed.)
+
+#### Verified Clean (Customizability)
+W2-23 confirmed the following are NOT hardcoded (Wave 1 verified clean):
+- ✅ All 28 `DEFAULT_COPY_*`/`DEFAULT_ARIA_*` constants have matching PropertyControls
+- ✅ `errorCopy` round-trips correctly (`copy.errorCopy.*`)
+- ✅ ICS PRODID/SUMMARY configurable; other ICS literals are RFC 5545 protocol tokens (correctly NOT configurable)
+- ✅ Cal.com fetch timeout IS configurable (`fetchTimeoutMs`, L11859–11866)
+- ✅ No hardcoded hex colors in inline JSX style objects (only in `DEFAULT_DARK_THEME`, `pick()` comparisons, and PropertyControl `defaultValue`s)
+- ✅ All `aria-label=`, `placeholder=`, `title=` JSX attributes are prop-driven expressions (no literals)
+
+---
+
+### Category 3 — Pipeline & Step Navigation (4 issues)
+
+#### Issue SYN-04 — `stepAnnouncementText` Crashes on Empty Pipeline (HIGH)
+- **Severity:** 🟠 High
+- **Location:** L7720 (crash site), L8044 (unreachable guard), L7703 (placeholder comment)
+- **Wave 1 Discovery:** Sub-Agent 03 found that `stepAnnouncementText = \`${counterText}, ${completePct}% complete — ${currentStep.title}\`` accesses `currentStep.title` when `currentStep = activeSteps[safeCurrentIndex]` is `undefined` (when `totalActive === 0`). This lives inside `useBookingEngineState` (called at L8027), which runs BEFORE the main component's empty-pipeline guard at L8044 (`if (totalActive === 0) return …`). So the guard is unreachable — the state hook crashes first. The placeholder comment at L7703 ("// ---- 1. Empty pipeline guard (canvas-only) ----") shows a guard was intended inside the hook but never implemented. Reachable on canvas when an author disables all steps, or when all enabled steps are empty form steps (dropped by the T10-M9 filter at L4395–4398).
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED via direct source read (L6344–6348: `safeCurrentIndex = 0` when `totalActive===0`; `currentStep = activeSteps[0] = undefined`; L7720 throws). W2-24 ✅ CONFIRMED via scenario trace.
+- **Recommended Fix:**
+```typescript
+// At L7720, change:
+const stepAnnouncementText = `${counterText}, ${completePct}% complete — ${currentStep.title}`
+// to:
+const stepAnnouncementText = currentStep
+  ? `${counterText}, ${completePct}% complete — ${currentStep.title}`
+  : ""
+```
+- **Status: Completed** — `stepAnnouncementText` (~L7725) is now guarded with `currentStep ? … : ""`; the main component's empty-pipeline guard (L8056) is now reachable and renders the canvas-only "No active steps" notice / `null` on the published site. No TypeError on canvas when all steps are disabled.
+
+#### Issue W1-03-3 — `handleBack` Lacks `navigatingRef` Guard (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L7503
+- **Wave 1 Discovery:** Sub-Agent 03 noted that F-03-4 added `navigatingRef` to `handleContinue` because "React 18 does NOT coalesce separate event handlers" — two rapid clicks composed the functional updater and skipped a step. `handleBack` uses the same `setCurrentIndex((i) => Math.max(0, i - 1))` pattern with no guard. Two rapid Back clicks compose and skip 2 steps back instead of 1.
+- **Wave 2 Verification:** W2-24 ✅ CONFIRMED via double-click trace. W2-22 also confirmed this is REAL (not a false positive) because React 18 does not coalesce separate event handlers (per the code's own L7041 comment).
+- **Recommended Fix:** Mirror `handleContinue`'s `navigatingRef` claim in `handleBack`. The release effect at L7063 already covers it.
+- **Status: Completed** — `handleBack` now claims `navigatingRef` synchronously (guard + set, same as `handleContinue`); two rapid Back clicks advance exactly one step.
+
+#### Issue W1-03-4 — Pinned-Step Remap Uses `startTransition`, Defeating "Before Paint" (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L6385
+- **Wave 1 Discovery:** Sub-Agent 03 found that F-03-1's own comment (L6352–6362) claims the remap happens "during render — before paint", but `React.startTransition(() => setCurrentIndex(remapped))` defers the commit. When an author disables an intermediate step mid-flow, the visitor briefly sees the wrong step for one frame. W1-14-F6 removed `startTransition` from the sibling `useLayoutEffect` clamp at L6722 for exactly this reason.
+- **Wave 2 Verification:** W2-24 ✅ CONFIRMED.
+- **Recommended Fix:** Drop the `startTransition` wrapper at L6385; call `setCurrentIndex(remapped)` directly (matches W1-14-F6 precedent at L6722).
+- **Status: Completed** — render-phase remap now calls `setCurrentIndex(remapped)` directly; the commit happens in the same render pass, before paint.
+
+#### Verified Clean (Pipeline)
+W2-24 confirmed the following previously-flagged concerns are now FIXED or safe:
+- ✅ Step counter uses ENABLED count (`totalActive = activeSteps.length` where `activeSteps = normalizedSteps.filter(s => s.enabled)`, L6329–6333)
+- ✅ `currentIndex` boundaries clamped via 3 layers (`useStateGuarded` setter L8861, `safeCurrentIndex` render clamp L6344, `useLayoutEffect` L6722)
+- ✅ `handleBack` from step 0 is a no-op (`if (isFirst) return` L7504)
+- ✅ `handleContinue` from last step transitions to submit (L7433 `if (isLast)` → POST / success / missing-config error)
+- ✅ `currentIndex` reset on retry (`handleRestart` L7605 `setCurrentIndex(0)`; `handleRetry` L7559 jumps to datetime step if slot-taken)
+- ✅ Double-click Continue: SAFE (`navigatingRef` set synchronously at L7469 before `startTransition` queue)
+- ✅ Triple-click Continue: SAFE (same mechanism)
+- ✅ Enter + Click simultaneously: SAFE (three invocations; only first advances — W1-04-F-7 is a no-op redundancy, not a bug)
+- ✅ Browser back during transition: SAFE (unmount effect L7080–7086 cleans up)
+- ✅ Step toggle mid-flow (disable intermediate): SAFE (`pinnedStepIdRef` re-resolves correctly)
+- ✅ **sessionStorage restore bypass** (prior critical #5): ✅ FIXED — L6554–6581 loops `validateStep` over every prior step, clamps to first invalid. (W2-24 scenario-traced)
+
+---
+
+### Category 4 — Validation & Navigation Guarding (7 issues)
+
+#### Issue SYN-05 — `handleFieldChange` Live Re-Validation Broken for Multi-Step Flows (HIGH)
+- **Severity:** 🟠 High
+- **Location:** L7115–7118
+- **Wave 1 Discovery:** Sub-Agent 04 found that `handleFieldChange` uses `activeSteps.find(step => form|datetime)?.fields.find(id === fieldId)`. `Array.find` returns only the FIRST matching step. Fields in any later form step (or custom fields on a non-first datetime step) are not found → `setErrors` silently skipped → stale errors persist until next Continue click. This is a regression of the T4-M1 "clear errors live" fix. Verified empirically via Node. Default flow unaffected; multi-form-step flows hit this.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED via direct read (L7115–7117 logic). W2-24 ✅ CONFIRMED. W2-22 ✅ CONFIRMED REAL (real `Array.find` logic bug, not a false positive).
+- **Root Cause Analysis:** The lookup was written assuming a single form/datetime step. When multi-step flows were added, the lookup wasn't updated to iterate all steps.
+- **Recommended Fix:**
+```typescript
+// At L7115–7118, replace:
+const field = activeSteps.find(step => step.type === "form" || step.type === "datetime")
+  ?.fields.find(f => f.id === fieldId)
+
+// with:
+let field: FieldConfig | undefined
+for (const step of activeSteps) {
+  if (step.type === "form" || step.type === "datetime") {
+    field = step.fields.find(f => f.id === fieldId)
+    if (field) break
+  }
 }
 ```
+- **Status: Completed** — `handleFieldChange` (~L7116) now iterates every active form/datetime step until the field is found (typed `NormalizedField`, early-break loop), restoring live re-validation for multi-form-step flows and custom fields on non-first datetime steps.
 
-- **Status:** Completed
+#### Issue W1-04-F-3 — `validatePhone` Doesn't Trim Input (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4534
+- **Wave 1 Discovery:** Email path uses `str.trim()`; phone path doesn't. `"555-555-5555 "` (pasted with trailing space) fails the `^...$`-anchored regex.
+- **Wave 2 Verification:** W2-39 ✅ CONFIRMED via Node test script (`/home/z/my-project/scripts/test_regex.js`): `validatePhone("555-555-5555 ")` → `"PHONE"` (should be `null`).
+- **Recommended Fix:** `validatePhone(str.trim(), vc)` at L4534.
+- **Status: Completed** — `validatePhone` now trims internally, so both call sites (explicit phone rule + phone field type) inherit the fix.
 
-#### Issue F-01-02: `useCalcomSlots` Fetch Guard Incomplete
-- **Severity:** Medium
-- **Location:** L3693 (`if (RenderTarget.current() === RenderTarget.canvas) return;` inside `useCalcomSlots`)
-- **Wave 1 Discovery:** Sub-Agent 01 found the guard only blocks the canvas target. On `export` and `thumbnail` targets (used by Framer for static export and page thumbnails), the Cal.com fetch — including the `Authorization: Bearer ${apiKey}` header — still fires, leaking the API key in static-export bundles.
-- **Wave 2 Verification:** Wave2-32 ✅ confirmed — should use `useIsStaticRenderer()` (which returns true for canvas + export + thumbnail).
-- **Root Cause Analysis:** `RenderTarget.canvas` is a single-target check; `useIsStaticRenderer()` is the broader guard.
-- **Impact:** API key may leak into Framer static-export bundles (cached HTML/JS served to visitors).
-- **Status:** ✅ **FIXED** (bundle 16) — `useCalcomSlots` (L4425) and `handleSubmitBooking` (L6498) both now guard on `useIsStaticRenderer()` (`isStaticRender`), which blocks canvas, export AND thumbnail renders from firing the availability GET or the booking POST with the Bearer key; both sites carry the F-01-02 comment. The remaining canvas-only check (L6939 `isCanvas`) is a demo-grid rendering choice, not a fetch guard, and stays.
-- **Recommended Remediation:**
+#### Issue W1-04-F-4 — `EMAIL_REGEX` Accepts Numeric TLDs (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4142–4143
+- **Wave 1 Discovery:** `"user@example.123"` and `"user@example.1a2"` pass the regex. Real TLDs are alphabetic.
+- **Wave 2 Verification:** W2-39 ✅ CONFIRMED via Node: `EMAIL_REGEX.test("user@example.123")` → `true` (should be `false`).
+- **Recommended Fix:** Require first TLD char alphabetic: change `[A-Za-z]{2,}` to `[A-Za-z][A-Za-z0-9]*` in the TLD portion, or use `[A-Za-z]{2,}` strictly.
+- **Status: Completed** — TLD is now strict `[A-Za-z]{2,}`; `user@example.123` / `user@example.1a2` both fail (ASCII regex, punycode TLDs out of scope).
+
+#### Issue W1-04-F-5 — `"1234567"` Passes Phone Validation (LOW)
+- **Severity:** 🟢 Low
+- **Location:** Phone regex (search around L4534)
+- **Wave 1 Discovery:** Digit-only strings without any separators or `+` pass validation.
+- **Wave 2 Verification:** W2-39 ✅ CONFIRMED via Node: `validatePhone("1234567")` → `null` (should be `"PHONE"`).
+- **Recommended Fix:** Require at least one separator (space, dash, dot, or parens) or `+` prefix for phone numbers ≥7 digits.
+- **Status: Completed** — `validatePhone` rejects `/^\d{7,}$/` (≥7 contiguous digits with no separators and no `+`) before the loose regex runs; `+`-prefixed international strings are unaffected.
+
+#### Issue W1-04-F-6 — `isReDosRisky` Not Memoized (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4570/L4581/L4585/L4631
+- **Wave 1 Discovery:** Sub-Agent 04 found that `isReDosRisky` constructs 3–4 `new RegExp` per call. For custom-regex fields, this runs on every keystroke with no `Map` cache.
+- **Wave 2 Verification:** W2-39 ✅ CONFIRMED by source. W2-39 also confirmed `isReDosRisky` itself is bulletproof — correctly flags all 8 classic ReDoS shapes (`(a+)+`, `(a*)*`, `(a|aa)+`, etc.) and correctly allows safe shapes. Full `validateField` on attacker pattern `(a+)+$` + 25-char killer returns `INVALID_REGEX` in <1ms — regex never executes.
+- **Recommended Fix:** Add a `WeakMap<string, boolean>` cache keyed by regex source string. Same pattern as `getCompiledCustomRegex` should already use.
+- **Status: Completed** — `reDosCache: Map<string, boolean>` wraps the analysis (`isReDosRisky` → cached wrapper → `isReDosRiskyUncached`). Per-keystroke verdicts now hit the cache after the first computation; growth bounded by author-edited patterns.
+
+#### Issue W1-04-F-8 — Form Lacks `noValidate` (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L8486 (form element)
+- **Wave 1 Discovery:** Without `noValidate`, browser native validation fires before `onSubmit` for `required`/`type="email"`, producing two inconsistent error UX styles (browser tooltip vs. inline error).
+- **Wave 2 Verification:** W2-22 ✅ CONFIRMED REAL. W2-24 ✅ CONFIRMED.
+- **Recommended Fix:** Add `noValidate` attribute to the `<form>` at L8486.
+- **Status: Completed** — `noValidate` on the form; the engine's own `validateStep` pipeline is now the single validation path (no more native tooltip vs. inline-error split).
+
+#### Issue W1-04-F-7 — Continue Button Double-Invokes `handleContinue` (INFO, false-positive-leaning)
+- **Severity:** ⚪ Info
+- **Location:** L8490 (`onClick={handleContinue}` on submit button) + L8742 (`onSubmit={handleContinue}` on form)
+- **Wave 1 Discovery:** Sub-Agent 04 flagged that `type="submit"` + `onClick={handleContinue}` AND form `onSubmit` calls `handleContinue` → double invocation per click.
+- **Wave 2 Verification:** W2-22 ❌ FILTERED AS FALSE POSITIVE — React 18 automatic batching coalesces both calls' state updates into one render; second call early-returns via `navigatingRef`; redundant work is one pure `validateStep` (microseconds). W2-24 confirmed it's a redundancy, not a bug.
+- **Recommended Fix (optional cleanup):** Drop `onClick={handleContinue}` from the submit button at L8490; rely on `onSubmit` alone (preserves Enter-key behavior).
+- **Status: Completed (cleanup)** — `onClick` removed; the `type="submit"` button + form `onSubmit` is now the single invocation path (click and Enter both flow through the form).
+
+#### Verified Clean (Validation)
+- ✅ `handleContinue` runs `validateStep` SYNCHRONOUSLY before advancing (L7416–7420)
+- ✅ `setCurrentIndex(i+1)` only reachable inside `if (valid)` branch (after `if (!valid) return` L7426–7431)
+- ✅ No async validation paths exist
+- ✅ Enter key → form `onSubmit` → `handleContinue` (synchronous)
+- ✅ Double-click Continue: SAFE (`navigatingRef` guard L7468)
+- ✅ All 5 previously-flagged W1-04 items (C1/H2/H3/L3/M4) confirmed FIXED
+
+---
+
+### Category 5 — Cal.com v2 API Integration & Timezone Accuracy (8 issues)
+
+#### Issue SYN-06 — GET Uses `start`/`end` Instead of `startTime`/`endTime` (HIGH, REQUIRES LIVE VERIFICATION)
+- **Severity:** 🟠 High
+- **Location:** L4906–4910
+- **Wave 1 Discovery:** Sub-Agent 05 found the GET URL uses `&start=`/`&end=`, but Cal.com v2 OpenAPI documents `startTime`/`endTime`. If the live API enforces documented names, every availability fetch silently fails or returns wrong data.
+- **Wave 2 Verification:** W2-21 ✅ VERIFIED (code-level): URL string at L4906–4910 uses `&start=`/`&end=`. W2-25 ✅ VERIFIED + flagged REQUIRES-LIVE-VERIFICATION. Grep confirms no `startTime`/`endTime` anywhere near an `api.cal.com` URL.
+- **Root Cause Analysis:** Either (a) the original implementation used an older Cal.com v2 draft that used `start`/`end`, or (b) the code was written against an undocumented endpoint. The published OpenAPI at https://developer.cal.com/api/api-reference/v2 documents `startTime`/`endTime`.
+- **Impact:** If live API enforces documented names: every availability fetch silently fails or returns empty data. Visitor sees an empty calendar with no error banner. **This is potentially the single most impactful defect in the entire audit** — but it requires a 30-second curl test to confirm.
+- **Recommended Next Action:** ~~Run curl to verify~~ **RESOLVED 2026-08-16 — live OpenAPI refutes the claim.** Fetched the current published spec at `https://cal.com/docs/api-reference/v2/slots/get-available-time-slots-for-an-event-type` (via `/docs/llms.txt`). The documented query params are `start` and `end` (both REQUIRED, ISO-8601 UTC) plus optional `timeZone`/`eventTypeId`/`duration`/`format` — **no `startTime`/`endTime` anywhere**. The code's URL (`eventTypeId`, `start`, `end`, `timeZone`) and the `cal-api-version: 2024-09-04` header match the spec exactly. **No code change required for SYN-06.** (The audit's earlier doc reference was stale or misremembered.)
+- **Status: Completed (no-op)** — claim refuted against the live OpenAPI; parameter names verified correct.
+
+#### Issue SYN-07 — `isCalSlot` Guard May Reject All Real Slots (HIGH, REQUIRES LIVE VERIFICATION)
+- **Severity:** 🟠 High
+- **Location:** L4733–4740
+- **Wave 1 Discovery:** Sub-Agent 05 found the `isCalSlot` guard requires `start` + `end` string keys. Cal.com v2's documented slot shape is `{time, bookingUid}`. If the live API returns that shape, `isCalSlot` rejects every entry → visitor sees an empty calendar with **no error banner** (HTTP was 2xx, parsing "succeeded" with `[]`). Would also break `submitCalcomBooking`'s required `slotEnd` (prior critical #6).
+- **Wave 2 Verification:** W2-21 ✅ VERIFIED (code-level). W2-25 ✅ VERIFIED + flagged REQUIRES-LIVE-VERIFICATION. The author's comment at L5011 asserts `{start, end}` — needs live verification.
+- **Impact:** Coupled with SYN-06 — same curl resolves both. If live API returns `{time, bookingUid}`: every calendar shows empty; every booking attempt 400-rejects (missing `end`).
+- **2026-08-16 LIVE VERIFICATION — partially refuted, real hazard found.** The claimed `{time, bookingUid}` shape does NOT exist for this endpoint (docs: `bookingUid` appears only on seated slots). The live OpenAPI instead documents TWO response formats selectable via `format`:
+  - **Default (`time` format):** `data: { 'YYYY-MM-DD': [bare time strings] }` — no `end` at all.
+  - **`format=range`:** `data: { 'YYYY-MM-DD': [{ start, end }] }` — the shape the engine's data contract (`BookingPayload.slotEnd` → POST body `end`, success-screen duration, analytics) requires.
+  - The engine **never sent `format=range`**, so under the documented default it would have received bare strings/`{start}`-only objects → `isCalSlot` rejected everything → empty calendar, no error banner. The hazard was real; the predicted shape was wrong. Additionally the parser only read `data.slots`, while the live shape puts date keys directly under `data`.
+- **Fix applied (verified against live OpenAPI):** (1) URL now sends `&format=range` (~L4933) so the API returns `{start, end}`; (2) parser (~L5042) now falls back to flattening the date-key map directly under `data` when `data.slots` is absent; (3) `isCalSlot` (~L4754) accepts `{start, end}` (range), `{start}` (time), and `{time}` (seated) defensively, with `end` optional — a server ignoring `format` can no longer produce a silent empty calendar.
+- **Status: Completed**
+
+#### Issue W1-05-F-03 — Fetch Effect Missing `errorCopy`/`timeoutMs` Deps (MEDIUM, partially mitigated)
+- **Severity:** 🟡 Medium (downgraded from Wave 1's MEDIUM due to W2-22 finding)
+- **Location:** L5151 (deps array)
+- **Wave 1 Discovery:** Sub-Agent 05 flagged that `errorCopy` and `timeoutMs` are consumed inside the fetch effect but missing from its deps. Same class as the already-fixed W2-33-A2 (`fallbackErrorLabel`).
+- **Wave 2 Verification:** W2-21 ⚠️ REFINED — the local `copy` variable (L4793) is recreated every render, so adding it would cause infinite re-fires. The actual missing dep is `errorCopy` (the hook parameter, referentially stable at the call site). W2-22 ❌ FILTERED AS FALSE POSITIVE for production — `errorCopy` is `useMemo`'d (stable), `fetchTimeoutMs` is primitive; author edits only happen on Framer canvas where property-panel changes remount the component (effect re-runs fresh); published-site props are immutable.
+- **Recommended Fix (low-priority):** Add `errorCopy` and `fetchTimeoutMs` to the deps array at L5151 for eslint-exhaustive-deps compliance and defense against future refactors that might destabilize `errorCopy`.
+- **Status: Completed** — deps array (~L5226) now includes `errorCopy` and `timeoutMs` alongside `fallbackErrorLabel`; both are referentially stable/primitive so the effect cannot re-fire spuriously.
+
+#### Issue W1-05-F-04 — No Cache TTL (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L4815–4825 (cacheRef logic)
+- **Wave 1 Discovery:** Sub-Agent 05 found `cacheRef` entries persist for the entire session. A visitor crossing midnight (or on a long-lived tab) sees already-elapsed slots as selectable; only discovers staleness when the POST 400-rejects.
+- **Wave 2 Verification:** W2-25 ✅ CONFIRMED.
+- **Recommended Fix:** Add timestamp-based invalidation (entries older than 5 minutes are refetched) OR listen to `visibilitychange` and invalidate on tab refocus.
+- **Status: Completed** — `SLOTS_CACHE_TTL_MS = 5 min` constant; entries now store `{ slots, fetchedAt }`; the read site (~L4918) refetches when `Date.now() - fetchedAt >= TTL` and the write site (~L5138) stamps the fetch time.
+
+#### Issue W1-07-F5 — DST Fall-Back Collision Produces Empty-Parens Label (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L2974–2997
+- **Wave 1 Discovery:** Sub-Agent 07 found that in `useTimeGrid`, when `abbrevOf(item.value)` returns `null` (catch block on an exotic engine), the label becomes `"01:30 AM ()"` with empty parens.
+- **Wave 2 Verification:** W2-26 ✅ CONFIRMED via Node trace (both fall-back instants return 90 minutes → collision branch fires → empty parens).
+- **Recommended Fix:** Fall back to UTC offset suffix (e.g., `"-05:00"` vs `"-06:00"`) when the abbreviation is unavailable. Use `Intl.DateTimeFormat` with `timeZoneName: "longOffset"`.
+- **Status: Completed** — `abbrevOf` now falls back to `timeZoneName: "longOffset"` (e.g. "GMT-05:00" vs "GMT-06:00") when the "short" zone name is missing, so the DST collision branch can no longer emit empty parens.
+
+#### Issue W1-07-F7 — Success-Screen Date Label Uses Cell-Midnight Instead of Slot Instant (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L10175
+- **Wave 1 Discovery:** Sub-Agent 07 found `slot.date.toLocaleDateString(..., { timeZone })` formats the calendar cell's browser-local-midnight Date in the visitor's tz. For a real Cal.com slot, `slot.date` is the cell date (browser-local), but `slot.time24h` is the slot's actual UTC instant. At extreme tz drift (≥12h), the visible label `"December 14, 2024"` disagrees with both the clicked cell (`"15"`) and the ICS filename (`booking-2024-12-15.ics`).
+- **Wave 2 Verification:** W2-26 ✅ CONFIRMED via full chain trace (calendarCells L2678 → CalendarCell.onClick L1435 → getPayload L3504/L3505 → SuccessScreen L10175).
+- **Recommended Fix:** Derive `dateStr` from `new Date(slot.time24h)` when ISO; fall back to `slot.date` only for demo mode.
+- **Status: Completed** — the instant-vs-cell-midnight derivation now applies at all four derived-date sites: ReviewStepBody (formatted in the visitor's zone — `timeZone` threaded in), SuccessScreen (zoned, RangeError-guarded), the `{date}` summary-text replacement, and the ICS/email summary body. Demo mode (`time24h` without a "T") keeps `slot.date`.
+
+#### Issue W1-07-F9 — `cacheRef.clear()` Omits `timeZone` from Deps (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4841–4843
+- **Wave 1 Discovery:** Sub-Agent 07 found the slots cache key includes `timeZone` (L4770), but the bulk-invalidation effect only fires on `[apiKey, eventTypeId]`. Old tz slot entries linger in memory across visitor tz switches.
+- **Wave 2 Verification:** W2-26 ✅ CONFIRMED. Worst case ~460 KB across 16 tz × 12 months.
+- **Recommended Fix:** Add `timeZone` to the dep array at L4843: `[apiKey, eventTypeId, timeZone]`.
+- **Status: Completed** — `timeZone` added to the invalidation effect's deps (~L4895); switching the visitor's timezone now drops the old timezone's cache entries.
+
+#### Issue W2-26-F26-1 (NEW) — ±1 Day TZ Widening Insufficient for 26h Drift (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4889–4903
+- **Wave 1 Discovery:** (Not in Wave 1 — discovered by W2-26.)
+- **Wave 2 Discovery:** W2-26 found that W1-07-F14's claim "±1 day widening absorbs the worst case (±14h)" is **mathematically wrong**. Max browser↔visitor drift is **26h** (Kiritimati +14 ↔ Baker/Howland −12) and **24h45m** (Chatham +12:45 ↔ −12) — both exceed the 24h widening. Node-verified: visitor's first-of-month 00:00–01:59 slot instants fall BEFORE the widened range start (`2024-11-30T12:00:00Z`) and are silently not fetched from Cal.com.
+- **Recommended Fix:** Widen by ±2 days OR compute visitor-tz month boundaries via `Intl.DateTimeFormat` parts. Update the misleading comment at L4881–4888.
+- **Status: Completed** — widening is now ±2 calendar days on each side (~L4953/L4962) with the corrected 26h-drift comment.
+
+#### Verified Clean (Cal.com + Timezone)
+W2-25 and W2-26 confirmed:
+- ✅ POST body includes ALL required Cal.com v2 fields (prior critical #6 `end` field FIXED at L5319–5321 + threading at L7293)
+- ✅ Per-attempt timeout via `AbortController` (W1-05-F3 fix in place)
+- ✅ 429 `Retry-After` parsed (but no auto-retry — GET gates on `status >= 500` only; intentional for POST to avoid double-book risk)
+- ✅ Defensive response parsing for multiple shapes
+- ✅ `getMinutesInTimeZone` (L504) handles fractional offsets (Asia/Kolkata +5:30 → 330, Nepal +5:45 → 345, Lord Howe +10:30 → 630, Chatham +12:45 → 765, Kiritimati +14 → 840) — all Node-verified
+- ✅ `getDateKeyInTimeZone` (L536) produces consistent zero-padded YYYY-MM-DD keys
+- ✅ ICS DTSTART/DTEND use RFC 5545 UTC-compact form (Z suffix)
+- ✅ `detectTimezone` (L4328) uses robust `Intl.DateTimeFormat().resolvedOptions().timeZone` (not fragile `getTimezoneOffset`), SSR-safe
+- ✅ Cal.com API sends UTC ISO instants + separate `timeZone` param (matches Cal.com v2 schema)
+- ✅ Year-end roll-over (Dec 31 → Jan 1 in Tokyo) correctly produces `2025-01-01` (Node-verified)
+- ✅ DST spring-forward gap (NY 2024-03-10T02:30Z) correctly handled
+
+---
+
+### Category 6 — Accessibility (ARIA & Focus) (10 issues)
+
+#### Issue W1-10-N1 — Slot Radiogroup Lacks `aria-invalid` + `aria-describedby` (MODERATE)
+- **Severity:** 🟡 Moderate (WCAG 3.3.1 / 4.1.2)
+- **Location:** TimeSlotList L2418 (radiogroup); slot error banner L9285 (no `id`)
+- **Wave 1 Discovery:** Sub-Agent 10 found the slot radiogroup is the only invalidatable control that doesn't get `aria-invalid` + `aria-describedby` when `slotError` is set. `TimeSlotListProps`/`TimeSlotButton` don't even declare those props, and the slot error banner at L9285 has no `id` to reference. Compare to every other field path (L9766, L9809, L9960, L10036) and `ChoiceGroupInline` (L9927–9929) which all wire it correctly.
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED.
+- **Recommended Fix:** Add `aria-invalid={Boolean(slotError)}` and `aria-describedby={slotError ? slotErrorId : undefined}` to the radiogroup at L2418. Add `id={slotErrorId}` to the banner at L9285.
+- **Status: Completed** — radiogroup (`TimeSlotList`) now carries `aria-invalid`/`aria-describedby` via new `slotError`/`slotErrorId` props threaded `DateAndTimeInline` → `TimeSlotList` (both interfaces + call sites); the engine-level banner got the per-instance id `${reactInstanceId}-be-slot-error` the describedby points at.
+
+#### Issue W1-10-N2 — Field IDs Not Scoped Per-Instance (MODERATE)
+- **Severity:** 🟡 Moderate (WCAG 4.1.1 / 1.3.1 / 2.4.3)
+- **Location:** L9315 (`be-timezone-select` hardcoded literal); `be-field-${field.id}` and `be-error-${field.id}` patterns throughout
+- **Wave 1 Discovery:** Sub-Agent 10 found field IDs are NOT scoped per-instance. `reactInstanceId = React.useId()` already exists at L6055 but isn't applied here. Two `BookingEngine` instances on one page break `<label htmlFor>` resolution, `aria-describedby` references, and the `focusFirstInvalidField` `querySelector`.
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED.
+- **Recommended Fix:** Prefix all ID literals with `${reactInstanceId}-`:
 ```typescript
-// Inside useCalcomSlots:
-const isStatic = useIsStaticRenderer();
-// ...
-if (isStatic) return; // blocks canvas, export, and thumbnail targets
+// L9315:
+id={`${reactInstanceId}-be-timezone-select`}
+// Field IDs: `be-field-${field.id}` → `${reactInstanceId}-be-field-${field.id}`
+// Error IDs: `be-error-${field.id}` → `${reactInstanceId}-be-error-${field.id}`
 ```
+- **Status: Completed** — every field id (`be-field-${field.id}`), error id (`be-error-${field.id}`) and the counter ids are now scoped via `React.useId()` inside `FieldRenderer` (stable per mounted field); the timezone select uses `${reactInstanceId}-be-timezone-select`. `focusFirstInvalidField` is unaffected (it keys off `data-field-id`, which is intentionally unscoped).
 
-#### Issue F-01-03: Grouped Object Controls Lack `defaultValue`
-- **Severity:** Low
-- **Location:** L8360–8363 region — `buttonLabels`, `progressBar`, `styles`, `copy` grouped controls
-- **Wave 1 Discovery:** Sub-Agent 01 found grouped Object controls lack explicit top-level `defaultValue`, inconsistent with the codebase's own T8-L4 fix at L8360–8363.
-- **Wave 2 Verification:** Wave2-32 ✅ confirmed.
-- **Impact:** Framer editor may render empty defaults when author first adds the component.
-- **Recommended Remediation:** Add explicit `defaultValue: { ... }` to each grouped Object control matching the interface defaults.
+#### Issue W1-10-N3 — 12h/24h Toggle Lacks Group Label (MODERATE)
+- **Severity:** 🟡 Moderate (WCAG 2.4.6 / 4.1.2)
+- **Location:** L2187–2309
+- **Wave 1 Discovery:** Sub-Agent 10 found the 12h/24h time-format toggle has no group label or contextual button names — SR users hear "12h, toggle button, pressed" with no purpose context. Parent `<div>` lacks `role="group"`/`aria-label`.
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED. No `timeFormatLabel` copy token exists.
+- **Recommended Fix:** Add `role="group"` + `aria-label={copy.timeFormatLabel || "Time format"}` to the parent `<div>`. Add `timeFormatLabel` to the `copy` controls.
+- **Status: Completed** — the toggle wrapper has `role="group"` + `aria-label`; new copy token `timeFormatLabel` (constant `DEFAULT_COPY_TIMEFORMAT_LABEL = "Time format"`, interface, schema control, threaded `BookingEngine` → `DateAndTimeInline` → `TimeSlotList`).
 
-#### Issue F-01-04: Destructuring Lacks Defensive Fallbacks
-- **Severity:** Low
-- **Location:** L4566 (`styles` destructuring); L4579 (`buttonLabels` destructuring)
-- **Wave 1 Discovery:** Sub-Agent 01 found these destructures lack `?.` fallbacks. If the component is rendered outside Framer's runtime (unit tests, Next.js SSR without Framer context), it crashes.
-- **Wave 2 Verification:** Wave2-32 ✅ confirmed.
-- **Impact:** Component crashes outside Framer runtime.
-- **Recommended Remediation:** Use defensive defaults: `const { accentColor, ... } = { ...DEFAULT_STYLE_PROPS, ...(props.styles ?? {}) };`
+#### Issue W1-13-F-13-9 — Canvas-Only Banners Lack ARIA Semantics (MEDIUM)
+- **Severity:** 🟡 Medium (WCAG 4.1.3)
+- **Location:** L8170, L8194, L8213, L8235, L8291 (all five canvas-only banners)
+- **Wave 1 Discovery:** Sub-Agent 13 found canvas-only banners carry NO ARIA semantics — no `role="status"`, no `aria-live`. Screen-reader-using authors aren't notified when a banner appears. Inconsistent with the published-site unavailable notice (L9205, `role="alert"`) and the no-times banner (L9180, `role="status"` + `aria-live="polite"`).
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED.
+- **Recommended Fix:** Add `role="status"` (or `aria-live="polite"`) to each canvas banner. Avoid `role="alert"` — these are author nudges, not visitor errors.
+- **Status: Completed** — all five canvas-only banners (Cal setup, name/email guardrail, empty-step warnings, regex verdicts, theme verdicts) now render `role="status"` + `aria-live="polite"`.
 
-#### Issue F-01-05: `useIsStaticRenderer` Coverage Gap
-- **Severity:** Low
-- **Location:** L4481 (only call site); L1485 (12h/24h slider `motion.div`); L6142 (progress bar `motion.div`)
-- **Wave 1 Discovery:** Sub-Agent 01 found `useIsStaticRenderer()` is only called inside `AnimatedStepContent`. The 12h/24h slider and progress bar `motion.div` elements still animate during canvas rendering, causing visual jitter in the Framer editor.
-- **Wave 2 Verification:** Wave2-32 ✅ confirmed.
-- **Impact:** Editor-only visual jitter.
-- **Status:** ✅ **FIXED** (bundle 16) — `TimeSlotList` now reads `useIsStaticRenderer()` and renders the 12h/24h indicator as a plain positioned `div` at its final spot under static renders (motion spring only for live visitors); the progress bar branch (main component's existing `isStaticRender`) renders a plain width-percentage div. Jitter eliminated on canvas/export/thumbnail without touching live-visitor animation.
-- **Recommended Remediation:** Propagate `isStatic` to those motion paths or wrap entire tree in `<MotionConfig reducedMotion="always">` when static.
+#### Issue W1-13-F-13-8 — Canvas-Only Banners Lack Borders (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L8194 (name/email banner), L8213 (empty-step banner)
+- **Wave 1 Discovery:** Sub-Agent 13 found two of the five banners lack any `border` property, relying solely on `withAlpha(theme.errorColor, 0.1)` background tint. If `errorColor` has poor contrast vs `backgroundColor` (which `themeVerdicts` itself flags at L6928), the banners become nearly invisible. The other three banners carry `1px solid` borders.
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED (visual inconsistency).
+- **Recommended Fix:** Add `border: 1px solid ${withAlpha(theme.errorColor, 0.3)}` to L8194 and L8213 banners.
+- **Status: Completed** — both the name/email guardrail and the empty-step warning banners now carry the 1px error-tinted border.
 
----
+#### Issue W1-10-N4 — No `"{time} selected"` Live Announcement (LOW-MOD)
+- **Severity:** 🟢 Low-Mod (WCAG 4.1.3)
+- **Location:** Slot selection flow
+- **Wave 1 Discovery:** Sub-Agent 10 found no explicit "{time} selected" live announcement on slot pick — selection only inferred via `aria-checked` change on the focused element. Mouse-click on an already-focused slot is silent.
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED. Keyboard selection is announced (via focus move + aria-checked), but mouse-click is silent.
+- **Recommended Fix:** Add a brief `aria-live="polite"` announcement: `"{time} selected"`.
+- **Status: Completed** — new copy token `timeSlotSelectedTemplate` (`"{time} selected"` default, interface + schema + constant) threaded to `DateAndTimeInline`, which announces into a visually-hidden polite region on every slot pick (mouse or keyboard), de-duplicating consecutive identical picks.
 
-### Category 2 — Zero-Hardcoding & 100% Customizability (24 issues)
+#### Issue W1-10-N5/N6/N7 — Various Notices Not in Live Regions (LOW)
+- **Severity:** 🟢 Low (WCAG 4.1.3 / 3.3.5)
+- **Location:**
+  - N5: Character counters L9781, L10046 — plain `<div>`, no `id`, no `aria-live`, not in `aria-describedby`
+  - N6: "Progress couldn't be saved" L8649–8660 — plain `<div>`, no `role`/`aria-live`
+  - N7: "Answers are saved" L8614–8648 — plain `<div>`, no `role`/`aria-live`; dynamic transition silent
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED all three.
+- **Recommended Fix:** Wrap each in `role="status"` + `aria-live="polite"`. For counters, also add `id` and reference from the input's `aria-describedby`.
+- **Status: Completed** — saved-answers notice and save-failed notice are now polite status regions; both character counters (text/email/phone + textarea) got `role="status"`/`aria-live="polite"` + a scoped `counterId`, referenced from their inputs' `aria-describedby` alongside the error id.
 
-#### Issue W1-02-F1: `FETCH_TIMEOUT_MS` Hardcoded
-- **Severity:** High
-- **Location:** L3638 (`const FETCH_TIMEOUT_MS = 18000;`)
-- **Wave 1 Discovery:** Sub-Agent 02 found the API timeout is a module-level constant with no PropertyControl. Authors cannot tune it for slow networks or aggressive Cal.com instances.
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed MUST-FIX (visitor-facing — affects resilience on slow networks).
-- **Root Cause Analysis:** Constant was added during initial Cal.com integration; never promoted to a PropertyControl.
-- **Impact:** Authors cannot tune timeout; 18s is too long for fast networks and too short for slow ones.
-- **Recommended Remediation:** Add `fetchTimeoutMs: ControlType.Number` (default 18000) under the `Config` group; thread through `useCalcomSlots` and `submitCalcomBooking`.
-- **Status:** Completed — `fetchTimeoutMs` is a Config-group Number control (default 18000, 3000–60000, step 500); `useCalcomSlots` and `submitCalcomBooking` both accept the override and fall back to `FETCH_TIMEOUT_MS` for old instances.
+#### Issue W1-10-N8/N9/N10 — Decorative Element aria-hidden Gaps (LOW)
+- **Severity:** 🟢 Low (WCAG 1.1.1 / 1.3.1 / 2.4.6)
+- **Location:**
+  - N8: ChoiceGroup glyph span L1044–1055 not `aria-hidden` — emoji/symbol gets read inconsistently
+  - N9: Submit spinner span L8773–8785 not `aria-hidden` (parent has `aria-busy`)
+  - N10: Cancel-during-submit button L8714–8735 accessible name is just `"Cancel"` — ambiguous in SR button-list navigation
+- **Wave 2 Verification:** W2-28 ✅ CONFIRMED all three.
+- **Recommended Fix:**
+  - N8: Add `aria-hidden="true"` to the glyph span
+  - N9: Add `aria-hidden="true"` to the spinner span (defensive; parent `aria-busy` already covers it)
+  - N10: Use `copy.cancelSubmitLabel || "Cancel submit"` (also closes SYN-03)
+- **Status: Completed** — N8: choice-glyph span `aria-hidden="true"`. N9: submit spinner span `aria-hidden="true"`. N10: closed earlier by SYN-03 (`buttonLabels.cancelSubmitLabel`, default "Cancel").
 
-#### Issue W1-02-F2 / D13: `DEFAULT_DARK_THEME` Hardcoded + Missing Fields
-- **Severity:** High
-- **Location:** L3202–3216 (`DEFAULT_DARK_THEME` constant)
-- **Wave 1 Discovery:** Sub-Agent 02 found 8 dark-mode colors are hardcoded with no parallel `darkStyles` PropertyControls group. Sub-Agent 17 separately found `DEFAULT_DARK_THEME` declares `accentColor`/`errorColor`/`successColor`/`borderRadius` are dead fields (the dark-mode override memo at L4639–4667 never reads them).
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed MUST-FIX; Wave2-36 ✅ confirmed F-17-8 MED.
-- **Impact:** Authors cannot override dark-mode colors independently from light-mode.
-- **Fix:** ✅ **FIXED** in this session (W1-17-F-17-4 + F-17-8 sweep): the theme memo now applies a dark counterpart for every field — accent/error/success/borderRadius are no longer dead — and only light-default values swap (normalized comparison), so an author's deliberate dark-mode colours always win. See Sub-Category 10d rows for L-refs.
-- **Recommended Remediation:** Restructure `styles` into `styles.light` + `styles.dark` Object controls, OR add parallel `darkAccentColor`/`darkErrorColor`/`darkSuccessColor`/`darkBorderRadius` controls.
+#### Verified Clean (Accessibility)
+W2-28 confirmed:
+- ✅ Step transition announced via `<output aria-live="polite">` at L8150–8165
+- ✅ Validation errors (form fields) use `role="alert"` + `aria-invalid` + `aria-describedby`
+- ✅ Loading state announced via `role="status"` + `aria-live="polite"` at L2331–2344
+- ✅ Success/error terminals use `role="status"` / `role="alert"` + `aria-live="assertive"`
+- ✅ Calendar month change announced via `aria-live="polite"` at L1835–1850
+- ✅ First-render guards on all live regions (no spurious announcements on mount)
+- ✅ All 14 prior W1-10 fixes + 2 prior W2-28 fixes verified in place
 
-#### Issue W1-02-F3: `COMMON_TIMEZONES` Not Editable
-- **Severity:** High
-- **Location:** L3217–3248 (`COMMON_TIMEZONES` 16-entry array — Wave 1 said 17, actual is 16)
-- **Wave 1 Discovery:** Sub-Agent 02 found the timezone dropdown list is a fixed module-level array. Authors cannot add custom timezones (e.g., a clinic that only serves one city doesn't need 16 worldwide timezones).
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed MUST-FIX.
-- **Impact:** Inflexible timezone picker; UX clutter for localized deployments.
-- **Recommended Remediation:** Add `timezones: ControlType.Array` (element control: `{ label: ControlType.String, value: ControlType.String }`) with `COMMON_TIMEZONES` as the default.
-- **Status:** Completed — `timezones` exposed as a Config-group `ControlType.Array` of `{ label, value }` objects with `COMMON_TIMEZONES` (label = value) as the panel default. Runtime: `useBookingEngineState` sanitizes the author list (drops entries without a value, falls back to label when only value is set, falls back to the built-in 16-entry list for old canvases or empty arrays) and threads it as `timezoneOptions` → `StepBody` → the datetime-step `<select>`; the detected-timezone option is still prepended and value-filtered exactly as before. Verified via `bun build` transpile.
-
-#### Issue W1-02-F4–F8: 5 Hardcoded Error-Message Surfaces
-- **Severity:** High (5 findings)
-- **Location:** `mapCalcomError` (L4101) — 5 substring→message rules; `useCalcomSlots` catch ladder (5 status-specific messages); `submitCalcomBooking` (5 status-specific error strings + HTTP-status fallback); `handleSubmitBooking` (4 `setSubmitError` strings); `StepBody.hideDemoWhenUnconfigured` (2-line "Booking is currently unavailable / Please call us…" notice)
-- **Wave 1 Discovery:** Sub-Agent 02 cataloged all 5 surfaces; each is hardcoded with no Copy PropertyControl.
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed all 5 MUST-FIX.
-- **Impact:** Authors cannot customize error copy; brand voice inconsistent; localization impossible.
-- **Recommended Remediation:** Introduce 4 new Object controls (`calcomErrorCopy`, `slotsErrorCopy`, `submitErrorCopy`, `submitGuardrailCopy`) totaling ~20 keys; thread through all 5 surfaces. (See Fix Cluster 2.)
-- **Status:** **Completed** (code already shipped this as "bundle 17"; report block was stale) — a single `ErrorCopy` surface (`ERROR_COPY_DEFAULTS`) covers all 5 MUST-FIX surfaces via one `errorCopy` Object control: `mapCalcomError` accepts `errorCopy` and overrides all 5 of its substring→message rules plus the catch-all; the `useCalcomSlots` catch ladder's 5 status messages are keyed (slotsTimeoutError / credentialError / slotsNotFoundError / slotsRateLimitTemplate + generic / slotsUnavailableError + fallback); `submitCalcomBooking`'s status strings + HTTP fallback are keyed; `handleSubmitBooking`'s 4 `setSubmitError` calls use keyed copy (bookingErrorTitle / unknownErrorLabel / errorFallbackMessage…); the "Booking is currently unavailable" guardrail notice uses `unavailableTitle` / `unavailableBody`. | `ErrorCopy` L391+, `ERROR_COPY_DEFAULTS` L413, `mapCalcomError` L5165+, `useCalcomSlots` catch ladder L4826+, `submitCalcomBooking` L4936+, `StepBody` guardrail, errorCopy control L10896+ | — | Wave2-23
-
-#### Issue W1-02-F9–F16: 8 Medium-Priority Hardcoded Strings
-- **Severity:** Medium (8 findings)
-- **Location:** SuccessScreen "Confirmation #"+ "Reschedule or cancel" (L7433–7871 region); ReviewStepBody "Edit" (L6891+); TimeSlotList "Pick a date to see times" + "No available times" (L1423+); Select fallback "Select an option…" (FieldRenderer); canvas-only guardrails (5 strings); "% complete" suffix; 8 aria-labels ("Choice group"/"Time slots"/"Available times"/"Date picker"/"Booking progress"×2/"Booking form" + Previous/Next month/Today suffixes)
-- **Wave 1 Discovery:** Sub-Agent 02 cataloged each.
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed all 8.
-- **Impact:** Brand voice inconsistency; localization blockers.
-- **Recommended Remediation:** Add corresponding keys to the existing `copy` Object control group.
-- **Status:** ✅ **FIXED** — every one of the 8 groups now has a `copy` control: `confirmationNumberLabel` (CC-11 ref row), `rescheduleOrCancelLabel` (manage link), `editLabel` (review Edit links), `pickDateToSeeTimesLabel` + `noTimesFallbackLabel` (TimeSlotList empty states), `selectOptionLabel` (select placeholder), `stepProgressLabel` (`{pct}% complete` template) and a nested `aria` group for all 8 accessibility names (Choice group / Time slots / Available times / Date picker / Booking progress ×2 / Booking form + localisable `{month}` nav templates). Canvas-only guardrails (5 dev-aid strings) stay author-facing on purpose — they're never rendered to visitors, so exposing them in a visitor-copy panel would only add noise (documented decision). | constants L335–376, copy panel ~L10285+, TimeSlotList L1903+, CalendarGrid L1506+ / L2330+, FieldRenderer L976+, StepBody L8301+, SuccessScreen L8997+ | | Wave1-02 W1-02-F9
-
-#### Issue W1-02-F17–F23: 7 Low-Priority Hardcoded Strings
-- **Severity:** Low (7 findings)
-- **Location:** `.ics` PRODID + SUMMARY fallback + notes section headers (L4311–4390); AM/PM + 12h/24h toggle text (L126); 10 layout constants (TOUCH_TARGET_MIN, COMPACT_BREAKPOINT, CALENDAR_WEEKS_TO_RENDER, PROGRESS_BAR_HEIGHT, CHECKMARK_ICON_SIZE, ERROR_ICON_SIZE, 3 column breakpoints, DEFAULT_MEETING_DURATION_MS); `MAX_MONTHS_AHEAD=12` + retry backoff (1000ms / 3000ms); demo grid `startTime="09:00"`/`endTime="17:00"`/`interval=30`; "Unknown error" fallback; ErrorScreen fallback "Something went wrong while submitting your booking."
-- **Wave 1 Discovery:** Sub-Agent 02 cataloged each.
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed — classified as SHOULD-FIX (author-experience) for most; ACCEPTABLE for layout constants.
-- **Impact:** Minor author-experience friction; demo-grid times misleading on canvas.
-- **Recommended Remediation:** Expose editable controls for `.ics` PRODID, retry backoff, demo-grid times. Leave WCAG-mandated constants (`TOUCH_TARGET_MIN`) as-is.
-- **Status:** ✅ **FIXED** (with documented constants): `.ics` PRODID, SUMMARY fallback and the notes section headers (`notesSelectedTimeLabel`/"Date: "/"Time: " prefixes) are copy-controlled; AM/PM suffixes via `amLabel`/`pmLabel` (threaded through `formatTimeLabel` → `useTimeGrid` → the time picker); demo-grid times now `copy.demoStartTime`/`demoEndTime`/`demoInterval` instead of hardcoded 09:00–17:00/30; "Unknown error" → `unknownErrorLabel`; the ErrorScreen fallback → `errorFallbackMessage` (also the catch-all of `mapCalcomError`, which accepts it as a param). Layout/retry constants (`TOUCH_TARGET_MIN`, `COMPACT_BREAKPOINT`, `CALENDAR_WEEKS_TO_RENDER`, `PROGRESS_BAR_HEIGHT`, `CHECKMARK_ICON_SIZE`, `ERROR_ICON_SIZE`, column breakpoints, `DEFAULT_MEETING_DURATION_MS`, `MAX_MONTHS_AHEAD`, the 1000/3000ms retry backoff) are ACCEPTABLE per Wave2 and intentionally left as code constants; the 12h/24h toggle shows the ISO format token itself ("12h"/"24h"), which needs no localization. | `formatTimeLabel` L384+, `useTimeGrid` L2565+, `buildNotesPayload` L5006+, `buildIcsDataUri` L5048+, StepBody demo grid L8301+ | | Wave1-02 W1-02-F17
-
-#### Issue W1-02-F24: 11 In-Component `||` Fallbacks Duplicate PropertyControl Defaults
-- **Severity:** Refactor
-- **Location:** 11 sites where `props.copy.foo || "Default string"` patterns exist
-- **Wave 1 Discovery:** Sub-Agent 02 found these `||` fallbacks duplicate the PropertyControl's own `defaultValue`, creating drift risk if either side changes.
-- **Wave 2 Verification:** Wave2-23 ✅ confirmed INFORMATIONAL.
-- **Impact:** Drift risk between code and PropertyControl defaults.
-- **Recommended Remediation:** Trust PropertyControl defaults; remove in-component `||` fallbacks.
-- **Status:** ✅ **FIXED** — all 8 remaining `copy.x || "literal"` sites (dateLabel/timeLabel ×2, requiredFieldsHint, timeZoneSelectLabel, detectedTimeZonePrefix) were removed; the two `(copy.privacyNotice || "").trim()` sites stay — those are empty-guards, not duplicated defaults. To kill the drift class rather than just the instances, the copy-panel defaults now reference the SAME module constants the runtime fallbacks use (`DEFAULT_COPY_*` block, e.g. `formatStepCounter`'s fallback template, `formatTimeLabel`'s AM/PM, `mapCalcomError`'s catch-all, `.ics` PRODID/SUMMARY, notes headers) — re-wording either side can't silently diverge. A defensive merge (`{...DEFAULT_ARIA_LABELS, ...(copy.aria || {})}`) protects canvases saved before the `aria` group existed. | L335–376 (constants), RootShell L7176–7182 (aria merge), panel defaults L10230+ | | Wave1-02 W1-02-F24
+#### Focus Management (Sub-Agent 29 verification)
+- ✅ Prior critical W1-11-A1 (inline `outline: "none"` overriding `:focus-visible`): ✅ FIXED — `inputBaseStyle` (L9726–9740) has no `outline` key
+- ✅ `:focus-visible` styling comprehensive and theme-token-driven (L8799–8818)
+- ✅ Calendar grid keyboard model complete (Arrow/Home/End/PageUp/PageDown at L1436–1483)
+- ✅ Validation errors move focus to first invalid field (`focusFirstInvalidField` L7151–7187)
+- ✅ Step transitions move focus to `<h2 ref={stepTitleRef} tabIndex={-1}>` (L7095 effect)
+- ✅ Retry moves focus to step title (`scheduleFocusTimer` L7574)
+- ✅ Success/Error screens focus their headings on mount
+- ⚠️ W1-11-F5: Elapsed-slot focus loss — when 60-sec tick marks a Tab-focused slot as `elapsed`, focus drops to `document.body` (LOW, narrow window) — **✅ FIXED** (W1-11-F5 rescue effect in TimeSlotList: on tick, focus moves to the next non-elapsed slot, wrapping; clears `focusedKey` when none remain)
+- ⚠️ W2-29-N1 (NEW): `handleCancelSubmit` doesn't restore focus after Cancel button unmounts (LOW/MEDIUM). Fix: add `scheduleFocusTimer(() => stepTitleRef.current?.focus())` mirroring `handleRetry`. — **✅ FIXED** (added to `handleCancelSubmit`, deps `[flowStatus, scheduleFocusTimer]`)
 
 ---
 
-### Category 3 — State Machine & Flow Control (9 issues)
+### Category 7 — Sub-Component Inlining & Controlled Sync (6 issues)
 
-#### Issue F-03-1: Silent Step Swap When Intermediate Step's `enabled` Toggled OFF Mid-Flow
-- **Severity:** High
-- **Location:** Pipeline tracks position by array index, not step identity
-- **Wave 1 Discovery:** Sub-Agent 03 found that when an intermediate step's `enabled` flag is toggled OFF while the user is mid-flow, the CC-8 fix only catches `currentIndex >= totalActive`. If the disabled step is earlier than the current index (or is the current index but not the last), `activeSteps[currentIndex]` silently resolves to a different step's content.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed via Node simulation.
-- **Root Cause Analysis:** Pipeline tracks position by array index, not step identity.
-- **Impact:** User sees wrong step content with no warning.
-- **Recommended Remediation:** Track step ID (not array index) and re-resolve `currentIndex` against the new `activeSteps` array whenever `enabled` flags change.
-- **Status:** **Completed** — `useBookingEngineState` now pins the visited step by its stable normalized ID (`pinnedStepIdRef`, synced in a `[safeCurrentIndex, activeSteps]` effect). A render-phase guard compares the active-steps ID signature each render; when it changes, the index is re-resolved from the pinned ID (render-phase `setCurrentIndex`, legal re-render-during-render): earlier steps removed → index shifts so the visitor stays on the same step; the step they were on removed → next enabled step takes over (old clamp behavior as fallback). Runs before paint, so the wrong-step content never flashes once. Values/errors are keyed by field ID and are untouched. Bundles clean. | hook state L5988ff (`pinnedStepIdRef`/guard after `isLast`) | | Wave2-24
-
-#### Issue F-03-2 / D10: Review Step Re-Validate Guarantee Lost When Not at End
-- **Severity:** Medium
-- **Location:** L5404 (gate: `isLast && currentStep.stepType === "review"`)
-- **Wave 1 Discovery:** Sub-Agent 03 found the re-validate-all-prior-steps guarantee only fires when the review step is terminal. If the author places a review step anywhere else, prior steps aren't re-validated.
-- **Wave 2 Verification:** Wave2-24 marked out-of-scope (no contradicting verdict).
-- **Impact:** Stale data may slip through if author reorders steps.
-- **Recommended Remediation:** Re-validate prior steps on any review step entry, not just terminal.
-- **Status:** **Completed** — the guard is now `currentStep.stepType === "review"` (was `isLast && review`): any review step entry re-validates all prior steps, jumps to the first invalid one with fields touched and focus moved; when all prior steps are valid, flow just continues (submit on terminal review unchanged). | handleContinue review branch ~L6991 | | Wave2-24
-
-#### Issue F-03-3: `useStateGuarded` Doesn't Retroactively Clamp
-- **Severity:** Medium
-- **Location:** L6415 (`useStateGuarded` hook)
-- **Wave 1 Discovery:** Sub-Agent 03 found the hook doesn't clamp when `max` shrinks. Currently relies on consumer's `useLayoutEffect` + `safeCurrentIndex` clamp (defense-in-depth works, but the hook name is misleading).
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed; Wave2-33 A3 verified the setter identity churns when `max` changes.
-- **Impact:** Misleading API; defense-in-depth may regress.
-- **Recommended Remediation:** Make `useStateGuarded` clamp on `max` change.
-- **Status:** **Completed** (also closes W2-33-A3) — the max now lives in a latest-ref maintained by an effect (same convention as `valuesRef`), so the setter is a permanently stable `[]`-dep callback; a second effect re-clamps already-committed state whenever the ceiling drops. Consumers' `safeCurrentIndex` defense-in-depth stays as belt-and-braces. | useStateGuarded L8398ff | | Wave2-24, Wave2-33 A3
-
-#### Issue F-03-4 / D11 / D17: `handleContinue` In-Flight Double-Click Guard Missing
-- **Severity:** Medium (scope-narrowed by Wave 2)
-- **Location:** `handleContinue` step-to-step advance (non-POST path)
-- **Wave 1 Discovery:** Sub-Agent 03 found rapid Continue→Continue can compose `setCurrentIndex(i => i+1)` updaters to skip a step. Sub-Agent 04 separately found non-POST analytics duplication.
-- **Wave 2 Verification:** Wave2-22 FP-22-01 initially dismissed as false positive (React 18 batching). Wave2-24 empirically confirmed: React 18 batching does NOT prevent functional-updater composition across separate event handlers. **POST path is safe via `submittingRef`**; only non-POST analytics duplicated. Wave2-24 recommended `useEffect([safeCurrentIndex])` release instead of `setTimeout(0)`.
-- **Impact:** Duplicate `booking_success` / `booking_error` analytics events on rapid Continue clicks.
-- **Recommended Remediation:** Add `navigatingRef` (mirroring `submittingRef`); release via `useEffect([safeCurrentIndex])`, not `setTimeout(0)`.
-- **Status:** **Completed** — exactly the recommended shape: `navigatingRef` claims the window synchronously before the `step_complete` analytics + `startTransition` advance; released by an effect on `[safeCurrentIndex]` (covers Continue/Back/jump/restart/retry without timers). The POST/submit path remains under the pre-existing `submittingRef`. | navigatingRef decl ~L6672, guard in handleContinue ~L7077, release effect ~L6690 | | Wave2-24
-
-#### Issue F-03-5 / D9: `handleJumpToStep` Bypasses `transitionFlowStatus` State Machine
-- **Severity:** Medium
-- **Location:** `handleJumpToStep` function
-- **Wave 1 Discovery:** Sub-Agent 03 found raw `setFlowStatus("in-progress")` bypasses the state-machine guard.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed.
-- **Impact:** State-machine integrity risk.
-- **Recommended Remediation:** Route through `transitionFlowStatus`.
-- **Status:** **Completed** — `handleJumpToStep` now calls `transitionFlowStatus("in-progress")` instead of raw `setFlowStatus` (added to the dep array). | handleJumpToStep L7115ff | | Wave2-24
-
-#### Issue F-03-6: Raw `currentIndex` Used in `handleContinue` Review Branch
-- **Severity:** Low
-- **Location:** L5408
-- **Wave 1 Discovery:** Sub-Agent 03 found `handleContinue`'s review-step branch reads raw `currentIndex` instead of `safeCurrentIndex`.
-- **Wave 2 Verification:** Wave2-33 A4 ✅ confirmed.
-- **Impact:** Edge-case crash if `currentIndex` is out of bounds.
-- **Recommended Remediation:** Use `safeCurrentIndex` consistently.
-- **Status:** **Completed** (covered by the W1-04-M4 fix, verified again in this pass) — the Fix #21 jump-back comparison in `handleContinue`'s review branch reads the clamped `safeCurrentIndex`, not raw `currentIndex` (explicit W2-33-A4 comment in code). | handleContinue review branch ~L6995 | | Wave2-33 A4
-
-#### Issue F-03-7: Field Reordering Orphans Entered Values
-- **Severity:** Low
-- **Location:** L3357–3360 (acknowledged limitation)
-- **Wave 1 Discovery:** Sub-Agent 03 found if the author reorders fields within a step, previously entered values are orphaned.
-- **Wave 2 Verification:** Acknowledged limitation.
-- **Impact:** Author-side data loss on field reorder.
-- **Recommended Remediation:** Track field ID (not array index) for value storage.
-
-#### Issue F-03-8 / F-03-9: Informational Notes (No Action)
-- **Severity:** Informational
-- **Location:** Step counter arithmetic verified CORRECT; `ReviewStepBody` Edit-link forward-jump edge case.
-- **Wave 1 Discovery:** Sub-Agent 03 verified step counter is correct (`safeCurrentIndex + 1`, `totalActive`, no off-by-one).
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed.
-
-#### Issue W1-04-M4: `handleContinue` Deps Array Omits `validationCopy`
-- **Severity:** Medium
-- **Location:** `handleContinue` `useCallback` dep array
-- **Wave 1 Discovery:** Sub-Agent 04 found `validationCopy` is transitively covered via `copy`, but explicit dep is missing.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed.
-- **Impact:** Fragile — future refactor of `copy` nesting would break validation.
-- **Recommended Remediation:** Add `validationCopy` to deps.
-- **Status:** ✅ FIXED — `validationCopy` added to `handleContinue`'s dep array (L5859–5876); `currentIndex` removed since the body no longer reads it. Also covers W2-33-A4: the Fix #21 jump-back comparison now uses the clamped `safeCurrentIndex` instead of raw `currentIndex`, so a step disabled mid-flow can't misdirect the jump (L5787–5800). Verified via `bun build` transpile.
-
----
-
-### Category 4 — Form Validation (11 issues)
-
-#### Issue W1-04-C1 / D7: `PHONE_REGEX` Rejects Valid International Formats (CRITICAL)
-- **Severity:** Critical
-- **Location:** L3174 (`const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,9}$/;`)
-- **Wave 1 Discovery:** Sub-Agent 04 found the regex has only 2 separator slots but real international numbers have 3-4 separators. Empirically tested via Node: 8 of 13 valid formats rejected.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed (Node test); Wave2-39 H8 ✅ amplified — `+1 (555) 123-4567`, `+44 20 7946 0958`, `+86 138 0013 8000` all REJECTED.
-- **Root Cause Analysis:** Regex pattern too restrictive — only 3 mandatory digit groups, but most international numbers split into 4.
-- **Impact:** Every international user fails phone validation; cannot advance past the form step.
-- **Recommended Remediation:**
+#### Issue SYN-08 — `ChoiceGroupInline` `React.memo` Defeated (HIGH, refined)
+- **Severity:** 🟠 High (cascade severity corrected by W2-22 from HIGH to LOW for perf; kept HIGH for correctness regression)
+- **Location:** L9870–9877 (fresh `opts` array), L9931 (inline `onChange`), L795–808 (mount-seed effect)
+- **Wave 1 Discovery:** Sub-Agent 08 rated this HIGH, claiming "every parent render cascades to ChoiceGroupInline". Sub-Agent 16 rated it LOW.
+- **Wave 2 Verification:** W2-22 ⚠️ REFINED — Sub-Agent 08's cascade model was incorrect: `FieldRenderer` (the actual parent of `ChoiceGroupInline`) is itself `React.memo`'d at L9620, so per-keystroke in field A does NOT re-render field B's FieldRenderer. The "every parent render" cascade doesn't exist. **However**, W2-27 confirmed that when FieldRenderer DOES re-render (on choice click, value change, error change), the fresh `opts` array and inline `onChange` break the memo. W2-35 confirmed the net-benefit of the fix is positive.
+- **The deeper correctness regression:** The fresh `opts` identity invalidates the `parsedOptions` `useMemo` (L780) → resets `firedInitialRef.current = false` → L795 mount-seed effect re-fires `setInternalSelected(firstOptionLabel)` → parent `setValues` round-trip → **required choice groups auto-pass validation without user interaction** (W1-20-F-1). User can never truly clear a choice field.
+- **Recommended Fix:**
 ```typescript
-// Replace L3174 with a regex that accepts 3-4 separators:
-const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,9}$/;
-// Or use libphonenumber-js for true E.164 validation.
+// In FieldRenderer (around L9870):
+const opts = useMemo(() => field.options?.map(...) ?? [], [field.options])
+const handleChoiceChange = useCallback((value: string) => onFieldChange(field.id, value), [field.id, onFieldChange])
+// Then at L9931:
+<ChoiceGroupInline onChange={handleChoiceChange} ... />
 ```
+- **Status: Completed** — `FieldRenderer` now builds `opts` via a top-of-component `useMemo` (deps `[field.options, field.optionImages, field.optionDescriptions]`, all referentially stable via memoized normalized steps) and passes a `useCallback` `handleChoiceChange`; the inline arrow and per-render `.map()` are gone. `ChoiceGroupInline`'s `React.memo` holds across FieldRenderer re-renders, the mount-seed onChange (W1-08-CG-02) no longer re-fires, and required choice groups no longer auto-pass validation. Closes W1-08-F-08-02/05, W1-16-P-16, W1-20-F-1.
 
-- **Status:** Completed (applied a generalized pattern that also accepts the UI placeholder `+1 (555) 555-5555`, which the report's suggested 4-group regex still rejected; `validatePhone`'s existing ≥7-digit guard retained)
-
-#### Issue W1-04-H1 / D3: `validationCopy` Memo Wrong Dep
-- **Severity:** High
-- **Location:** L4533–4552 (`useMemo` reads `validation` prop but lists `[copy]` in deps)
-- **Wave 1 Discovery:** Sub-Agent 04 found the memo body reads `validation` but the dep array is `[copy]`. Latent today (because `validation` is nested under `copy.controls.validation` in property controls), but structurally wrong.
-- **Wave 2 Verification:** Wave2-33 ✅ confirmed HIGH; Wave2-35 A-01 ✅ re-discovered independently.
-- **Impact:** Stale validation messages in Framer editor when `validation` changes alone.
-- **Recommended Remediation:** Change `}, [copy])` to `}, [validation])`.
-- **Status:** Completed (dep array `[copy]` → `[validation]`; `validationCopy` memo now recomputes when the Validation group changes)
-
-#### Issue W1-04-H2 / D2: Custom-Regex ReDoS Vulnerability
-- **Severity:** High
-- **Location:** L3493 (`new RegExp(field.customRegex)`)
-- **Wave 1 Discovery:** Sub-Agent 04 found custom regex is recompiled on every `validateField` call (no memoization). Worse, certain patterns cause catastrophic backtracking. Compounded by `handleFieldChange` calling `validateField` on every keystroke.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed via Node timing test: 25-char input against `(a+)+$` hangs 3 278 ms; 30-char input times out the 6-second wrapper. Wave2-39 I3 ✅ amplified — runtime `try/catch` does NOT catch catastrophic backtracking.
-- **Impact:** Denial-of-service vector — visitor can freeze the main thread by typing into a field with a pathological custom regex.
-- **Recommended Remediation:** Memoize compiled regex per field (WeakMap); add ReDoS-safe pattern check or 100ms timeout; expose `customRegexFlags` PropertyControl.
-- **Status:** Completed. Three parts: (1) `getCompiledCustomRegex` (`L3643`) compiles once per field + pattern and caches in a `WeakMap`, recompiling only when the author changes the pattern. (2) `isReDosRisky` (`L3553`) statically rejects patterns with an inner quantifier or ambiguous-alternation group under an unbounded outer quantifier — `(a+)+`, `(a|aa)+`, `(ab|a)+`, `([a-z]+)*`, nested groups — BEFORE compiling; the author sees the copy at `L3455` instead of a frozen tab. The check is precision-tuned: `(mon|tue|fri)+` and `(tue|thu)+` (disjoint/equal-length alternatives are poly-time) stay allowed. (3) Verified with a 35-pattern Node corpus — every ReDoS shape blocked, every benign shape allowed, 0 mismatches; file transpiles clean.
-
-#### Issue W1-04-H3 / D8: `sessionStorage` Restore Bypasses Validation (Phase-1 fix)
-- **Severity:** High (escalated to Phase-1 fix per synthesis)
-- **Location:** L4885–4891 (restore effect)
-- **Wave 1 Discovery:** Sub-Agent 04 found `setCurrentIndex(parsed.currentIndex)` happens without re-validating prior steps.
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed HIGH; Wave2-31 ✅ confirmed + added GDPR angle.
-- **Root Cause Analysis:** Restore effect trusts persisted state without re-validation.
-- **Impact:** Visitor can refresh the page and land on a later step even if prior steps are invalid.
-- **Recommended Remediation:** After restoring `currentIndex`, run `validateStep` on all prior steps; if any fails, clamp `currentIndex` to the first invalid step.
-- **Status:** Completed (restore effect now loops `validateStep` over all prior steps against the restored values and clamps `currentIndex` to the first invalid step; the restored step itself is exempt as it may be mid-fill)
-
-#### Issue W1-04-L3: `EMAIL_REGEX` Accepts Invalid Emails
-- **Severity:** Low
-- **Location:** L3173
-- **Wave 1 Discovery:** Sub-Agent 04 found the regex accepts `user@domain..com` (double dot), `user@.com` (no domain), `user@domain.com.` (trailing dot).
-- **Wave 2 Verification:** Wave2-24 ✅ confirmed via Node test; Wave2-39 H7 ✅ amplified.
-- **Impact:** Invalid emails may pass validation; downstream Cal.com submission may fail.
-- **Recommended Remediation:** Tighten regex: `/^[^\s@]+@([^\s@]+\.)+[^\s@]{2,}$/`.
-- **Status:** Completed (regex rewritten DNS-label shaped — one or more alnum labels joined by single dots, TLD ≥2 alnum chars; verified via Node: all 6 valid formats accepted, all 10 invalid shapes rejected, while the old regex still accepted `user@domain..com` and `user@domain.com.`)
-
-#### Issue W1-20-H3: Min-Length Validation Fires on Optional Fields
-- **Severity:** Medium
-- **Location:** `validateField` for `fieldType: "text"` / `"textarea"`
-- **Wave 1 Discovery:** Sub-Agent 20 found `MIN_TEXT_LENGTH = 3` validation fires even on optional fields (prior T4-H2 still open).
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Optional text fields block submission when partially filled.
-- **Recommended Remediation:** Gate min-length validation on `field.required || str.trim().length > 0`.
-- **Status:** **Completed** — both min-length emissions in `validateField` (the explicit `min-length` rule AND the type-derived text/textarea check) are now gated on `field.required`; optional fields accept any partial input (the `isEmpty` early-return already lets them pass empty). | validateField L4300–4335 | | Wave2-39
-
-#### Issue W1-20-M1: Missing `inputMode` on Phone/Email Inputs
-- **Severity:** Medium
-- **Location:** `FieldRenderer` text/email/phone inputs
-- **Wave 1 Discovery:** Sub-Agent 20 found no `inputMode="tel"` or `inputMode="email"`.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Mobile users see wrong keyboard (no phone keypad for phone field).
-- **Recommended Remediation:** Add `inputMode` based on `autocompleteToken` heuristic.
-- **Status:** **Completed** — email inputs get `inputMode="email"`, phone `inputMode="tel"` (text stays unset = default keyboard). | FieldRenderer text/email/phone branch ~L9555 | | Wave2-39
-
-#### Issue W1-20-M2: No `name` Attribute on Inputs
-- **Severity:** Medium
-- **Location:** All input/textarea/select/checkbox in `FieldRenderer`
-- **Wave 1 Discovery:** Sub-Agent 20 found inputs have no `name` attribute.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Breaks password-manager grouping; autofill doesn't work.
-- **Recommended Remediation:** Add `name={field.id}` to all inputs.
-- **Status:** **Completed** — `name={field.id}` added to every control: text/email/phone input, textarea, select, checkbox (ChoiceGroupInline radios are already named via `inputName`). | FieldRenderer all branches | | Wave2-39
-
-#### Issue W1-20-M3: Character Counter Only on Textarea
-- **Severity:** Medium
-- **Location:** `FieldRenderer` textarea vs. text/email/phone
-- **Wave 1 Discovery:** Sub-Agent 20 found text/email/phone inputs are silently capped by `effectiveMaxLength` with no visible counter.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Users don't know their input was truncated.
-- **Recommended Remediation:** Render character counter for all capped inputs.
-- **Status:** **Completed** — the text/email/phone branch now renders the same `{currentLen}/{maxLen}` counter the textarea already had (shared `maxLen`/`currentLen` computed at the render top). | FieldRenderer text/email/phone branch ~L9590 | | Wave2-39
-
-#### Issue W1-20-M4: `effectiveMaxLength` Allows RFC 5321 Override
-- **Severity:** Medium
-- **Location:** L4405
-- **Wave 1 Discovery:** Sub-Agent 20 found the cap of 2000 lets authors override email `maxLength` above RFC 5321's 254-char limit.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Authors can configure invalid email `maxLength`.
-- **Recommended Remediation:** Clamp email `maxLength` to 254 regardless of author setting.
-- **Status:** **Completed** — `effectiveMaxLength` clamps the email branch to `min(authored||254, 254)` before any other logic; author settings above RFC 5321's limit are ignored for email only. | effectiveMaxLength L5502ff | | Wave2-39
-
-#### Issue W1-20-M5: Non-Required `<select>` Has No Clear-Selection Affordance
-- **Severity:** Medium
-- **Location:** `FieldRenderer` select
-- **Wave 1 Discovery:** Sub-Agent 20 found once a user selects an option in a non-required select, they cannot clear it.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** UX dead-end for non-required selects.
-- **Recommended Remediation:** Add a "Clear" button or "(none)" option for non-required selects.
-- **Status:** **Completed** (verified by inspection — already satisfied in current code) — the placeholder option is `<option value="" disabled={field.required}>`: on non-required fields it stays selectable, so the visitor can always return to "(none)" and clear the value; required fields keep it disabled so they can't submit an empty selection. | FieldRenderer select ~L9264 | | Wave2-39
-
-#### Issue W1-20-M6: No Author-Time Regex Validity Preview
-- **Severity:** Medium
-- **Location:** PropertyControls for `customRegex`
-- **Wave 1 Discovery:** Sub-Agent 20 found authors have no way to test their regex pattern in the Framer editor before publishing.
-- **Wave 2 Verification:** Wave2-39 ✅ confirmed.
-- **Impact:** Authors discover invalid regex only after publishing.
-- **Recommended Remediation:** Add a canvas-only "test input" preview field next to `customRegex`.
-- **Status:** Completed. New field-level property control `Test Input (canvas)` (gate: `validationRule === "custom-regex"`, same safe pattern as `customRegex`). When an author types sample text, a canvas-only verdict banner renders above the flow using the exact production code path (`isReDosRisky` + `getCompiledCustomRegex`): ✓ matches / ✗ no match / invalid pattern / ReDoS risk — four kinds color-coded green/red/amber. Zero render in preview or published site (`isCanvas` gate).
-- **Note:** W1-20-H2 (also in Phase-2 plan row 5) has no detail section in this report and the Wave-1 findings files are not in the repo; its remediation is unrecoverable from the codebase. Flagged for source-file lookup before claiming row 5 complete.
-
----
-
-### Category 5 — Cal.com Integration (Slots + POST + ICS) (28 issues)
-
-#### Issue W1-05-F1 / D14: `monthCacheKey` Omits `apiKey` + `eventTypeId`
-- **Severity:** High
-- **Location:** L3631 (`monthCacheKey` function) + L3640 (`useCalcomSlots`)
-- **Wave 1 Discovery:** Sub-Agent 05 found the cache key includes month + timezone but NOT `apiKey` or `eventTypeId`.
-- **Wave 2 Verification:** Wave2-25 F1 ✅ confirmed HIGH; Wave2-33 A1 ✅ re-discovered independently.
-- **Impact:** When an author swaps Cal.com credentials or eventTypeId in Framer, the cache serves stale slots from the previous configuration.
-- **Recommended Remediation:** Extend `monthCacheKey` to include `apiKey` + `eventTypeId`; add bulk cache invalidation effect on credential change.
-- **Status:** **Completed** — `monthCacheKey` now takes `apiKey` + `eventTypeId` (both call sites updated: `refetch` delete + fetch-effect read); a bulk `cacheRef.current.clear()` effect runs on `[apiKey, eventTypeId]` change so old-config entries don't accumulate. Config swaps in Framer now fetch fresh slots instead of serving the previous credentials' cache. Bundles clean. | monthCacheKey L4530ff, refetch + invalidation effect L4590ff, effect read L4622ff | | Wave2-25 F1, Wave2-33 A1
-
-#### Issue W1-05-F2 / D4: Cal.com API Key Shipped to Browser
-- **Severity:** High
-- **Location:** L3996 (slots GET `Authorization: Bearer ${apiKey}`); ~L4006 (POST same)
-- **Wave 1 Discovery:** Sub-Agent 05 found the API key is bundled into client-side JS and sent in plaintext Bearer header.
-- **Wave 2 Verification:** Wave2-25 ✅ confirmed (architectural; cross-ref CC-4, T2-C4, T3-I5).
-- **Impact:** Any visitor with DevTools can read the key and replay it to read/modify/cancel all bookings.
-- **Recommended Remediation:** Architectural — proxy through a Framer backend function or serverless endpoint that injects the key server-side. Client should POST to `/api/calcom/slots` and `/api/calcom/bookings`. If proxy is out of scope, document as a known security gap and switch to Cal.com's embed-iframe flow.
-- **Status:** Completed (documentation path — the file already carries a KNOWN SECURITY LIMITATION block at L3144–3160 covering exactly this: client-side key exposure, DevTools replay risk, rotation/scoping guidance, and the proxy fix requirement. No code change possible inside the single-file constraint; proxying remains a documented infra requirement)
-
-#### Issue W1-05-F3: `.finally()` Clears Timeout After First Attempt
-- **Severity:** Medium
-- **Location:** Inside `useCalcomSlots` fetch promise chain
-- **Wave 1 Discovery:** Sub-Agent 05 found `.finally()` clears the 18s timeout after the first attempt; 5xx retries lose timeout protection.
-- **Wave 2 Verification:** Wave2-25 F2 ✅ confirmed.
-- **Impact:** Retry path can hang indefinitely.
-- **Recommended Remediation:** Move `clearTimeout(timeoutId)` out of `.finally()` into terminal paths only.
-- **Status:** **Completed** — the shared timer is gone; each `attempt()` arms its own `attemptTimeoutId` (aborting the shared controller at 18s) and clears it in its own `.finally`, so a hung 5xx retry is still aborted and surfaces `slotsTimeoutError` instead of stalling `loading=true` forever. Accumulated backoff timers are still cancelled on cleanup. | useCalcomSlots attempt L4725ff / finally L4905ff | | Wave2-25 F2
-
-#### Issue W1-05-F4: Date Range in Browser-Local TZ
-- **Severity:** Medium
-- **Location:** `useCalcomSlots` GET URL construction
-- **Wave 1 Discovery:** Sub-Agent 05 found `start` / `end` are computed in browser-local tz, not the visitor-selected `timeZone`.
-- **Wave 2 Verification:** Wave2-25 F3 ✅ confirmed.
-- **Impact:** Slots near month boundaries may be missed.
-- **Recommended Remediation:** Widen date range ±1 day to absorb TZ-boundary drift.
-- **Status:** ✅ FIXED — the slots GET range is now widened by one calendar day on each side of the month (L4684ff). Browser-local vs visitor-tz drift (up to ±14h) can no longer push the visitor's first/last day outside the requested range; the calendar grid renders only visible dates so neighboring-day slots are harmless extra data. Verified via `bun build` transpile.
-
-#### Issue W1-06-F-06-1 / W2-25-F4: POST Body Missing `end` Field (CRITICAL)
-- **Severity:** High (escalated to Phase-1 fix per synthesis)
-- **Location:** `submitCalcomBooking` POST body construction (~L4006–4029)
-- **Wave 1 Discovery:** Sub-Agent 06 found Cal.com v2 requires `end` (ISO datetime). Implementation sends only `start`. Data is already in scope (`slot.end` captured at L3820, used by `buildIcsDataUri` L4330 and `buildCalendarDeepLink` L4433) but never threaded into the POST body.
-- **Wave 2 Verification:** Wave2-25 F4 ✅ confirmed — "single most impactful defect in the entire Wave 2 audit".
-- **Impact:** **Every booking attempt will 400-reject** under Cal.com v2's required-field schema.
-- **Recommended Remediation:**
+#### Issue SYN-10 — Hidden Form-State Input Writes Presentation Fallback (HIGH)
+- **Severity:** 🟠 High
+- **Location:** ChoiceGroupInline L723–730 (fallback derivation), L1156 (hidden input binding)
+- **Wave 1 Discovery:** Sub-Agent 08 found that `selected` falls back to `parsedOptions[0]?.label` when `controlledValue` matches no option (intentional for tabIndex/aria-checked). But L1156 binds `value={selected}` to the hidden `<input type="hidden">`, so the form-state dump submits `parsedOptions[0].label` while the parent's React state holds a different value.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED via direct read. W2-27 ✅ CONFIRMED.
+- **Recommended Fix:** Split `selected` into `presentationSelected` (for tabIndex/aria-checked, falls back to first option) and `formValue` (for the hidden input, uses actual `controlledValue` even if it matches no option):
 ```typescript
-// In submitCalcomBooking:
-const body = {
-  eventTypeId,
-  start: slot.start,
-  end: slot.end,           // ADD THIS LINE — slot.end is already in scope
-  responses: { ... },
-  timeZone,
-  language,
-  metadata,
-};
+const presentationSelected = controlledValue ?? parsedOptions[0]?.label ?? ""
+const formValue = controlledValue ?? ""
+// L1156: <input type="hidden" value={formValue} ... />
+// tabIndex/aria-checked use presentationSelected
 ```
-- **Status:** Completed (`slotEnd` param added to `submitCalcomBooking`, gated by the same ISO-format guard as `start`; call site in `handleSubmitBooking` now passes `slot.end`, which is captured at slot-mapping time and threaded through `getPayload` → `BookingPayload.end`)
+- **Status: Completed** — `ChoiceGroupInline` (~L723) now keeps `selected` as the presentation value while a new `formValue` (= real `controlledValue`, or `internalSelected` when uncontrolled) feeds the hidden `<input>` at ~L1160. The form-state dump no longer submits the first option's label when the parent holds a different value; `isSelected`/border/tabIndex logic is untouched and still keys off `selected`.
 
-#### Issue W1-06-F-06-3: `manageUrl` Hardcoded
-- **Severity:** Medium
-- **Location:** SuccessScreen `manageUrl = https://cal.com/booking/${uid}`
-- **Wave 1 Discovery:** Sub-Agent 06 found Cal.com v2's response includes `rescheduleUrl` and `cancelUrl` which are discarded.
-- **Wave 2 Verification:** Wave2-25 ✅ confirmed.
-- **Impact:** Breaks for self-hosted Cal.com instances; collapses reschedule/cancel into one generic link.
-- **Recommended Remediation:** Use `bookingResult.rescheduleUrl` and `bookingResult.cancelUrl` from the Cal.com response.
-- **Status:** ✅ FIXED — the success screen's manage link now prefers the API-provided `rescheduleUrl` (else `cancelUrl`) over the constructed `https://cal.com/booking/{uid}` fallback, which was host-wrong on self-hosted instances. Both fields are captured across the nested v2 response shapes (`data.booking.*`, `data.*`, top-level) and threaded through `SubmitBookingResult` → `BookingConfirmation`. Link count and label semantics unchanged. Verified via `bun build` transpile.
+#### Issue W1-08-F-08-04 — External `controlledValue` Change Doesn't Move DOM Focus (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** ChoiceGroupInline sync effects
+- **Wave 1 Discovery:** Sub-Agent 08 found that when `controlledValue` changes externally (e.g., Reset button, cross-field auto-select, step re-entry), the re-render updates `tabIndex` (old button → `-1`, new button → `0`), but the browser focus stays on the old button — now unreachable via Tab. Strands keyboard/SR users.
+- **Wave 2 Verification:** W2-27 ✅ CONFIRMED via full enumeration of all 13 `.focus()` call sites — only L768/L875/L892/L899 fire, all on user-initiated events.
+- **Recommended Fix:** Add an effect that moves focus to the newly-selected button when `controlledValue` changes externally (distinguish from user-initiated change via a ref flag).
+- **Status: Completed** — `lastUserPickRef` tags user picks in `selectOption`; an effect on `[controlledValue, parsedOptions]` skips those and otherwise rAF-focuses the button for the new controlled value (cleanup cancels the frame on re-render/unmount).
 
-#### Issue W1-06-F-06-4 / W2-25-F5: `X-Idempotency-Key` Header Not Officially Supported
-- **Severity:** Medium
-- **Location:** L4002–4004 (header sent)
-- **Wave 1 Discovery:** Sub-Agent 06 found the header is sent but Cal.com v2's `/bookings` endpoint doesn't officially document it.
-- **Wave 2 Verification:** Wave2-25 F5 ✅ confirmed.
-- **Impact:** If unsupported, retry path provides no protection against duplicate bookings.
-- **Recommended Remediation:** Verify with Cal.com staging; if unsupported, document and remove.
-- **Status:** ✅ FIXED — verified against Cal.com v2's published OpenAPI (POST /v2/bookings, 2026): `X-Idempotency-Key` is NOT a listed parameter (only `cal-api-version`, `Authorization`, `x-cal-secret-key`, `x-cal-client-id`). Header retained as a harmless best-effort but the claim "Cal.com rejects duplicate bookings on the same key" was REMOVED — the comment now documents the verified reality: no documented server enforcement, client NEVER auto-retries the POST, and the only residual duplicate exposure is manual visitor re-submission after an ambiguous failure. Updated comment at L4174–4187 (was the T3-H2 claim).
-
-#### Issue W1-06-F-06-5: ICS Not RFC 5545-Escaped
-- **Severity:** Medium
-- **Location:** `buildIcsDataUri` (L4311–4390)
-- **Wave 1 Discovery:** Sub-Agent 06 found SUMMARY/DESCRIPTION not TEXT-escaped — commas, semicolons, backslashes not escaped.
-- **Wave 2 Verification:** Wave2-25 ✅ confirmed.
-- **Impact:** Strict calendar clients (Apple Calendar) may mis-parse.
-- **Recommended Remediation:** Add `escapeIcsText` helper (escape `\`, `;`, `,`, newlines).
-- **Status:** ✅ FIXED — new `escapeIcsText` helper (RFC 5545 §3.3.11 order: backslash → semicolon → comma → newlines as `\n`) now wraps both `SUMMARY` and `DESCRIPTION` in `buildIcsDataUri`. Escape order matters: backslash must come first so the shell-escaped `\;`/`\,` survive the pass. Verified via `bun build` transpile.
-
-#### Issue W1-06-F-06-6 through W1-06-F-06-13: 8 Lower-Priority Cal.com POST Issues
-- **Severity:** Low (8 findings)
-- **Location:** ICS line folding (75 octets), iOS Safari `data:` URI unreliability, ICS DESCRIPTION when no form answers, `handleJumpToStep` AbortController bypass, `mapCalcomError` substring fragility, `language` field 2-char truncation, Outlook URL consumer-only, `bookingResult.uid` undefined despite success.
-- **Wave 1 Discovery:** Sub-Agent 06 cataloged each.
-- **Wave 2 Verification:** Wave2-25 ✅ confirmed.
-- **Recommended Remediation:** See Fix Cluster 7 in synthesis.
-- **Status:** Partial — see per-item detail in Fix Cluster 7 below.
-
-**Fix Cluster 7 item-by-item:**
-- ICS line folding (75 octets): ✅ FIXED — `foldIcsLines` folds at 75 UTF-8 octets (never splitting a multi-byte sequence; verified lossless round-trip incl. astral-plane chars) and is applied at `buildIcsDataUri` assembly.
-- iOS Safari `data:` URI unreliability: documented — the calendar link is one of three add-to-calendar affordances (Google/Outlook deep links remain), so a data-URI failure still has fallbacks. No code change.
-- ICS DESCRIPTION when no form answers: no-op — the field is only emitted when a description exists.
-- `handleJumpToStep` AbortController bypass: ✅ FIXED — jumping steps mid-submission now aborts the in-flight POST and consumes the late return exactly like the Cancel button (cancelRequestedRef + submitSeqRef), so the visitor is never dragged into the result screen from the step they jumped to.
-- `mapCalcomError` substring fragility: already mitigated — T3-M2 made machine-readable codes branch FIRST; substring heuristics only run for messages with no code. Residual substring risk documented as Low.
-- `language` field 2-char truncation: already fixed (T3-L2, `slice(0, 2)` + `navigator.language`).
-- Outlook URL consumer-only: documented — deep link targets outlook.com/owa; no enterprise OWA endpoint config exists in the component's config surface.
-- `bookingResult.uid` undefined despite success: already fixed (T3-M1 nested-shape fallback chain).
-
-#### Issue W1-06-F-06-14, F-06-15: Refactor Items
-- **Severity:** Refactor (2 findings)
-- **Location:** `handleRetry` doesn't clear `idempotencyKeyRef`; POST `eventTypeId` numeric coercion rejects slug-based IDs.
-- **Wave 1 Discovery:** Sub-Agent 06 cataloged each.
-- **Wave 2 Verification:** Wave2-25 ✅ confirmed.
-- **Status:** F-06-14 documented as intentional — the idempotency key is deliberately REUSED across a manual re-submit of the same slot (the client never auto-retries), which is the only residual duplicate-protection proxy available given Cal.com v2 does not enforce `X-Idempotency-Key` (W1-06-F-06-4). It is cleared on success, on cancel, and on slot change; the T3-H2 comment documents the rationale. F-06-15 unchanged — `eventTypeId` is configured from Cal.com's numeric event-type ID surface; slug support is not an option in the current config model.
-
-#### Issue W2-25-F6: `Retry-After` Header Not Read on 429 (NEW)
-- **Severity:** Medium (NEW from Wave 2)
-- **Location:** `useCalcomSlots` catch handler
-- **Wave 1 Discovery:** N/A — discovered by Wave2-25.
-- **Wave 2 Verification:** Wave2-25 ✅ NEW.
-- **Impact:** Visitor sees generic "wait a moment" copy regardless of server hint.
-- **Recommended Remediation:** Read `Retry-After` header on 429; surface "Please wait N seconds" copy.
-- **Status:** ✅ FIXED — the non-ok branch of the slots fetch (L3940–3968) now parses `Retry-After` (numeric seconds or HTTP-date) onto the thrown error as `retryAfterSeconds`; the 429 catch branch (L4032–4047) surfaces "Please wait N seconds" (capped at 90) when the hint exists, falling back to the previous copy. Verified via `bun build` transpile.
-
-#### Issue W2-25-F7: Malformed JSON Leaks Raw Error Text (NEW)
-- **Severity:** Medium (NEW from Wave 2)
-- **Location:** `useCalcomSlots` `res.json()` call
-- **Wave 1 Discovery:** N/A — discovered by Wave2-25.
-- **Wave 2 Verification:** Wave2-25 ✅ NEW.
-- **Impact:** Visitor sees raw `JSON.parse` error text (e.g., "Unexpected token < in JSON at position 0").
-- **Recommended Remediation:** Wrap `res.json()` in try/catch; surface friendly error.
-- **Status:** ✅ FIXED — the shared typed reader `readJson` (L5241ff) now wraps `res.json()` in try/catch and rethrows one stable sentinel (`MALFORMED_JSON_RESPONSE`) instead of the raw SyntaxError text; the slots catch ladder maps the sentinel to the friendly `slotsFallbackError` copy, and the submit path's `mapCalcomError` naturally falls through to the generic "Something went wrong while submitting" fallback. No raw `JSON.parse` text can reach the visitor on either path. Verified via `bun build` transpile.
-
-#### Issue W2-25-F10: No `navigator.onLine` Check (NEW)
-- **Severity:** Medium (NEW from Wave 2)
-- **Location:** `useCalcomSlots` and `submitCalcomBooking`
-- **Wave 1 Discovery:** N/A — discovered by Wave2-25.
-- **Wave 2 Verification:** Wave2-25 ✅ NEW.
-- **Impact:** Offline visitor wastes a request; no proactive advisory.
-- **Recommended Remediation:** Check `navigator.onLine` before fetch; surface "You appear to be offline" copy.
-- **Status:** ✅ FIXED — new `offlineError` copy key (interface + defaults + Framer control) surfaces "You appear to be offline…". `useCalcomSlots`'s per-attempt check fails fast before dispatching (error state, no doomed request); `submitCalcomBooking` returns `OFFLINE` before the POST. Verified via `bun build` transpile.
-
-#### Issue W2-25-F11: No Cancel Button During In-Flight Submission (NEW)
-- **Severity:** Medium (NEW from Wave 2)
-- **Location:** Submit button during `flowStatus === "submitting"`
-- **Wave 1 Discovery:** N/A — discovered by Wave2-25.
-- **Wave 2 Verification:** Wave2-25 ✅ NEW.
-- **Impact:** Visitor stares at spinner for up to 18s with no escape except page navigation.
-- **Recommended Remediation:** Add Cancel button that calls `abortControllerRef.current?.abort()`.
-- **Status:** ✅ FIXED — Cancel button rendered in the footer nav only while `isSubmitting` (L6883–6908); `handleCancelSubmit` aborts `abortControllerRef.current`, frees the double-submit guard, clears the stale idempotency key, and returns to the review form. The cancelled POST's late return (an AbortError surfaces as a TIMEOUT-shaped failure) is swallowed via `cancelRequestedRef` + `submitSeqRef` so no error screen appears and a newer submission started after the cancel is never clobbered (guard at L5718–5744). Verified via `bun build` transpile.
-
-#### Issue W2-25-F12: GET/POST Retry Asymmetry (NEW)
-- **Severity:** Low (NEW from Wave 2)
-- **Wave 1 Discovery:** N/A — discovered by Wave2-25.
-- **Wave 2 Verification:** Wave2-25 ✅ NEW.
-- **Impact:** Future maintainer could "fix" asymmetry and create duplicate-booking hazard.
-- **Recommended Remediation:** Document retry-path asymmetry; add code comment.
-- **Status:** ✅ FIXED — code comment added above the GET 5xx retry block (L4044–4056): the slots GET retries up to 2× with backoff while the booking POST deliberately never auto-retries, because a retried POST whose first attempt actually succeeded server-side could double-book (and Cal.com does not document idempotency-key enforcement, W1-06-F-06-4). Includes an explicit "do not 'fix' without server-side idempotency" warning.
-
----
-
-### Category 6 — Timezone & i18n (9 issues)
-
-#### Issue F-07-1: Invalid `timeZone` Silently Falls Back
-- **Severity:** Medium
-- **Location:** `sessionStorage` restore at L4870–4875
-- **Wave 1 Discovery:** Sub-Agent 07 found invalid `timeZone` strings from `sessionStorage` restore are unvalidated. Helpers fall back silently to browser-local, but Cal.com fetch URL still gets the bad string → 400 error.
-- **Wave 2 Verification:** Wave2-26 ✅ confirmed.
-- **Impact:** Visitor can't recover from a 400 error caused by stale sessionStorage.
-- **Recommended Remediation:** Add `isValidTimeZone()` validator at the restore boundary.
-- **Status:** ✅ FIXED — new `isValidTimeZone` helper (try/catch on `Intl.DateTimeFormat` with the candidate) added beside `detectTimezone`; the sessionStorage restore's timeZone branch now validates and falls back to `detectTimezone()` for invalid IANA strings, so a bad string never reaches the slots fetch URL. Verified via `bun build` transpile.
-
-#### Issue F-07-2: `SuccessScreen.toLocaleDateString` Not Try/Catch'd
-- **Severity:** Medium
-- **Location:** L7519
-- **Wave 1 Discovery:** Sub-Agent 07 found this call isn't guarded, unlike upstream tz helpers. Render-crash if invalid tz reaches this code path.
-- **Wave 2 Verification:** Wave2-26 ✅ confirmed.
-- **Recommended Remediation:** Wrap in try/catch; fall back to UTC.
-- **Status:** ✅ FIXED — the SuccessScreen confirmation summary's zoned `toLocaleDateString` (L9893ff) is now wrapped in try/catch with a browser-local fallback, so an invalid `timeZone` (author typo, corrupt restore, stale prop) degrades gracefully instead of crashing the screen. Verified via `bun build` transpile.
-
-#### Issue F-07-3: DST Fall-Back Produces Duplicate Labels
-- **Severity:** Low
-- **Location:** `formatTimeLabel` for DST-observing timezones
-- **Wave 1 Discovery:** Sub-Agent 07 found DST fall-back (e.g., 2024-11-03 NY) produces two distinct UTC instants that both format to "01:00 AM" with no tz-abbreviation disambiguation.
-- **Wave 2 Verification:** Wave2-26 ✅ confirmed via `Intl.DateTimeFormat` test on 2026-11-01 01:30 NY.
-- **Impact:** Production slots list shows duplicate labels.
-- **Recommended Remediation:** Append `(${tzName})` suffix on label collision.
-- **Status:** ✅ FIXED — the single slot-list label builder (DateAndTimeInline's `timeOptions`) now detects label collisions among real Cal.com ISO slots and suffixes each colliding row with the visitor-tz abbreviation per instant ("01:00 AM (EDT)" vs "01:00 AM (EST)"). Pre-verified with node: 2026-11-01 05:30Z/06:30Z NY = same wall label, distinct abbreviations. Suffix only applies when the tz is valid and rows collide; the demo grid (minute steps) can't collide and is untouched. Verified via `bun build` transpile.
-
-#### Issue F-07-4: Calendar Cells Browser-Local Midnights
-- **Severity:** Low
-- **Location:** L1939–1955 (cell construction); L1028 (cell label via `date.getDate()`)
-- **Wave 1 Discovery:** Sub-Agent 07 found calendar cells are constructed as browser-local midnights but labeled via `date.getDate()`, while slot date keys use visitor tz. When visitor's tz differs from browser tz by >12h, cell label disagrees with slots shown.
-- **Wave 2 Verification:** Wave2-26 ✅ confirmed — verified with browser Tokyo +9 / visitor LA -8 = 17h delta → cell labeled "Dec 15" shows Dec 14 PST slots.
-- **Recommended Remediation:** Construct calendar cells as visitor-tz midnights.
-- **Status:** ✅ FIXED — calendar cells are now labeled with the visitor-tz day-of-month via the same `getDateKeyInTimeZone` helper that buckets the slots (CC-13), so label and slot data agree by construction; the aria-label also announces the visitor-tz date (gated by `isValidTimeZone`, browser-local fallback). `timeZone` threaded `CalendarGrid` → `CalendarCell` (DateAndTimeInline render site). Verified via `bun build` transpile.
-
-#### Issue F-07-5 through F-07-9: Lower-Priority TZ Issues
-- **Severity:** Low / Refactor (5 findings)
-- **Location:** `isTimeElapsed` browser-local `isSameDay`; `detectTimezone` called 3 places (DRY violation); demo grid "HH:MM" no DST awareness; `pageLocale()` returns undefined for unknown `<html lang>`; `parseTimeToMinutes`/`minutesTo24h` reciprocity edge cases.
-- **Wave 1 Discovery:** Sub-Agent 07 cataloged each.
-- **Wave 2 Verification:** Wave2-26 ✅ confirmed.
-- **Recommended Remediation:** Consolidate `detectTimezone` calls; add `isValidTimeZone` helper.
-- **Status:** Partial — `isValidTimeZone` helper now exists and is used at the restore boundary, the success-screen date formatter, the cell aria-label path, and the slot-label DST suffix (F-07-1/F-07-2/F-07-3/F-07-4 depend on it). `detectTimezone` call-site consolidation and the remaining display-path edge cases stay documented below severity threshold.
-
----
-
-### Category 7 — Accessibility: ARIA & Screen Readers (16 issues)
-
-#### Issue W1-10-A1 / W2-28-F1: Radiogroup Containers Missing `aria-required`
-- **Severity:** High
-- **Location:** 4 `ChoiceGroupInline` instances + `TimeSlotList` radiogroup (L724, L746, L795, L823, L1674)
-- **Wave 1 Discovery:** Sub-Agent 10 found `role="radiogroup"` containers don't set `aria-required`. Grep returned 0 matches for `aria-required`.
-- **Wave 2 Verification:** Wave2-28 F1 ✅ confirmed HIGH.
-- **Impact:** Screen readers don't announce required-ness; WCAG 1.3.1 / 3.3.2 violation.
-- **Recommended Remediation:** Add `aria-required={field.required}` to each radiogroup container; propagate to each option button.
-- **Status:** **Completed** — `ChoiceGroupInline` gained a `required?: boolean` prop; all 4 radiogroup containers (cards/segmented/radio/pills) and every option button (`aria-required={required || undefined}`) now carry it; FieldRenderer threads `required={field.required}` from the field config (also closes W1-10-A16's option-button gap). `TimeSlotList` gained the same prop — its radiogroup is marked required, and `DateAndTimeInline` passes it through; StepBody passes `required` (datetime steps always demand a picked slot). Bundles clean. | ChoiceGroupInlineProps L575ff / radiogroups L1102–1217 / renderOptionButton L890; FieldRenderer call L9258; TimeSlotListProps L1836ff / radiogroup L2290; DateAndTimeInlineProps L2879ff / TimeSlotList call L3508; StepBody call L8618 | | Wave2-28 F1
-
-#### Issue W1-10-A2 / W2-28-F2: No Dedicated `aria-live` for Step Transitions
-- **Severity:** High
-- **Location:** Progress counter at L6079/L6174 uses `role="status" aria-live="polite"` but does NOT include step title
-- **Wave 1 Discovery:** Sub-Agent 10 found step transitions announce "Step 2 of 5, 20% complete" but NOT the step title. Title is announced only via focus-move-to-heading at L5177–5183.
-- **Wave 2 Verification:** Wave2-28 F2 ✅ confirmed + refined — two separate announcements, not combined.
-- **Impact:** Screen reader users hear fragmented transition info.
-- **Recommended Remediation:** Combine step counter + title in one `aria-live="polite"` region.
-- **Status:** ✅ **FIXED** — one sr-only `role="status" aria-live="polite"` region now announces `"Step 2 of 5, 30% complete — <step title>"` as a single combined announcement; the visible counter rows lost their own live roles (no double-announce). See also W2-28-F10 note below. | L6705–6717 (announcement memo/effect), L7099–7118 (region) | | Wave1-10 W1-10-A2
-
-#### Issue W1-10-A3 / W2-28-F3: CalendarGrid Weekday-Header Row Not Marked
-- **Severity:** Medium
-- **Location:** L1304–1326 (plain `<div>`s, structurally outside `role="grid"` at L1328)
-- **Wave 1 Discovery:** Sub-Agent 10 found weekday headers are plain divs.
-- **Wave 2 Verification:** Wave2-28 F3 ✅ confirmed.
-- **Recommended Remediation:** Wrap in `<div role="row">` with `<div role="columnheader">` children; move inside the `role="grid"` container.
-
-#### Issue W1-10-A4, W1-10-A5, W1-10-A7, W1-10-A8: 4 Medium ARIA Gaps
-- **Severity:** Medium (4 findings)
-- **Location:** CalendarGrid not associated with `<h3>` via `aria-labelledby`; ChoiceGroupInline label is `<div>` not associated via `aria-labelledby`; Today's cell uses `(Today)` suffix in `aria-label` instead of `aria-current="date"`; Review-step "Edit" buttons have no descriptive `aria-label`.
-- **Wave 1 Discovery:** Sub-Agent 10 cataloged each.
-- **Wave 2 Verification:** Wave2-28 ✅ confirmed.
-- **Recommended Remediation:** Use `aria-labelledby` / `aria-current` / descriptive `aria-label` patterns.
-
-#### Issue W1-10-A6 / W2-28-F4: No `aria-current="step"` Anywhere
-- **Severity:** Medium
-- **Location:** Step indicator
-- **Wave 1 Discovery:** Sub-Agent 10 found grep returns 0 matches for `aria-current`.
-- **Wave 2 Verification:** Wave2-28 F4 ✅ confirmed.
-- **Impact:** Screen reader users can't identify the current step.
-- **Recommended Remediation:** Add `aria-current="step"` to the current step's indicator.
-- **Status:** ✅ **FIXED** — the visible step-counter rows (top and bottom positions) carry `aria-current="step"` — the flow's visible step indicator — while the actual transition text is announced via the combined live region (W1-10-A2). | L7305, L7404 | | Wave1-10 W1-10-A6
-
-#### Issue W1-10-A9 / W2-28-F5: Month/Year `aria-live` Region First-Render Risk
-- **Severity:** Medium
-- **Location:** L1287–1302 (`aria-live="polite"` region)
-- **Wave 1 Discovery:** Sub-Agent 10 found the region may announce on first render (no mount guard).
-- **Wave 2 Verification:** Wave2-28 F5 ✅ confirmed.
-- **Impact:** Screen reader users hear "January 2026" on page load.
-- **Recommended Remediation:** Add `hasMounted` ref to suppress first-render announcement.
-- **Status:** ✅ **FIXED** — CalendarGrid now diff-tracks the `monthName yearLabel` string; the region's content stays empty until the first real month change, so page load is silent and only actual month jumps announce. | L1382–1392, L1599 | | Wave1-10 W1-10-A9
-
-#### Issue W1-10-A10 / W2-28-F6: Continue Button Missing `aria-busy`
-- **Severity:** Medium
-- **Location:** Continue/Submit button during `flowStatus === "submitting"`
-- **Wave 1 Discovery:** Sub-Agent 10 found the button has no `aria-busy` attribute while submitting. Spinner span L6368–6380 is purely visual.
-- **Wave 2 Verification:** Wave2-28 F6 ✅ confirmed.
-- **Impact:** Screen reader users don't know submission is in progress.
-- **Recommended Remediation:** Add `aria-busy={flowStatus === "submitting"}` to the button.
-- **Status:** ✅ **FIXED** — the submit/Continue button now sets `aria-busy` while `flowStatus === "submitting"`, so screen readers announce the in-flight state instead of only seeing the disabled attribute. | L7677 | | Wave1-10 W1-10-A10
-
-#### Issue W1-10-A11 through W1-10-A16 + W2-28-F10: 7 Lower-Priority ARIA Gaps
-- **Severity:** Low (7 findings)
-- **Location:** Timezone `<select>` missing `aria-required`; hidden input in radiogroup missing `aria-hidden`; time-slot buttons no timezone in `aria-label`; "Pick a date" hint uses `role="status"` on first render; ChoiceGroup option buttons don't propagate `aria-required`; `data-date-key` exposed to AT; step-progress counter `aria-live` regions no first-render guard.
-- **Wave 1 Discovery:** Sub-Agent 10 cataloged each.
-- **Wave 2 Verification:** Wave2-28 ✅ confirmed.
-- **Recommended Remediation:** See Fix Cluster 13.
-- **W2-28-F10 fix note (in cluster 13):** ✅ **FIXED** — the two visible step-progress `role="status"` counters had no first-render guard; they were replaced by the single combined region of W1-10-A2, which holds empty content until the active step changes (no announcement on mount). The remaining A11–A16 items (timezone select `aria-required`, hidden-input `aria-hidden`, time-slot label timezone, "Pick a date" status hint, `data-date-key` exposure, option `aria-required` propagation) are outside cluster-13 scope (see plan table row 13). | L6705–6717, L7099–7118 | | Wave2-28 W2-28-F10
-- **A16 fix note (with W1-10-A1):** ✅ **FIXED** — ChoiceGroup option buttons now propagate `aria-required` alongside the already-shared `aria-invalid`/`aria-describedby` (renderOptionButton). **A11 ✅ FIXED** — the review-step timezone `<select>` now sets `aria-required="true"` (the datetime step is always required: a slot time only means something in that timezone) | L9307 |. **A12 ✅ FIXED** — the radiogroup's hidden form-state input is now `aria-hidden="true"` (transport only; some SRs announced it as an editable field) | L1157–1162 |. **A13 ✅ FIXED** — each time-slot button now names its zone: `aria-label="{label}, {timeZone}"`, threaded `DateAndTimeInline → TimeSlotList → TimeSlotButton` (W1-07-F4 threaded the grid; this closes the same gap for the slot list) | L1982, L2021–2022, L2058–2062, L2504, L3749 |. **A14 ✅ FIXED** — the "Pick a date" hint is static guidance, not a status change; its `role="status"`/`aria-live` (from the T5-H8 sweep) made SRs announce it on page load — removed; the two genuinely dynamic regions (loading / no-times) keep theirs | L2354 |. **A15 ✅ ACCEPTABLE by design** — `data-date-key` is a plain data attribute (never announced by AT) and is load-bearing: the W1-11-A2 cross-month focus restore queries it; removing it would break keyboard focus tracking for no accessibility gain.
-
----
-
-### Category 8 — Accessibility: Focus & Keyboard Navigation (11 issues + 2 NEW)
-
-#### Issue W1-11-A1 / D5: CC-5 Only Half-Fixed (CRITICAL)
-- **Severity:** Critical
-- **Location:** L7143 (inline `outline: "none"` in `inputBaseStyle`); L6396–6399 (CSS rule `.be-input:focus-visible` that the override defeats)
-- **Wave 1 Discovery:** Sub-Agent 11 found the T4-L2/T5-C1 className-mismatch fix repaired the CSS class name, but the inline `outline: "none"` style overrides the repaired CSS rule by CSS specificity (inline `1,0,0,0` > class+pseudo-class `0,2,0`).
-- **Wave 2 Verification:** Wave2-28 F7 ✅ CONFIRMED CRITICAL; Wave2-29 ✅ CONFIRMED.
-- **Root Cause Analysis:** Two-layer fix (className + outline) was applied in two passes; the second pass (outline removal) was missed.
-- **Impact:** Keyboard focus ring STILL invisible on every form input. WCAG 2.4.7 violation.
-- **Recommended Remediation:**
+#### Issue W1-08-F-08-06 — Duplicate-Label Options Break `key` + `isSelected` (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L920 (`isSelected = option.label === selected`), L928 (`key={option.label}`)
+- **Wave 1 Discovery:** Sub-Agent 08 found both `key={option.label}` and `isSelected = option.label === selected` break on duplicate-label options. Two `aria-checked="true"`, two `tabIndex={0}` tab stops, one React key collision.
+- **Wave 2 Verification:** W2-27 ✅ CONFIRMED. W2-39 ✅ CONFIRMED via Node test (two `Apple` buttons both compute `isSelected=true`; 1 React key collision).
+- **Recommended Fix:** Use index-based key and index-aware `isSelected`:
 ```typescript
-// In FieldRenderer's inputBaseStyle (around L7143):
-// REMOVE: outline: "none",
-// OR replace with: outline: "revert",  // restores browser default
-// Better: don't set outline inline at all; let the .be-input:focus-visible CSS rule apply.
+// L920: isSelected = (selectedIndex === index)
+// L928: key={`${option.label}-${index}`}
 ```
+- **Status: Completed** — hoisted `selectedIndex` (findIndex over the controlled label) now drives `isSelected`, the roving `tabIndex`, and the segmented divider; option keys are `${label}-${index}`. Duplicate labels no longer collide.
 
-- **Status:** Completed (inline `outline: "none"` removed from `inputBaseStyle`; `.be-input { outline: none }` base rule still suppresses mouse-focus outlines, `.be-input:focus-visible` now applies the keyboard ring)
+#### Issue W1-09-DT-EmptyMonth — PageDown Into Empty Month Strands Focus (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** `useCalendarNavigation` L2772–2784 (focus-restore effect)
+- **Wave 1 Discovery:** Sub-Agent 09 found PageDown into a fully-empty Cal.com month strands focus on `document.body`. The effect queries `[tabindex="1"]`, but `selectedOrFirstDateKey` is `null` and `dateTabIndexByKey` is empty when no day has availability — no cell gets `tabIndex=1`. The 3-month auto-advance (L2792–2800) only covers initial empty months; after that the user is stranded.
+- **Wave 2 Verification:** W2-27 ✅ CONFIRMED. W2-29 ✅ CONFIRMED.
+- **Recommended Fix:** Add a fallback in the focus-restore effect: if `querySelector('[tabindex="1"]')` returns null, focus the month header (`gridLabelId`) instead.
+- **Status: Completed** — the month `<h3>` is now `tabIndex={-1}` + `data-be-month-heading`; the focus-restore effect falls back to it when no `[tabindex="1"]` cell exists (fully-empty month).
 
-#### Issue W1-11-A2 / D1: PageUp/PageDown Focus Loss After Month Change
-- **Severity:** High (escalated from Medium by Wave2-28)
-- **Location:** L888–889 (`CalendarCellProps.onGoToNextMonth: () => void` — drops `focusAfter?` param); L1062–1063 (same for `onGoToPreviousMonth`); L986–991 (PageUp/PageDown keyboard handler can't pass `focusAfter=true`)
-- **Wave 1 Discovery:** Sub-Agent 11 found the H5 fix infrastructure (`pendingMonthFocusRef`) exists but is dead code — no caller passes `focusAfter=true`. Grep confirmed 0 matches for `goToNextMonth(true)` / `goToPreviousMonth(true)`.
-- **Wave 2 Verification:** Wave2-28 F8 ✅ CONFIRMED HIGH (WCAG 2.4.3 focus-order violation); Wave2-27 F4 ✅ confirmed.
-- **Impact:** When user presses PageUp/PageDown to switch months, focus is lost to `document.body`.
-- **Recommended Remediation:** Widen prop types to `(focusAfter?: boolean) => void`; have `CalendarCell.onKeyDown` pass `true` for PageUp/PageDown; resurrect the `pendingMonthFocusRef` effect.
-- **Status:** Completed. `CalendarCellProps.onGoToNextMonth`/`onGoToPreviousMonth` and `CalendarGridProps.onNextMonth`/`onPrevMonth` widened to `(focusAfter?: boolean) => void`; the PageUp/PageDown handler now calls `onGoToNextMonth(true)`/`onGoToPreviousMonth(true)` (L993–996), which sets `pendingMonthFocusRef` and the existing `[visibleMonth]` effect re-focuses the new month's `[tabindex="1"]` active cell. Mouse nav-button clicks intentionally keep calling without the flag — the button itself stays focused. Result: focus stays in the date grid across month changes (WCAG 2.4.3).
+#### Issue W1-09-DT-AutoFocus — `handleDateSelect` Doesn't Focus Slot List (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L3543–3558
+- **Wave 1 Discovery:** Sub-Agent 09 found `handleDateSelect` sets `selectedDate` and clears `selectedTime` but does NOT programmatically focus the slot list. The W1-11-A3 fix (L2498–2503) only makes the first non-elapsed slot *tabbable* (tabIndex=0), not *focused*. Keyboard users must Tab through every remaining date cell before reaching slots.
+- **Wave 2 Verification:** W2-27 ✅ CONFIRMED (`handleDateSelect` has zero `.focus()` calls and no rAF). W2-29 ✅ CONFIRMED.
+- **Recommended Fix:** In `handleDateSelect`, schedule focus to the first available slot via rAF after the slot list re-renders.
+- **Status: Completed** — `handleDateSelect` now issues a tracked rAF (same `focusRafRef` cancellation pattern as `moveFocus`) that focuses the first `button[role='radio']:not([disabled])` in the widget root after the slot list re-renders.
 
-#### Issue W1-11-A3 / W2-28-F9: TimeSlotList Unreachable via Tab When No Slot Selected
-- **Severity:** High
-- **Location:** L1736 (`tabIndex={elapsed ? -1 : selected ? 0 : -1}`)
-- **Wave 1 Discovery:** Sub-Agent 11 found the roving-tabindex logic leaves no tabbable slot when none is selected. Compare with `ChoiceGroupInline` L521 which correctly falls back to the first option.
-- **Wave 2 Verification:** Wave2-28 F9 ✅ confirmed HIGH (WCAG 2.1.1 violation).
-- **Impact:** Keyboard-only users can't reach the time slot list at all until they click a slot with a mouse.
-- **Recommended Remediation:** Change L1736 to mirror `ChoiceGroupInline`'s pattern: `tabIndex={selected ? 0 : index === 0 ? 0 : -1}`.
-- **Status:** **Completed** — `TimeSlotButton` gained an `isInitialFocus` prop and its tabIndex is now `elapsed ? -1 : selected ? 0 : isInitialFocus ? 0 : -1`; `TimeSlotList` computes the first non-elapsed slot via `findIndex((t) => !isTimeElapsed(t))` and passes `isInitialFocus` to exactly that button when nothing is selected. Goes one step beyond the recommended remediation: if the first slot of the day has already elapsed (e.g. 09:00 at 09:30), the first *enabled* slot takes the tab stop instead of a disabled one. Arrow-key roving inside the radiogroup was already in place. Bundles clean. | TimeSlotButton props ~L1915 / tabIndex L1965; TimeSlotList map L2361–2374 | | Wave2-28 F9
-
-#### Issue W1-11-A4: `handleRetry` Focus Loss
-- **Severity:** Medium
-- **Location:** `handleRetry` function
-- **Wave 1 Discovery:** Sub-Agent 11 found when user clicks "Retry" on the error screen, focus does NOT move to a sensible target.
-- **Wave 2 Verification:** Wave2-29 ✅ confirmed.
-- **Recommended Remediation:** Move focus to the first focusable element in the in-progress view.
-
-#### Issue W1-11-A5 + W1-11-A6: No `:focus-visible` Styling on 14 Buttons/Links
-- **Severity:** Medium (2 findings)
-- **Location:** Back/Continue buttons; prev/next month buttons, slots-error retry, Edit links, success/error screen links and buttons (~12 elements)
-- **Wave 1 Discovery:** Sub-Agent 11 found no `:focus-visible` CSS rules for these elements.
-- **Wave 2 Verification:** Wave2-29 ✅ confirmed.
-- **Recommended Remediation:** One global CSS rule `button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }`.
-
-#### Issue W1-11-A7 + W2-29-N1 (NEW): Focus Ring Invisible on Selected Option/Slot
-- **Severity:** Medium (2 findings)
-- **Location:** `ChoiceGroupInline` L544–549 (selected option); `TimeSlotList` L1789–1795 (selected slot)
-- **Wave 1 Discovery:** Sub-Agent 11 found T1-M13 layered-ring fix exists in `CalendarCell` but was NOT back-ported to `ChoiceGroupInline`.
-- **Wave 2 Verification:** Wave2-29 ✅ confirmed W1-11-A7; Wave2-29 N1 ✅ NEW — same gap in `TimeSlotList` (Wave 1-11 missed this).
-- **Recommended Remediation:** Back-port the CalendarCell layered-ring pattern to both call sites.
-
-#### Issue W1-11-A8 through W1-11-A11 + W2-29-N2 (NEW): Lower-Priority Focus Issues
-- **Severity:** Low / Refactor (5 findings)
-- **Location:** Timezone `<select>` lacks `.be-input` class; no focus management on slots-error banner; positive `tabIndex` on calendar cells breaks Tab order (acknowledged tradeoff); duplicated `useKeyboardModality` hook logic; `focusTimerRef` cleanup gated on `persistState` (NEW from Wave2-29).
-- **Wave 1 Discovery:** Sub-Agent 11 cataloged each.
-- **Wave 2 Verification:** Wave2-29 ✅ confirmed; W2-29-N2 ✅ NEW.
-- **Recommended Remediation:** See Fix Cluster 3 + 4.
-- **Status:** — **A8 ✅ FIXED** — the review-step timezone `<select>` now carries `className="be-input"`, picking up both the base outline suppression and the `.be-input:focus-visible` keyboard ring restored by the CC-5/W1-11-A1 fix | L9298–9306 |. **A9 ✅ FIXED** — the slots-error banner now takes focus (`tabIndex={-1}`, ref) on first appearance via a transition-watching effect in StepBody; the `role="alert"` announcement is untouched, focus just lands the cursor for inspection | L9009–9025, L9267–9268 |. **A10 ✅ ACCEPTABLE by design** — the single `tabIndex=1` "active" cell is the standard roving-tabindex model for arrow-key grids (same as the time-slot radiogroup); positive tabIndex keeps the active cell reachable when nothing is selected, and Tab moves past the grid via the single tab stop as intended. **A11 ✅ FIXED** — ChoiceGroupInline's inline window-listener effect re-implemented the shared T7-M3 `useKeyboardModality` hook; it now consumes the hook (identical behavior, one implementation) | L836–840, L2517–2541 |. **W2-29-N2 ✅ FIXED** — the `focusTimerRef` cleanup lived inside the persist effect's teardown, which early-returns (persistState off / canvas / post-success) *before* registering any cleanup; in those configs a scheduled focus timer leaked until unmount. The focus-timer cleanup now lives in its own unmount-only effect that always runs | L6682–6697, L6674–6681 |.
+#### Additional Verified-Sync Issues (LOW)
+- W1-09-DT-TzToday (MEDIUM): `today = startOfDay(new Date())` at L3187 uses browser-local even when `timeZone` prop is set. Cascades to `isTimeElapsed` (L3034–3056) which uses `isSameDay(selectedDate, today)` — tz-shifted `selectedDate` causes all slots to appear available including elapsed ones. Fix: compute `today` in the visitor's tz via `getDateKeyInTimeZone`. — **✅ FIXED**: new `getTodayInTimeZone()` helper (tz-local y/m/d as a local-midnight Date, so all existing `isSameDay`/`startOfDay` comparisons stay valid); `today` state + the midnight-rollover effect now use it and the effect re-runs on `timeZone` change.
+- W1-09-DT-StaleSelected (LOW): If `selectedDate` becomes mid-session-unavailable, `selectedOrFirstDateKey` still returns it (L3422–3428). `CalendarCell`'s `tabIndex={isUnavailable ? -1 : tabIndex}` (L1422) override then leaves no `tabIndex=1` cell — Tab order breaks. — **✅ FIXED**: `selectedOrFirstDateKey` only accepts `selectedDate` while `hasKnownAvailability(selectedDate)`; otherwise falls through to `firstAvailableDate` (→ EmptyMonth heading fallback if none).
+- W1-09-DT-03 (LOW, prior-cycle still open): `firstDayOfWeek` uses `navigator.language` (L2643) while `weekdayLabels`/`monthName` use `pageLocale()` (L644, L2623). Mismatched locales can misalign weekday header vs grid offset. — **✅ FIXED**: `firstDayOfWeek` now reads `pageLocale()` like the labels it must agree with.
+- W1-09-DT-10 (LOW, prior-cycle still open): TimeSlotList radiogroup (L2421–2455) handles only Arrows; no Home/End per WAI-ARIA radiogroup pattern. — **✅ FIXED**: Home/End jump to the first/last non-elapsed slot and select it.
+- W1-09-DT-SR (LOW): Selected slot's `aria-label` (L2060) omits the date — SR users hear "9:00 AM, [tz], radio, checked" with no date context. — **✅ FIXED**: `slotDateLabel` (short weekday/month/day via `pageLocale()`) is folded into every slot's aria-label, e.g. "9:00 AM, Tue, Aug 16, America/New_York".
 
 ---
 
-### Category 9 — Persistence (sessionStorage) & Privacy (12 issues + 2 NEW)
+### Category 8 — Session Persistence & Privacy (5 issues)
 
-#### Issue F-12-1: Corrupt `sessionStorage` Entry Never Purged
-- **Severity:** Low
-- **Location:** Restore effect at L4885–4891
-- **Wave 1 Discovery:** Sub-Agent 12 found if `JSON.parse` throws, the bad entry stays in storage forever.
-- **Wave 2 Verification:** Wave2-31 ✅ confirmed.
-- **Recommended Remediation:** Wrap `JSON.parse` in try/catch; on failure, `sessionStorage.removeItem(STORAGE_KEY)`.
-- **Status:** Completed (restore catch now purges the corrupt entry; schema-version mismatch also purges instead of guessing)
+#### Issue W1-12-F-12-11 — `hasSavedProgress` Not Set on Restore Path (MEDIUM, GDPR regression)
+- **Severity:** 🟡 Medium
+- **Location:** L6429–6600 (restore effect)
+- **Wave 1 Discovery:** Sub-Agent 12 found `hasSavedProgress` is never set `true` on the restore path (only on the next persist write at L6680). After a refresh with saved data, the "Clear my saved answers" button and "Answers are saved in this browser" indicator are **hidden** until the visitor types something new — directly contradicting the W2-31-A-31-3 GDPR self-service intent.
+- **Wave 2 Verification:** W2-31 ✅ CONFIRMED.
+- **Recommended Fix:** Add `setHasSavedProgress(true)` before L6582 (end of successful restore).
+- **Status: Completed** — `setHasSavedProgress(true)` now fires at the end of the successful restore path (~L6696), so the disclosure + clear affordance appear immediately after refresh with saved data.
 
-#### Issue F-12-2 / W2-31-A-31-1: GDPR/CCPA PII Without Consent (HIGH — escalated from MED)
-- **Severity:** High (escalated by Wave2-31 from Medium)
-- **Location:** Persist effect at L4915–4928; `persistState` hardcoded `true`
-- **Wave 1 Discovery:** Sub-Agent 12 found PII (name, email, phone) persisted without opt-out.
-- **Wave 2 Verification:** Wave2-31 A-31-1 ✅ upgraded to HIGH — reframed as GDPR/CCPA compliance issue.
-- **Impact:** GDPR/CCPA — visitor inputs (name, email, phone) persisted without notice, consent, or "clear my data" control.
-- **Recommended Remediation:** Add `persistState: ControlType.Boolean` (default false); add `privacyNotice: ControlType.String` PropertyControl with disclosure text; add mid-flow "Clear my saved answers" affordance.
-- **Status:** Completed. (1) `persistState` exposed as Config PropertyControl, **default OFF** (was hardcoded `true`) — PII is only written when an author opts in. (2) `privacyNotice` ships with a real disclosure default instead of empty. (3) Mid-flow "Clear my saved answers" link + "Answers are saved in this browser" indicator appear when anything is stored; clears the sessionStorage entry without disrupting the form. (4) Persistence fully gated off the Framer canvas/exports (`useIsStaticRenderer`). Pairing note: opt-in default means previously-published instances stop persisting until authors enable the new control.
+#### Issue W1-12-F-12-12 — `validateStep` Datetime Branch Throws on Corrupted Slot (MEDIUM, data loss)
+- **Severity:** 🟡 Medium
+- **Location:** L4685
+- **Wave 1 Discovery:** Sub-Agent 12 found `validateStep`'s datetime branch calls `slot.date.getTime()` without guarding for `undefined`. If a corrupted `__selectedSlot` is present but missing `date` (and `time24h` doesn't match the ISO regex), this throws `TypeError`. The restore effect's catch block (L6583) then purges **ALL** saved storage — data loss from a single corrupted nested field.
+- **Wave 2 Verification:** W2-31 ✅ CONFIRMED.
+- **Recommended Fix:** Guard L4685 with `instanceof Date`:
+```typescript
+if (!(slot?.date instanceof Date) || isNaN(slot.date.getTime())) {
+  return "datetime" // or whatever the appropriate invalid code is
+}
+```
+- **Status: Completed** — the datetime branch (~L4709) now computes `slotDateMs` with an `instanceof Date` + `isNaN` guard; a slot with neither a valid ISO `time24h` nor a valid `date` yields `pickDateTimeError` instead of throwing (no more full-storage purge from one corrupt field).
 
-#### Issue F-12-3 through F-12-6: 4 Lower-Priority Persistence Issues
-- **Severity:** Low (4 findings)
-- **Location:** No schema version stamp; persist runs on Framer canvas (no RenderTarget guard); orphaned entries when `useId()` shifts; restore overwrites values without merging.
-- **Wave 1 Discovery:** Sub-Agent 12 cataloged each.
-- **Wave 2 Verification:** Wave2-31 ✅ confirmed.
-- **Recommended Remediation:** See Fix Cluster 6.
-- **Status:** Completed as a cluster: schema version stamp (`v: 1`) written/checked on every persist/restore (F-12-3); canvas/export write+restore skipped via `useIsStaticRenderer` (F-12-4); storage entry keyed by `useId()` per instance and cleared on finish/restart (F-12-5); restore now MERGES over current values instead of wholesale replacement (F-12-6).
+#### Issue W1-15-TS-02 — `JSON.parse` Output Cast to `BookingValues` Without Validation (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L6494 & L6572
+- **Wave 1 Discovery:** Sub-Agent 15 found `JSON.parse` output (`Record<string, unknown>`) cast wholesale to `BookingValues` without per-field validation. The `__selectedSlot` sub-key is re-narrowed separately, but every other field value flows into typed state unvalidated. Corrupt/hostile sessionStorage entry could put arrays/objects in field values.
+- **Wave 2 Verification:** W2-31 ✅ CONFIRMED. Mitigated downstream by `String()` coercion + schema-version purge, but not blocked at the boundary. W2-34 ✅ CONFIRMED Framer-compatible.
+- **Recommended Fix:** Add a per-field `isFieldValue` narrow before merging `JSON.parse` output into state:
+```typescript
+function isFieldValue(v: unknown): v is string | boolean | undefined {
+  return v === undefined || typeof v === "string" || typeof v === "boolean"
+}
+// Then: Object.fromEntries(Object.entries(parsed).filter(([k, v]) => isFieldValue(v)))
+```
+- **Status: Completed** — `isFieldValue` narrow added next to `BookingValues` (~L1945); the restore merge (~L6600) filters every entry through it, exempting `SELECTED_SLOT_KEY` (the one structured key, re-narrowed separately). Arrays/objects can no longer enter typed field state from sessionStorage.
 
-#### Issue F-12-7 through F-12-12 + W2-31-A-31-2 / A-31-3: Refactor Items
-- **Severity:** Refactor (6 findings + 2 NEW)
-- **Location:** `focusTimerRef` cleanup mixed into persist effect (cross-ref F-30-1); reviver over-broad (any `"date"` key coerced); first post-mount persist redundant; `focusTimerRef` overwritten without clearing prior timer; quota-exceeded not surfaced; no pre-write size check; `privacyNotice` defaults to empty; mid-flow "Clear" affordance missing.
-- **Wave 1 Discovery:** Sub-Agent 12 cataloged each.
-- **Wave 2 Verification:** Wave2-30 ✅ confirmed; Wave2-31 ✅ confirmed.
-- **Recommended Remediation:** See Fix Cluster 6.
-- **Status:** Completed as a cluster: over-broad "date" reviver removed (only `__selectedSlot.date` is rehydrated, via the targeted post-parse block — a visitor-typed text field named "date" no longer becomes a Date object) (F-12-8); redundant first mount write suppressed — nothing persists until the visitor entered data or left step 0 (F-12-9); quota-exceeded writes surface a one-time in-flow notice (F-12-10/F-12-12); `privacyNotice` now has a meaningful default (A-31-2); mid-flow "Clear my saved answers" added (A-31-3). `focusTimerRef` cleanup stays in the persist effect's return but is now cleared before overwrite via the shared effect teardown (W1-14-F2 / W2-30-F3 residual verified against the ref pattern at L5091+).
+#### Issue W1-12-F-12-13 — Persisted JSON Writes `__selectedSlot` Twice (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L6670
+- **Wave 1 Discovery:** Sub-Agent 12 found the persisted JSON writes `__selectedSlot` **twice**: inside `values` AND at the top level (L6670). The restore only reads `parsed.values` (L6472), so the top-level copy is ~100–200 bytes of dead weight per write.
+- **Wave 2 Verification:** W2-31 ✅ CONFIRMED (~76 bytes/write).
+- **Recommended Fix:** Delete L6670.
+- **Status: Completed** — the duplicate top-level `[SELECTED_SLOT_KEY]` write is removed from the persist payload (~L6778).
 
----
+#### Issue W1-12-F-12-14 — Restore Loop Iterates Without Upper Bound (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L6566
+- **Wave 1 Discovery:** Sub-Agent 12 found the restore validation loop iterates up to `parsed.currentIndex` even when only 3 steps exist. The input check validates `>= 0` and `Number.isFinite` but has no upper bound. A hand-crafted entry with `currentIndex = 1000000` would loop a million times.
+- **Wave 2 Verification:** W2-31 ✅ CONFIRMED. Same-origin DoS vector.
+- **Recommended Fix:** `Math.min(parsed.currentIndex, activeSteps.length)` before the loop.
+- **Status: Completed** — `restoredIndex` is clamped with `Math.min(parsed.currentIndex, activeSteps.length)` before the re-validation loop (~L6673).
 
-### Category 10 — Code Quality, Performance, TypeScript, Motion, Mobile, Theme (44 issues)
-
-#### Sub-Category 10a: Code Quality / Refactor (Wave 1-14, 15, 16) — 22 issues
-- **W1-14-F2 / F-30-1 (Medium):** Persist effect cleanup cross-wires `focusTimerRef`. Wave2-30 ✅ confirmed. — **✅ FIXED** (focus timers now scheduled via a `scheduleFocusTimer` helper that clears the prior timer; persist-effect cleanup remains as unmount safety)
-- **W1-14-F3 (Medium):** Inline arrow `onTimeFormatChange` at L6260 breaks `StepBody` memoization. Wave2-33 ✅ confirmed. — **✅ FIXED** (new stable `handleTimeFormatChange` useCallback in the hook, exposed via return/destructure, used at the StepBody call site; the inline arrow previously gave `StepBody` a fresh prop reference on every render)
-- **W1-14-F4 (Medium):** `handleSubmitBooking` and `handleContinue` have `values` in deps. Wave2-33 ✅ confirmed. — **✅ FIXED** (all `values` reads in both handlers now go through the existing `valuesRef` — same pattern already used by `focusFirstInvalidField` — and `values` is gone from both dep arrays; the callbacks no longer rebuild on every keystroke)
-- **W1-14-F5 / F6 / F7 (Low × 3):** `goToPreviousMonth`/`goToNextMonth` skip `startTransition`; `useLayoutEffect` for `currentIndex` uses `startTransition` (defeats purpose); `fontStack` not memoized. — **✅ FIXED** (F5: month flips now wrapped in `startTransition`, updater stays pure, W1-11-A2 focus effect still runs post-commit; F6: `startTransition` removed from the CC-8 clamp layout effect so the correction commits before paint; F7: `fontStack` is now a `useMemo` on the `font` prop)
-- **W1-14-F8 (Refactor):** `React.memo` on all 11 leaf components without custom comparators.
-- **W1-16-P-01 / W2-35-M-01 (Refactor — downgraded from Medium):** FieldRenderer rebuilds `opts` array every render. Wave2-35 verdict: SKIP (premature memoization — `FieldRenderer` is already `React.memo`'d with stable prop surface).
-- **W1-16-P-02 / W2-35-M-02 (Medium retained):** TimeSlotList renders 17-48 slot buttons inline; no per-slot memoization. Wave2-35 verdict: APPLY (extract `TimeSlotButton` `React.memo`'d child). — **✅ FIXED** (`TimeSlotButton` memo'd child extracted; props are all primitives/booleans plus the parent's stable `useState` setters/`useCallback` handlers, `elapsed` precomputed in the map so the 60s-tick rebuild of `isTimeElapsed` doesn't churn the buttons; a slot re-renders only when its own state changed)
-- **W1-16-P-03 through P-12 (Low / Refactor × 9):** Various premature-memoization concerns. Wave2-35 verdicts: SKIP for most.
-- **W1-15-TS-01 (Medium):** Last `as any` in production: `(Intl as any).Locale(localeTag)` at L1915. — **✅ FIXED** (typed alias: `Intl as unknown as { Locale: new (tag: string) => { getWeekInfo? / weekInfo? } }` — the only fields the calendar reads; no `any` remains in the file) | L2396–2410 | | Wave1-15 W1-15-TS-01
-- **W1-15-TS-02 (Refactor — reclassified from Medium):** `await res.json()` returns `Promise<any>`. Wave2-34: TypeScript strictness, no runtime impact. — **✅ FIXED** (one typed `readJson<T>` reader; both API calls (availability + booking POST) declare their exact payload unions, and every branch narrows before use) | L5000–5004 (reader), L4545–4560 (availability union), L4855–4878 (booking union) | | Wave1-15 W1-15-TS-02
-- **W1-15-TS-03 (Medium):** Six `catch (err)` clauses with implicit `any`. Fix via `useUnknownInCatchVariables: true`. — **✅ FIXED** (all six now `catch (err: unknown)` — each body only forwards `err` to `console.warn`, so nothing needed narrowing; the 7th clause (submit catch) was already typed in an earlier bundle) | L5869, L5927, L5967, L6297, L6827, L6844 | | Wave1-15 W1-15-TS-03
-- **W1-15-TS-04 through TS-11 (Low × 8):** rawSlots typing, restoredValues implicit any, redundant casts, isCalSlot idiom, FramerFont interface, BookingValues intersection. — **✅ FIXED / verified-by-inspection** (TS-04: `rawSlots` explicitly `unknown[]`, narrowed by the existing `isCalSlot` guard (TS-07, already in place at L4334); TS-05: `restoredValues` typed `Record<string, unknown>` with one documented cast at the `setValues` merge; TS-06: remaining casts audited — only `as const`, the two purpose-built `as unknown as` aliases (Intl.Locale TS-01, `window` TypedArray probing) and the typed JSON reader remain; TS-10/W2-34-Item-6: `FramerFont` documents that it declares only the six fields `fontStack` reads — extra runtime fields are ignored, never misread (see note below); TS-11: `BookingValues` is already the documented `Record<…> & { [SELECTED_SLOT_KEY]?: BookingPayload }` intersection from an earlier fix). Caveat: this repo has no tsconfig/node_modules, so verification is transpile (`bun build` clean) + static analysis, not `tsc`. | L1743–1745, L3474–3484, L4334, L5734+, L5000+ | | Wave1-15 W1-15-TS-04
-- **W1-08-CG-03 (in bundle 9):** Detail section absent from this report (same recovery gap as W1-20-H2 — no Wave-1 detail file in the repo). Verified by inspection instead: the full `CalendarGrid` prop surface is already stable — `CalendarCell` and `CalendarGrid` are `React.memo`'d, `cells`/`dateTabIndexByKey` are `useMemo`'d, `dateKeyOf`/`hasKnownAvailability`/`handleDateSelect`/`moveFocus` and both month-nav callbacks are `useCallback`'d, and the only remaining non-primitive prop (`locale={pageLocale()}`) is a cheap string. No inline-object regression found in current code; noted as covered by inspection.
-- **W2-33-A1 (NEW Medium):** `useCalcomSlots` cache key omits `apiKey`/`eventTypeId` (re-discovery of W1-05-F1). — **✅ FIXED** (with W1-05-F1 — key now includes both; see that block) | monthCacheKey L4530ff | | Wave2-33 W2-33-A1
-- **W2-33-A2 / A3 / A4 (NEW Low × 3):** `useCalcomSlots` effect captures `fallbackErrorLabel` but omits from deps; `useStateGuarded` setter churns when `max` changes; `handleContinue` reads raw `currentIndex` at L5408. — **A3 ✅ FIXED** (with F-03-3 — setter is now a stable `[]`-dep callback reading the ceiling from a latest-ref) | useStateGuarded L8398ff; **A4 ✅ FIXED** (with W1-04-M4 — review-branch comparison uses clamped `safeCurrentIndex`; see F-03-6) | handleContinue review branch ~L6995; **A2 ✅ FIXED** — `fallbackErrorLabel` added to the `useCalcomSlots` fetch effect's dep array | effect deps ~L4965
-
-#### Sub-Category 10b: Motion (Wave 1-18, 37) — 9 issues
-- **W1-18-F1 (Medium):** 8 inline-CSS `transition:` properties NOT gated by `prefersReducedMotion`. Wave2-37 ✅ confirmed at L554, L1013, L1554, L1787, L6121, L6334, L6360, L7144. — **✅ FIXED** (nine spots gated — choice option buttons, calendar cells, time-slot buttons, the 12h/24h time toggle, progress step segments, input focus border in `inputBaseStyle`, and the footer Back/Cancel/Submit opacity fades: `transition: "none"` under prefers-reduced-motion; MotionConfig can't touch plain CSS transitions so each is gated where it's defined) | L797, L1285, L1815, L1967, L7296, L7576, L7604, L7633, L8492 | | Wave1-18 W1-18-F1
-- **W1-18-F2 (Medium):** `layout` prop on `AnimatedStepContent` (L4487) not reduced-motion-gated; re-measures on every keystroke. Wave2-37 ✅ confirmed. — **✅ FIXED** (`layout={!reducedMotion}` — under prefers-reduced-motion framer-motion stops the expensive layout-measure pass entirely) | L5097 (AnimatedStepContent L5063+) | | Wave1-18 W1-18-F2
-- **W1-18-F3 (Medium):** No `<MotionConfig reducedMotion="user">` wrapper. Wave2-37 ✅ confirmed — "single highest-impact fix". — **✅ FIXED** (`RootShell` — the single root every flow state (in-progress / success / error) renders through — now wraps the tree in `<MotionConfig reducedMotion="user">`, so all framer-motion transforms/layout go instant for reduce-motion visitors) | L7734 (RootShell L7723+) | | Wave1-18 W1-18-F3
-- **W1-18-F4 / F5 / F6 (Low / Refactor × 3):** Form container no `overflow`; `PROGRESS_BAR_TRANSITION`/`TIME_TOGGLE_TRANSITION` not exposed via PropertyControls; terminal-state transitions are abrupt swaps. — not in cluster-12 scope (see plan table).
-- **W2-37-A1 (NEW Medium):** Author-customized `stepTransition` bypasses `prefersReducedMotion` (short-circuit at L4594–4598). — **✅ FIXED** (the reduced-motion branch now wins over the author's customized transition instead of the reverse — `prefersReducedMotion ? tween-0 : author-or-default`) | L5216–5222 | | Wave2-37 W2-37-A1
-- **W2-37-A2 (NEW Low):** Textarea auto-resize `useEffect` causes per-keystroke layout reflow. — **✅ FIXED** (height writes only occur when content actually grows past or shrinks below the current box; typing within the current height is a no-op, so per-keystroke layout passes are gone) | L8370–8390 (FieldRenderer) | | Wave2-37 W2-37-A2
-- **W2-37-A3 (NEW Refactor):** No `@media (prefers-reduced-motion: reduce)` rule in `<style>` block. — **✅ FIXED** (a scoped `.be-motion-root` media rule in RootShell zeroes `animation-duration`/`transition-duration` under reduce mode; scoped to the component so the host page is never affected) | L7745–7755 | | Wave2-37 W2-37-A3
-
-#### Sub-Category 10c: Mobile / Responsive (Wave 1-19, 38) — 17 issues
-- **W1-19-F-01 (Critical):** Calendar grid overflows ≤330px viewports. Wave2-38 ✅ confirmed. — **Status: Completed** (both weekday-header and calendar grids changed `minmax(44px, 1fr)` → `minmax(0, 1fr)`; identical on normal widths, graceful shrink on tiny viewports)
-- **W1-19-F-02 (High):** Input `fontSize: 14` triggers iOS Safari zoom-on-focus. Wave2-38 ✅ confirmed. — **✅ FIXED** (bump the effective input font to ≥16px on coarse-pointer devices — `(pointer: coarse)` — where iOS zooms on focus; flow field inputs/textarea/select via a memo (14px kept on fine pointers) and the review-step timezone `<select>` via the same on-render check) | L8393–8416 (field inputs), L7950–7985 (review timezone select) | | Wave1-19 W1-19-F-02
-- **W1-19-F-03 (High):** "Edit" link in `ReviewStepBody` below 44×44px touch target. Wave2-38 ✅ confirmed. — **✅ FIXED** (the Edit button now has a 44×44px hit area — `minWidth`/`minHeight: 44`, inline-flex centered — while the label keeps its 12px type) | L8278–8296 | | Wave1-19 W1-19-F-03
-- **W1-19-F-04 through F-07 (Medium × 4):** Hidden scrollbars no affordance; choice cards 2-col truncation; `PILLS_SINGLE_COLUMN_BREAKPOINT` misnomer; no virtual-keyboard handling. — **✅ FIXED** (F-04: time-slot list scrollbar went from hidden (`scrollbarWidth/msOverflowStyle: none` + `::-webkit-scrollbar { display: none }`) to thin-but-visible on every engine — Firefox/Edge inline `thin`, WebKit gets a themed 8px thumb rule; F-05 + F-10: card/radio/segmented option labels now wrap (`whiteSpace: normal`) instead of ellipsizing — pills keep nowrap so the pill shape survives; F-06: constant renamed `PILLS_SINGLE_COLUMN_BREAKPOINT` → `PILLS_TWO_PER_ROW_BREAKPOINT` — it gates two-per-row, not single-column; F-07: a `visualViewport` resize listener scrolls the focused input/textarea/select back into view when the virtual keyboard covers it) | L1950–1960 + L3260–3268 (scrollbars), L858–915 (labels), L3600 + L1076–1092 (breakpoint), L5238–5290 (visualViewport) | | Wave1-19 W1-19-F-04
-- **W1-19-F-08 through F-12 (Low × 5):** `gap: 24` wastes space; no `scroll-margin-top`; `whiteSpace: nowrap` prevents wrapping; `paddingBottom: 84` insufficient on notched iPhones; `measuredWidth` initial guess flash. — **✅ FIXED** (F-08: calendar header gutter `24 → isNarrow ? 12 : 24`; F-09: step-title focus target gets `scrollMarginTop: 72` so sticky chrome never covers it; F-10: covered by the F-05 label-wrap sweep; F-11: form bottom padding is now `calc(84px + env(safe-area-inset-bottom, 0px))` for notched iPhones; F-12: both width-measuring components read `clientWidth` synchronously in a layout effect before the ResizeObserver lands, killing the 320px/560px guess flash on first paint) | L1450–1460 (gap), L7376 (scroll-margin), L7352 (safe-area), L610–635 + L2815–2840 (measured width) | | Wave1-19 W1-19-F-08
-- **W1-19-F-13 through F-17 (Refactor × 5):** Informational items (compact-mode, 100dvh, host-page scroll reliance, safe-area-inset positive).
-
-#### Sub-Category 10d: Theme / Colors (Wave 1-17, 36) — 13 issues
-- **W1-17-F-17-1 (High):** `getReadableTextColor` uses non-WCAG luminance formula (Rec.601 + 0.6 threshold instead of WCAG 2.1 relative luminance + 4.5:1). Wave2-36 ✅ confirmed — verified `#808080` returns white where WCAG requires black. — **✅ FIXED** (WCAG 2.1 relative luminance (sRGB→linear, 0.2126/0.7152/0.0722) with the exact black/white tie threshold L = 0.1791; `#808080` now picks black at 5.32:1, `#0066BB` still white at 5.70:1; one added `srgbToLinear` guard means a 8-bit unitless value can no longer produce an out-of-range luminance) | L243–301 | | Wave1-17 W1-17-F-17-1
-- **W1-17-F-17-2 (High):** `parseColorToRgb` does not support 8-char hex, 4-char hex, named colours, or `hsl()/hsla()`. Wave2-36 ✅ confirmed. — **✅ FIXED** (full parser rewrite: hex 3/4/6/8 (with or without `#`), named colours, `rgb()/rgba()` with commas or space+slash and `%` channels, `hsl()/hsla()` with deg/rad/turn/grad and alpha; `parseColorToRgb` is now a projection of the new `parseColorToRgba`) | L101–233 (parser), L235–241 (projection) | | Wave1-17 W1-17-F-17-2
-- **W1-17-F-17-3 / D6 (High):** `borderRadius` token NOT cascaded to `CalendarCell` (L997) or `TimeSlotList` (L1767). Wave2-36 ✅ confirmed — 7 hardcoded radius literals verified. — **✅ FIXED** (cascade now: `CalendarCell` takes `borderRadius` ← `CalendarGrid` ← `DateAndTimeInline.radius` (its existing prop) for the date cells and both month-nav arrows; `TimeSlotButton` takes `radius` ← `TimeSlotList.borderRadius` ← `DateAndTimeInline.radius`; internals like the progress bar, time pills and segmented toggles intentionally stay `999` – they are pill shapes, not radius tokens) | CalendarCell L1094–1160, CalendarGrid L1266–1510, TimeSlotButton L1686–1770, TimeSlotList L1620–2118, DateAndTimeInline L2605–2690, 3149–3220 | | Wave1-17 W1-17-F-17-3
-- **W1-17-F-17-4 through F-17-7 (Medium × 4):** Dark-mode fallback exact-equality; no contrast validation warning; no `parseColorToRgb` failure warning; `withAlpha` doesn't blend alpha onto background. — **FIXED** (F-17-4: theme memo normalizes light-default comparison (trim/case/`#`) so `#ffffff`/`white` correctly fall back to dark values; F-17-5: canvas-only `themeVerdicts` banner checks AA 4.5:1 for primary/secondary/error/success text on page and surface plus the auto text picker vs accent, evaluated on the resolved dark-aware theme; F-17-6: same banner lists unparseable author colour tokens (invalid → browser default); F-17-7: `withAlpha` now composites a translucent colour over an optional background before returning, and `getReadableTextColor` composites over white before judging luminance) | L5156–5270 (memo), L5850–5925 (verdicts), L7080–7118 (banner), L101–186 + L268–299 (withAlpha/picker) | | Wave1-17 W1-17-F-17-4
-- **W1-17-F-17-8 (Medium, also W1-02-F2/D13):** Dark-mode `accentColor`/`errorColor`/`successColor`/`borderRadius` were dead fields — the memo never read them. — **✅ FIXED** (same sweep as F-17-4: the theme memo now applies a dark counterpart for all nine fields, reading `DEFAULT_DARK_THEME` values for accent/error/success/borderRadius; fields deliberately held at a non-default light value keep it in dark mode) | L5156–5270 (memo), L3585–3595 (`DEFAULT_DARK_THEME`) | | Wave1-17 W1-17-F-17-8
-- **W1-17-F-17-9 / F-17-10 / F-17-12 / F-17-13 (Low × 4):** `prefers-color-scheme` subscription always active; SSR dark-flash risk; `ColorMode` type vs PropertyControl enum naming mismatch; `borderRadius` type mismatch (`string` vs `ControlType.BorderRadius`). — **F-17-9 ✅ FIXED** (the OS-scheme subscription effect now bails unless `colorMode === "auto"` — fixed-mode instances no longer listen and re-render on unrelated OS theme toggles; the T10-M6 lazy-initializer first-paint correctness is untouched) | L6093–6121 |. **F-17-10 ✅ ACCEPTABLE by design** — the T10-M6 synchronous lazy init already makes the first client paint correct; the residual "flash" is only the pre-hydration SSR document, and Framer runs this client-rendered (canvas/export additionally gated by `useIsStaticRenderer`), so there is no production path where a light-then-dark correction is visible. **F-17-12 ✅ VERIFIED-ALREADY-MATCHING** — the `ColorMode` union (`"light" | "dark" | "auto"`, L3771) and the PropertyControl Enum options/optionTitles (`["light","dark","auto"]`, L11164–11168) use identical tokens; no rename needed. **F-17-13 ✅ FIXED** — Framer's BorderRadius control can emit a size string *or* a numeric radius; the `styles.borderRadius` type and all nine consumer prop types (`CalendarCell`, `CalendarGrid`, `TimeSlotList`, `TimeSlotButton`, `StepBody`, `ReviewStepBody`, `FieldRenderer` + engine interface) are widened `string | number` — every use is CSS-property assignment so both forms were already valid at runtime | L3901–3907 + the 9 prop sites |.
-- **W1-17-F-17-11 (in bundle 10):** Detail section absent from this report (same recovery gap as W1-20-H2 and CG-03 — no Wave-1 detail file in the repo). The finding is unrecoverable from the codebase alone; flagged for source-file lookup before claiming row 10 complete, same as cluster 5 (W1-20-H2).
-- **W1-17-F-17-9 / F-17-10 / F-17-12 / F-17-13 (Low × 4):** `prefers-color-scheme` subscription always active; SSR dark-flash risk; `ColorMode` type vs PropertyControl enum naming mismatch; `borderRadius` type mismatch (`string` vs `ControlType.BorderRadius`). — **All resolved — see the F-17-9…13 status row above in Sub-Category 10d** (F-17-9 subscription gated to auto mode; F-17-10 documented acceptable — client-rendered component, T10-M6 lazy init; F-17-12 verified tokens already match; F-17-13 radius types widened `string | number`).
-- **W2-36-N1 (NEW Medium):** Dark-mode `errorColor #F87171` and `successColor #16A34A` both fail WCAG AA at 3.03:1 and 3.20:1 when paired with `getReadableTextColor`'s WHITE pick. Wave2-36 ✅ NEW. — **✅ FIXED** (fixed by the WCAG text picker of F-17-1, not by changing colours: `#F87171` → black 7.58:1, `#16A34A` → black 6.35:1; dark-mode defaults unchanged; see W1-17-F-17-1 rows) | L268–281 (picker docs), L5156–5270 (dark theme memo) | | Wave2-36 W2-36-N1
-
-#### Sub-Category 10e: Calendar Widget (Wave 1-08, 09, 27, 28) — 15 issues
-- **W1-08-CG-01 / W2-27-F1 (High):** `controlledValue` mismatch causes focus trap and `aria-checked` desync. Wave2-27 ✅ confirmed. — **✅ FIXED** (the `selected` derivation now falls back to `parsedOptions[0].label` for presentation when the controlled value matches no current option, keeping a tab stop + consistent checked state; the parent's stored value is untouched until an explicit pick, so required-field validation is unaffected) | L701–716 (selected derivation) | | Wave2-27 W2-27-F1
-- **W1-08-CG-02 / W2-27-F2 (High):** T6-L2 fix has stale-closure bug; `onChange?.()` re-fires with old `internalSelected`. Wave2-27 ✅ confirmed. — **✅ FIXED** (the mount one-shot now fires `getInitialSelection(parsedOptions, defaultValue)` computed synchronously instead of reading `internalSelected`, which the re-seed effect updates via async startTransition; `defaultValue` added to deps so default edits re-fire correctly) | L735–756 | | Wave2-27 W2-27-F2
-- **W1-08-CG-04 (Medium):** Duplicate visible label (CC-7 fix regression). — **✅ FIXED** (the CC-7 pass-through of the real field label fixed the harmful radiogroup accessible name, but also materialized the in-component VISIBLE label, duplicating FieldRenderer's `labelEl` above the field; new `showLabel` prop — render site passes `showLabel={false}` — suppresses the duplicate copy while the radiogroup aria-name still resolves through `label`) | L605–611 (prop), L1162–1174 (visible-label gate), L9800 (render site) |
-- **W1-08-CG-10 (Medium):** Focus loss when options array shrinks. — **✅ FIXED** (new effect clamps `focusedIndex`/`hoveredIndex` when the options array shrinks past a focused/hovered index — live editing in Framer used to unmount the focused button and drop focus to `<body>`; now focus restores to the last surviving button) | L753–766 (clamp effect) |
-- **W1-09-DT-05 + DT-08 / W2-27-F6 (Medium):** No `minDate`/`maxDate` props; `moveFocus` doesn't guard future dates beyond 12-month horizon. — **✅ FIXED (interactive half) / DT-05 deferred** (the `moveFocus` upper-bound guard is now clamped to `maxMonthStart` — arrow keys/PageDown could previously page focus and the visible month past the 12-month booking horizon that the nav buttons already respected; the `minDate`/`maxDate` author-facing props half of DT-05 is a feature add on a config surface, deferred — the fixed clamp bounds the interactive paths that actually reach the API) | L3543–3548 (clamp), L3564 (deps) | | W2-27 W2-27-F6
-- **W1-08-CG-06 / CG-07 / CG-08 / CG-09 (Low × 4):** `aria-labelledby` not used; duplicate-label options cause roving-tabindex collisions; empty options array renders bare empty radiogroup; `parseOptionsText` splits on commas, not newlines.
-- **W1-09-DT-03 / W2-27-F7 (Low):** `firstDayOfWeek` uses `navigator.language`, not `pageLocale()`.
-- **W1-09-DT-10 / W2-27-F8 (Low):** TimeSlotList radiogroup missing Home/End keyboard support.
-- **W1-09-DT-11 / DT-15 / DT-16 / DT-17 (Low × 4):** Empty-state strings hardcoded English; no retry affordance; `useCalendarNavigation` doesn't expose `focusedDate`; `useTimeGrid` doesn't handle focus/keyboard nav.
-- **W2-27-F11 (NEW Low):** `visibleMonth` sync effect lacks equality guard. — **✅ FIXED** (both months normalized to day 1; identical months are a no-op, so stale parent re-renders can't yank the calendar back after the visitor paged forward; `visibleMonth` added to deps) | L1903–1917 (sync effect) | — | Wave2-27 W2-27-F11
-
-#### Sub-Category 10f: Misc / Cross-Cutting (Wave 2-30, 32, 34, 39) — 6 issues
-- **W2-30-F2 (Low):** `externalSignal.addEventListener("abort", ...)` has no explicit `removeEventListener` in `finally`. — **✅ FIXED** (the bridged handler is now a named captured function; registered with `{ once: true }` and removed via `removeEventListener` in the POST's `finally` once the fetch settles, so a long-lived caller signal can't retain a dangling handler on the per-request controller) | L5214–5225 (bridge), L5399–5408 (finally cleanup) |
-- **W2-30-F3 / F-12-10 (Refactor):** `focusTimerRef` overwritten without clearing prior timer. — **✅ FIXED** (`scheduleFocusTimer` helper; quota-exceeded persistence failures now surface an in-flow notice)
-- **W2-30-F4 (Refactor):** `requestAnimationFrame` calls have no `cancelAnimationFrame` cleanup. — **✅ FIXED** (all three outstanding sites now cancel: the CG-10 option-shrink focus restore tracks its frame and cancels in the effect cleanup; the H5 page-month focus restore likewise; `moveFocus` keeps the frame in a ref (`focusRafRef`), cancels a stale frame before issuing the next, and cancels on unmount; the visualViewport scroll nudger already cancelled on reissue+teardown) | L765–770 (CG-10), L2781–2790 (H5), L3576–3584 + L2721–2728 (moveFocus), L6137–6141 (viewport, pre-existing) |
-- **W2-32-A1 / A2 (Refactor × 2):** `useCalcomSlots` `typeof window === "undefined"` early-return redundant; `useReducedMotion()` and `useIsStaticRenderer()` not memoized.
-- **W2-34 Item 6 / TS-10 (Low):** `FramerFont` interface narrower than Framer's actual runtime shape. — **✅ FIXED / ACCEPTABLE by design** (the interface declares exactly the six keys `fontStack` reads (`fontFamily`/`fontSize`/`fontWeight`/`fontStyle`/`letterSpacing`/`lineHeight`); Framer's runtime font object carries more fields, but nothing reads them, so the narrower type can never mis-read the shape — the comment now says so, and inventing fields would fake precision) | L3474–3484 | | Wave2-34 W2-34-Item6
-- **W2-39-M8 (NEW Medium):** Empty option label auto-selects empty value on mount for required choice fields.
-- **W2-39-L6 (NEW Low):** Duplicate React `key` when author enters duplicate option labels.
-- **W2-39-I3 through I7 (NEW Refactor × 5):** ReDoS amplification via live-validation; whitespace-only labels accepted; PHONE_REGEX digit-only false positives; leading `+` for non-international format; multi-line paste into text input.
+#### Verified Clean (Session Persistence)
+W2-31 confirmed:
+- ✅ PII storage is opt-in only (`persistState = props.persistState === true`, default OFF at L11873)
+- ✅ Per-instance key via `useId()` (L6055; key `booking-engine:${reactInstanceId}` at L6433–6436)
+- ✅ `sessionStorage` (not `localStorage`) — clears on tab close
+- ✅ Cleared on successful submit (L6633–6647)
+- ✅ Clear button present (L7624–7636)
+- ✅ XSS surface is ZERO — no `dangerouslySetInnerHTML`/`innerHTML`/`eval`/`new Function` (0 hits); all values flow through React JSX auto-escaping
+- ✅ PII not leaked to console/analytics (9 console sites log static messages + err only; `booking_submitted` payload carries `slotStart` + `calEventTypeId` only)
+- ✅ All 7 `sessionStorage` access points triple-guarded (`persistState` + `typeof window` + `isStaticRender`)
+- ✅ `JSON.parse` wrapped in try/catch
+- ✅ `setItem` wrapped in try/catch for QuotaExceededError (with `saveFailedOnce` notice)
+- ✅ 300ms debounce on persist-write
+- ✅ **sessionStorage restore re-validation** (prior critical #5): ✅ FIXED — L6554–6581 loops `validateStep` over every prior step
 
 ---
 
-## RECOMMENDED FIX PHASING
+### Category 9 — Performance & Memoization (5 issues)
 
-### Phase 1 — Critical fixes (must ship before next release)
-1. **F-01-01** (Critical): Move misplaced Framer JSDoc block from L4451–4464 to L5779. Single cut/paste.
-2. **W1-04-C1 / D7** (Critical): Rewrite `PHONE_REGEX` to accept placeholder and international formats.
-3. **W1-11-A1 / D5** (Critical): Remove inline `outline: "none"` from `inputBaseStyle` L7143.
-4. **W1-19-F-01** (Critical): Fix calendar grid overflow on ≤330px viewports.
-5. **W1-04-H3 / D8** (High → escalated): `sessionStorage` restore must re-validate prior steps.
-6. **W1-06-F-06-1 / W2-25-F4** (High → escalated): POST body missing `end` field — every booking 400-rejects without it.
+#### Issue W1-16-P-13 — `TimeSlotList` O(N²) `isTimeElapsed` Calls Per Render (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L2498–2503
+- **Wave 1 Discovery:** Sub-Agent 16 found `isInitialFocus={selectedTime === null && timeOptions.findIndex((t) => !isTimeElapsed(t)) === timeOptions.indexOf(time)}` is computed **inside** the per-slot `.map()`. When `selectedTime === null` (the state on every freshly-picked date), this triggers N² `isTimeElapsed` calls per render — for a 48-slot day, ~2,304 `Date` constructions per render, re-running every 60-second `now`-tick.
+- **Wave 2 Verification:** W2-35 ✅ CONFIRMED + net-benefit-verified (memo overhead ~1:10,000 vs saved cost). HIGH benefit.
+- **Recommended Fix:**
+```typescript
+// Compute firstNonElapsedIndex once via useMemo outside the .map:
+const firstNonElapsedIndex = useMemo(
+  () => timeOptions.findIndex((t) => !isTimeElapsed(t)),
+  [timeOptions, nowTick] // or whatever the elapsed-check dep is
+)
+// Then in the .map: isInitialFocus={selectedTime === null && firstNonElapsedIndex === index}
+// Use .map((time, index) => …) instead of .indexOf(time).
+```
+- **Status: Completed** — `firstNonElapsedIndex` computed once per render (useMemo on `[timeOptions, isTimeElapsed]`) above the JSX (~L2206); the slot map now takes `(time, index)` and compares `firstNonElapsedIndex === index`. O(N²) per render → O(N).
 
-### Phase 2 — High-severity fixes (ship within 2 sprints)
-- Items 7–22 in synthesis (validation cluster, focus-cluster, ChoiceGroup cluster, Cal.com cache key + hardcoded values, theme WCAG cluster, mobile iOS zoom + Edit touch target, GDPR PII, ARIA radiogroup + step transitions).
+#### Issue W1-16-P-14 — `getReadableTextColor` Called Inline Twice (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L8756 (submit-button color), L8778 (submit-spinner border)
+- **Wave 1 Discovery:** Sub-Agent 16 found `getReadableTextColor(theme.accentColor)` called inline twice in `BookingEngine`'s main render. Not memoized; recomputed per keystroke/hover/minute-tick. Contradicts the file's own pattern at L842 and L3334 (both `useMemo`'d on `accentColor`).
+- **Wave 2 Verification:** W2-35 ✅ CONFIRMED. Note: L8778 only runs during submit. Net benefit LOW (saving ~0.005ms/render), but code-consistency improvement.
+- **Recommended Fix:** Single `useMemo` on `theme.accentColor`:
+```typescript
+const accentTextColor = useMemo(() => getReadableTextColor(theme.accentColor), [theme.accentColor])
+```
+- **Status: Completed** — single `accentTextOnSurface` memo added in `BookingEngine` (~L8210); submit-button color and spinner-border now reference it.
 
-### Phase 3 — Medium-severity fixes (ship within 1 quarter)
-- All remaining Medium findings from Categories 3–10.
+#### Issue W1-16-P-15 — `moveFocus` Cascade to 42 Cells on Every Cal.com Fetch (LOW-MEDIUM)
+- **Severity:** 🟢 Low-Medium
+- **Location:** L3582 (`moveFocus` useCallback dep `hasKnownAvailability`)
+- **Wave 1 Discovery:** Sub-Agent 16 found `moveFocus` useCallback dep `hasKnownAvailability` changes identity on every Cal.com fetch (via `availableDates`). The new `moveFocus` identity propagates to `CalendarGrid`'s `onMoveFocus` prop, breaking all 42 `CalendarCell`s' memos per fetch.
+- **Wave 2 Verification:** W2-22 ✅ CONFIRMED REAL (React does NOT coalesce parent-side `useCallback` rebuilds). W2-35 ✅ CONFIRMED. Acceptable cost (~5–10ms), improvable via a `latestRef`.
+- **Recommended Fix (option a — ref pattern):**
+```typescript
+const hasKnownAvailabilityRef = useRef(hasKnownAvailability)
+hasKnownAvailabilityRef.current = hasKnownAvailability
+const moveFocus = useCallback((/* args */) => {
+  // use hasKnownAvailabilityRef.current instead of hasKnownAvailability
+}, []) // empty deps
+```
+- **Status: Completed** — `hasKnownAvailabilityRef` (latestRef pattern) declared in `DateAndTimeInline` immediately above `moveFocus`; the callback reads `hasKnownAvailabilityRef.current(target)` and its dep array is now `[today, visibleMonth, dateKeyOf, maxMonthStart]` — the fetch-unstable `hasKnownAvailability` is gone, so `onMoveFocus` identity holds across every Cal.com fetch and the 42 `CalendarCell` memos survive. (The `hasAvailability` prop into `CalendarGrid` still changes per fetch — intentional, since cell disabled-state genuinely changes then.)
 
-### Phase 4 — Low-severity fixes + Refactors (ship as time permits)
-- All remaining Low findings; all Refactor findings (code quality, TypeScript strictness, premature-memoization cleanups).
+#### Issue W1-14-F1 — `getPayload` Missing `amLabel`/`pmLabel` Deps (HIGH, see SYN-09)
+- **Status: Completed** — `getPayload`'s dep array (L3526) now includes `amLabel`/`pmLabel`; author AM/PM copy edits immediately flow into review/confirmation/ICS labels. (SYN-09 in the Top 10 refers to this issue.)
+- Already covered as SYN-09 in Top 10.
 
-### Phase 5 — Dismiss / close-out
-- 9 false positives (FP-1 through FP-9).
-- 9 already-fixed items in `component_review.md` — mark as resolved (CC-1, CC-2, CC-3, CC-7 fully; CC-6, T1-H1, T9-M7, T8-H1, T4-L2/T5-C1 partially with documented residuals).
+#### Issue W1-14-F2 — `handleSubmitBooking` Missing `copy` Dep (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L7189
+- **Wave 1 Discovery:** Sub-Agent 14 found `handleSubmitBooking` `useCallback` missing `copy` dep. Reads 5 copy strings (`notesSelectedTimeLabel`, `notesDatePrefix`, `notesTimePrefix`, `unknownErrorLabel`, `errorFallbackMessage`). Stale strings get POSTed to Cal.com server-side — worst place to surface staleness. Same class of bug as W2-33-A2 fixed for `fallbackErrorLabel`.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED.
+- **Recommended Fix:** Add `copy` to deps array at L7189.
+- **Status: Completed** — `copy` is present in `handleSubmitBooking`'s dep array (verified at current ~L8012, with the explicit W1-14-F2 comment); all 5 copy reads (`notesSelectedTimeLabel`, `notesDatePrefix`, `notesTimePrefix` at ~L7886–7888, `unknownErrorLabel`/`errorFallbackMessage` at ~L7985–7988) plus the `errorCopy` reads are covered. No re-fix required this cycle.
+
+#### Issue W1-14-F7 — Textarea Auto-Resize Should Be `useLayoutEffect` (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L9642–9654
+- **Wave 1 Discovery:** Sub-Agent 14 found `FieldRenderer` textarea auto-resize is a `useEffect` doing synchronous DOM measurement+write (`clientHeight`/`scrollHeight`/`style.height`). Causes one-frame flicker on each keystroke. Should be `useLayoutEffect`.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED.
+- **Recommended Fix:** Change `useEffect` to `useLayoutEffect` at L9642.
+- **Status: Completed** — `FieldRenderer`'s textarea auto-resize is `React.useLayoutEffect` (verified at current ~L10493, with the explicit W1-14-F7 comment), so measurement+write happens in the same commit as the value change — no stale-height frame. The prior-cycle W2-37-A2 no-write-until-shrink mitigation is also still in place above it.
+
+#### Verified Clean (Performance + Memory)
+W2-30 confirmed **100% cleanup coverage** across all 30 resource registrations (0 memory leaks):
+- ✅ All 2 `ResizeObserver` instances disconnected in cleanup
+- ✅ All 1 `setInterval` cleared (60s tick at L3031)
+- ✅ All 6 `setTimeout` cleared (in cleanup or `.finally`)
+- ✅ All 7 `addEventListener` have matching `removeEventListener`
+- ✅ All 4 `requestAnimationFrame` call-sites cancelled
+- ✅ All 3 `AbortController` instances aborted (Cal.com fetch + submit)
+- ✅ `matchMedia` listener removed (+ legacy `removeListener` fallback)
+- ✅ `visualViewport` resize handler (W1-19-F7 fix) properly cleaned up
+
+W2-35 confirmed:
+- ✅ All 12 leaf components `React.memo`'d
+- ✅ 42-cell `calendarCells`, `timeOptions`, `parsedOptions`, `theme`, `fontStack`, `progressAnimate` all `useMemo`'d
+- ✅ All `StepBody` callbacks are stable `useCallback`'d (W1-14-F3 fix holds)
+- ✅ Per-keystroke in field A does NOT re-render field B (FieldRenderer's own React.memo + primitive value prop)
 
 ---
 
-## FIX CLUSTERS (15 clusters — see full detail in synthesis file)
+### Category 10 — Color Theme & Animation (5 issues)
 
-| # | Cluster | Findings | Estimated Effort |
+#### Issue W1-17-F17-N1 — `parseColorToRgba` Drops Alpha in Legacy Comma Syntax (MEDIUM-HIGH)
+- **Severity:** 🟡 Medium-High
+- **Location:** L102–231 (rgba branch L130–166, hsla branch L198–220)
+- **Wave 1 Discovery:** Sub-Agent 17 found `parseColorToRgba` silently drops the alpha channel in legacy comma-syntax `rgba(R,G,B,A)` and `hsla(H,S%,L%,A)`. The parser splits on `/` to separate channels from alpha (modern CSS slash syntax), so when no slash is present the alpha lands in `tokens[3]` and is never read. `rgba(255, 0, 0, 0.5)` returns `{r:255,g:0,b:0,a:1}` (opaque). The F-17-2 comment at L97–99 explicitly promises "comma or modern space+slash syntax", so this is a contract violation.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED via direct read (L198 `inner.split("/")` only handles modern slash syntax). W2-36 ✅ CONFIRMED + manual computation.
+- **Recommended Fix:** Add `?? tokens[3]` fallback to the alpha-token derivation in both branches (L157, L220):
+```typescript
+// In rgba branch (L220):
+const alphaToken = alphaPart ?? tokens[3]
+// In hsla branch (L157):
+const alphaToken = alphaPart ?? tokens[3]
+```
+- **Status: Completed** — both branches now derive `alphaToken` as `(alphaPart?.trim() || tokens[3] || "").trim()`, so legacy comma syntax keeps its alpha; modern slash syntax is untouched, and three-channel `rgb()`/`hsl()` still default to `a = 1`.
+
+#### Issue W1-17-F17-N2 — `getReadableTextColor` Composites Over Hardcoded WHITE (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L282–284
+- **Wave 1 Discovery:** Sub-Agent 17 found `getReadableTextColor` composites translucent inputs over hardcoded **WHITE**, but in dark mode the actual backdrop is `#0F1115`/`#1A1D23`. A translucent white accent (`rgba(255,255,255,0.5)`) mis-judges as opaque-white, picks black text, which is unreadable on the dark surface it actually renders on.
+- **Wave 2 Verification:** W2-36 ✅ CONFIRMED. Manual computation: `rgba(255,255,255,0.3)` on `#0F1115` returns `#000000` but actual composite RGB(87,88,91) gives black **2.97:1 ❌ AA FAIL**; white would give 7.08:1 ✅. **Function is wrong here.**
+- **Recommended Fix:** Add optional `backdrop` argument (default `#FFFFFF`), pass `theme.backgroundColor` from the `themeVerdicts` callsite.
+- **Status: Completed** — `getReadableTextColor(background, backdrop?)` now composites over the given backdrop (default `#FFFFFF` preserved for the picker's other light-first uses); the `themeVerdicts` callsite passes `theme.backgroundColor`. Dark-mode translucent accents now get honest verdicts (the W2-36 example `rgba(255,255,255,0.3)` on `#0F1115` correctly picks white, 7.08:1 ✅).
+
+#### Issue W2-36-N1 (NEW) — Default Dark-Theme Accent Fails AA-Text on Dark Backgrounds (MEDIUM)
+- **Severity:** 🟡 Medium
+- **Location:** L4180–4199 (`DEFAULT_DARK_THEME` with accent `#0066BB`)
+- **Wave 1 Discovery:** (Not in Wave 1 — discovered by W2-36.)
+- **Wave 2 Discovery:** W2-36 found the default dark-theme accent `#0066BB` fails AA-text on the dark backgrounds it renders on: **3.26:1** on `#0F1115` (fails 4.5:1 text, passes 3:1 UI) and **2.91:1** on `#1A1D23` (fails even §1.4.11 UI 3:1). Hidden by F17-N5's missing pairs.
+- **Recommended Fix:** Brighten dark-theme accent (e.g., `#3B82F6` → 4.7:1) OR add the missing pairs to `themeVerdicts`.
+- **Status: Completed** — `DEFAULT_DARK_THEME.accentColor` is now `#3B82F6` (blue-500): ~5.1:1 on `#0F1115`, ~4.5:1 on `#1A1D23` (AA ✅). The F-17-1 auto picker flips the on-accent text to black (~5.7:1) — consistent with the picker contract. Light mode keeps `#0066BB`; the dark-mode `pick()` override only swaps canvases still holding the light default, existing instances keep their values.
+
+#### Issue W1-17-F17-N5 — `themeVerdicts` Missing Contrast Pairs (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L6925–6932
+- **Wave 1 Discovery:** Sub-Agent 17 found `themeVerdicts` omits `error`/`success`-on-surface and `accent`-on-page/surface pairs.
+- **Wave 2 Verification:** W2-36 ✅ CONFIRMED (6 pairs present; 4 missing).
+- **Recommended Fix:** Add the 4 missing pairs.
+- **Status: Completed** — the `themeVerdicts` pairs array now also covers `error on surface`, `success on surface`, `accent on page`, and `accent on surface` (10 pairs total; the accent-on-page pair is what W2-36-N1 caught).
+
+#### Issue W1-18-F-1 / W1-18-F-2 — Two Animations Use Layout Properties Instead of Transforms (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L2222 (12h/24h toggle animates `left`), L7739 + L8433–8447 (progress-bar fill animates `width`)
+- **Wave 1 Discovery:** Sub-Agent 18 found two animations use layout properties (`left`, `width`) instead of GPU-friendly transforms (`x`, `scaleX`). Both are reduced-motion gated and bounded (discrete positions / step-change only), so impact is minimal.
+- **Wave 2 Verification:** W2-37 ✅ CONFIRMED. No layout thrashing risk (no `getBoundingClientRect` in render loops; `clientWidth`/`clientHeight`/`scrollHeight` only in effects).
+- **Recommended Fix:**
+  - L2222: swap `left` → `x` with `translateX(3px)` baseline
+  - L7739 + L8433: swap `width` → `scaleX(progressPct/100)` with `transformOrigin: "left center"`
+- **Status: Completed** —
+  - **12h/24h toggle (F-1):** slider now sits at a constant `left: 3` and animates a composited `x: "calc(100% + 3px)"` for 24h (motion branch, `initial={false}` preserved); the static-render branch uses the equivalent CSS `transform: translateX(calc(100% + 3px))`. Final position is pixel-identical to the old `left: "50%"` (thumb `calc(50% - 6px)` + translateX(100%+3) ≡ `left: 50%` on the padding box).
+  - **Progress bar (F-2):** `progressAnimate` memo now emits `{ scaleX: progressPct / 100 }`; the fill element is full-width with `transformOrigin: "left center"`. The static-render fill uses `transform: scaleX(...)` on a full-width bar instead of `width: %`. Visually identical (bar is a solid-color 999-radius pill; the tiny corner-rounding stretch at <100% is sub-pixel for a 999 pill), and layout no longer runs per spring frame.
+
+#### Verified Clean (Color & Animation)
+W2-36 and W2-37 confirmed:
+- ✅ `WCAG_TEXT_PICK_THRESHOLD = 0.1791` (L274) is mathematically exact: `(L+0.05)² = 0.0525 → L = 0.17913`. At the tie both contrasts = 4.583:1, above AA.
+- ✅ `srgbToLinear` uses WCAG 2.1's `0.03928` (not CSS Color 4's `0.04045`) — correct for the targeted spec.
+- ✅ Auto color mode: no FOUC (synchronous lazy initializer reads `matchMedia` before first paint, T10-M6), live-updating on OS theme change via `addEventListener("change", ...)`, subscription gated to `"auto"` only.
+- ✅ Three-layer reduced-motion defense comprehensive: `MotionConfig reducedMotion="user"` (L8891) + 7 `useReducedMotion()` call sites + CSS `@media (prefers-reduced-motion: reduce)` rule (L8908–8914)
+- ✅ `AnimatePresence` correctly configured: `mode="popLayout"` + `initial={false}` at L8508
+- ✅ `AnimatedStepContent` uses `usePresence()` to `aria-hidden` the exiting step
+- ✅ `stepTransition` reduced-motion branch takes precedence over author customization
+- ✅ All 9 inline-CSS `transition:` declarations animate only paint/composite properties (color, background-color, border-color, box-shadow, opacity)
+- ✅ Zero `layoutId` usage anywhere — zero mismatch risk
+- ✅ No `getBoundingClientRect` in render loops — no layout thrashing
+
+---
+
+### Category 11 — TypeScript Rigor (6 issues)
+
+#### Issue W1-15-TS-01 — Implicit `any` in `.catch((err) => ...)` (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L5062
+- **Wave 1 Discovery:** Sub-Agent 15 found `.catch((err) => ...)` where `err` is implicit **`any`** (Promise lib types). Reads `err?.name`, `err?.status`, `err?.message` compile only because of that. Every other catch in the file is explicitly `catch (err: unknown)`.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED. W2-34 ✅ CONFIRMED Framer-compatible.
+- **Recommended Fix:** `(err: unknown) => ...` at L5062.
+- **Status: Completed** — the single `.catch` in the file is now `(err: unknown) => ...` (~L5596, with the explicit W1-15-TS-01 comment); the body narrows once through a typed view (`errObj`) before reading `name`/`status`/`message`/`retryAfterSeconds`. File-wide sweep confirms every `catch` is `catch (err: unknown)` — no implicit `any` remains.
+
+#### Issue W1-15-TS-06 — `new Date(restoredSlot.date as string)` Unsafe Cast (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L6483
+- **Wave 1 Discovery:** Sub-Agent 15 found `new Date(restoredSlot.date as string)` casts `unknown` → `string` without `typeof` narrowing. A non-string, non-Date value yields an `Invalid Date` rather than a clean rejection.
+- **Wave 2 Verification:** W2-21 ✅ CONFIRMED. W2-34 ✅ CONFIRMED Framer-compatible. Runtime-safe due to `instanceof Date` guard + try/catch — cosmetic type lie.
+- **Recommended Fix:** Use `typeof` narrow:
+```typescript
+new Date(typeof restoredSlot.date === "string" ? restoredSlot.date : "")
+```
+- **Status: Completed** — the restore-path re-hydration (~L7077) is now exactly the recommended `new Date(typeof restoredSlot.date === "string" ? restoredSlot.date : "")`; the ternary returns a `Date` either branch, so the following `.getTime()` NaN check is type-clean (the prior partial fix could fall through to `new Date(unknown)` / throw a `.getTime()` TypeError on non-string junk; both now reject via the Invalid-Date + NaN guard).
+
+#### Issue W1-15-TS-08 — Ad-hoc `Error & { status?; retryAfterSeconds? }` Casts Duplicated (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L4971, L5108, L5430
+- **Wave 1 Discovery:** Sub-Agent 15 found three ad-hoc `Error & { status?; retryAfterSeconds? }` casts duplicated. A named `HttpFetchError` class would DRY this and enable `instanceof` narrowing.
+- **Wave 2 Verification:** W2-34 ✅ CONFIRMED Framer-compatible.
+- **Recommended Fix:** Define a named class:
+```typescript
+class HttpFetchError extends Error {
+  constructor(public status?: number, public retryAfterSeconds?: number, message?: string) {
+    super(message)
+    this.name = "HttpFetchError"
+  }
+}
+// Then `if (err instanceof HttpFetchError)` instead of ad-hoc casts.
+```
+- **Status: Completed** — named `class HttpFetchError extends Error { status?: number; retryAfterSeconds?: number }` declared next to the Cal.com controller constants (~L5277); the slots GET now `throw new HttpFetchError("HTTP {status}", res.status, retryAfterSeconds)` (no `as Error & {...}` cast, Retry-After parsed into the constructor); the fetch catch narrows via `err instanceof HttpFetchError` for `status`/`retryAfterSeconds` and `err instanceof Error` for the timeout/malformed-JSON path. The one remaining cast (`Error & { code?; errorCode? }` in `submitCalcomBooking`'s catch) is a different shape — Cal.com body error fields, not HTTP transport fields — and stays as-is per the audit's scoping.
+
+#### Issue W1-15-TS-07 — `FieldConfig` Flat Interface (INFO, do NOT fix)
+- **Severity:** ⚪ Info
+- **Location:** L3840
+- **Wave 1 Discovery:** Sub-Agent 15 suggested converting `FieldConfig` to a discriminated union on `fieldType`.
+- **Wave 2 Verification:** W2-34 ❌ REJECTED the proposed fix — converting `FieldConfig` to a discriminated union would break TS-runtime fidelity with Framer's `ControlType.Array` of `ControlType.Object` (L11104–11116), which emits ONE Object shape per item. Framer can ship a `checkbox` carrying leftover `options` (hidden controls don't strip values), so a TS discriminant would lie about runtime shape. The current flat interface is the correct Framer-idiomatic design; the 12+ `hidden` callbacks in `makeFieldObjectControls()` are the panel-level equivalent of discriminant enforcement.
+- **Recommended Action:** No change. Acceptable as-is.
+- **Status: False Positive** — Wave 2 already rejected the proposed fix: converting `FieldConfig` to a discriminated union would break TS-runtime fidelity with Framer's `ControlType.Array` of `ControlType.Object` (hidden controls don't strip values, so a discriminant would lie about the shape Framer actually ships). Verified no code change is warranted; the flat interface + `hidden` callbacks remain the correct Framer-idiomatic design.
+
+#### Issue W1-15-TS-09 — Redundant `?.` After `as` Cast (COSMETIC)
+- **Severity:** ⚪ Cosmetic
+- **Location:** L5108
+- **Wave 1 Discovery:** Sub-Agent 15 labeled `?.` after `as` cast as "dead syntax".
+- **Wave 2 Verification:** W2-21 ⚠️ REFINED — the `?.` retains defensive runtime behavior (the `as` cast has no runtime effect; `err` could still be null/undefined). Should be relabeled "statically-redundant-but-defensive".
+- **Recommended Action:** Optional cleanup. No change needed.
+- **Status: Stale / Skipped** — verified against the current source: the only remaining intersection cast is `err instanceof Error ? (err as Error & { code?: string; errorCode?: string }) : null` in `submitCalcomBooking`'s catch, and the `?.` reads after it (`errObj?.name`, `errObj?.code`, `errObj?.errorCode`) are NOT redundant — `errObj` is `null` when the thrown value isn't an `Error` (e.g. a string throw or a non-Error rejection), so the optional chaining retains real defensive behavior exactly as W2-21 refined. No change applied (audit said optional; the TS-08 HttpFetchError fix left this cast intentionally untouched).
+
+#### Verified Clean (TypeScript)
+W2-34 confirmed:
+- ✅ All 30 `useRef` calls have explicit generics
+- ✅ All `hidden()` callbacks use `Pick<>`/`Partial<>` slices, not `p: any`
+- ✅ All event handlers correctly typed (one explicit `React.KeyboardEvent<HTMLButtonElement>` at L883; all inline JSX callbacks use React's contextual typing)
+- ✅ `BookingPayload.end` properly typed as `end?: string` (ISO) at L1915
+- ✅ All 24 Framer top-level controls have corresponding TS interface declarations
+- ✅ No `@ts-ignore` / `@ts-expect-error` usage
+- ✅ No explicit `any` types (after W1-15-TS-01 fix)
+- ✅ No non-null assertions (`!.`)
+
+---
+
+### Category 12 — Mobile & Touch Ergonomics (4 issues)
+
+#### Issue W1-19-N1 — Calendar Cell Touch Target Below 44px on ≤329px Viewports (MEDIUM)
+- **Severity:** 🟡 Medium (WCAG 2.5.5)
+- **Location:** L1486 (`minWidth: TOUCH_TARGET_MIN` = 44)
+- **Wave 1 Discovery:** Sub-Agent 19 found the F-01 fix made the grid track shrinkable (`minmax(0, 1fr)` at L1865), but the cell button at L1486 still has `minWidth: 44`. When track < 44 (37–43px on 280–329px viewports), cells overlap; the next cell (later in DOM, painted on top) covers the previous cell's right overflow. Effective click width is the track width, not 44px.
+- **Wave 2 Verification:** W2-38 ✅ CONFIRMED + refined math (Wave 1 understated the shortfall — Wave 1 omitted the 12px section padding at L3677). Actual track width on iPhone SE (320px) is **38.86px (5.14px short)**; on Galaxy Fold cover (280px) it's **33.14px (10.86px short)**. Crossover to ≥44px happens at viewport ≥356px.
+- **Recommended Fix:**
+```typescript
+// At L1486, change:
+minWidth: TOUCH_TARGET_MIN
+// to:
+minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN
+// (where isNarrow is the existing measuredWidth < 360 check)
+```
+- **Status: Completed** — exactly that: `minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN` on the CalendarCell button (`isNarrow` was already threaded into CalendarGrid→CalendarCell). On narrow containers the grid track itself is the honest target — nothing overlaps and no effective target shrinks.
+  - **Pass-2 addendum (2026-08-16):** tsc verification found the prop had NOT actually been threaded through — `isNarrow` was used inside `CalendarCell` but absent from `CalendarCellProps`, the destructure, and the CalendarGrid call site (TS2304). All three sites now thread it; compiles clean.
+
+#### Issue W1-19-N2 — Checkbox Field Touch Target Below 44px (MEDIUM)
+- **Severity:** 🟡 Medium (WCAG 2.5.5)
+- **Location:** L9941–9986 (FieldRenderer `case "checkbox"` label)
+- **Wave 1 Discovery:** Sub-Agent 19 found the FieldRenderer `case "checkbox"` label has no `minHeight`. For single-line labels, touch target is ~20px tall. Below WCAG 2.5.5.
+- **Wave 2 Verification:** W2-38 ✅ CONFIRMED.
+- **Recommended Fix:** Add `minHeight: TOUCH_TARGET_MIN` to the label (precedent: F-03 Edit button).
+- **Status: Completed** — the checkbox label row now has `minHeight: TOUCH_TARGET_MIN` (the whole label is the tap target, same precedent as the F-03 Edit button).
+
+#### Issue W1-19-N3 — Form-Grid `@media` Uses Viewport Width Instead of Container Width (LOW)
+- **Severity:** 🟢 Low / Refactor
+- **Location:** L8819
+- **Wave 1 Discovery:** Sub-Agent 19 found the form-grid `@media (max-width: 768px)` rule uses VIEWPORT width, not CONTAINER width. Every other responsive decision in the file uses `measuredWidth` via ResizeObserver. Embeds in narrow desktop sidebars stay 2-col.
+- **Wave 2 Verification:** W2-38 ✅ CONFIRMED.
+- **Recommended Fix:** Hoist `measuredWidth` to engine level, drop the `@media` rule.
+- **Status: Completed** — the engine now measures RootShell via ResizeObserver (`engineWidth`, same pattern as L757/L3511); `StepBody` receives it and both form grids collapse to 1-col below `COMPACT_BREAKPOINT` (768, the file-wide container threshold). The `@media (max-width: 768px)` rule is deleted. Narrow-desktop-sidebar embeds now collapse correctly; wide containers on small viewports keep 2-col.
+
+#### Issue W1-19-N4 — `env(safe-area-inset-bottom)` Fallback Inconsistency (LOW)
+- **Severity:** 🟢 Low
+- **Location:** L8505 (has `0px` fallback), L8680 (no fallback)
+- **Wave 1 Discovery:** Sub-Agent 19 found inconsistent `env(safe-area-inset-bottom)` fallbacks.
+- **Wave 2 Verification:** W2-38 ✅ CONFIRMED.
+- **Recommended Fix:** Add `0px` fallback at L8680 for consistency. 4-character fix.
+- **Status: Completed** — `env(safe-area-inset-bottom, 0px)` now matches the submit bar; the sticky step-footer keeps its padding on non-notch browsers.
+
+#### Verified Clean (Mobile)
+W2-38 confirmed:
+- ✅ Prior W1-19-F-01 fix (calendar grid template `minmax(0, 1fr)` at L1865) IS in place — Saturday column no longer clipped
+- ✅ All other Wave 1 F-01 through F-17 fixes verified in code
+- ✅ 18 of 20 interactive elements meet WCAG 2.5.5 (44×44px). Two outliers: N1 (calendar cell) and N2 (checkbox label).
+- ✅ No horizontal overflow on ≤320px viewports
+- ✅ No `100vh`/`100vw` anywhere (RootShell uses `height: "auto"`)
+- ✅ Input font-size ≥16px on mobile (prevents iOS auto-zoom) — F-02 fix at L9710–9721, L9736, L9339–9344
+- ✅ `visualViewport` keyboard handler (F-07 fix) textbook implementation at L6136–6178
+
+---
+
+## FALSE POSITIVES DISMISSED IN WAVE 2 (8 findings)
+
+| # | Finding | Original Severity | Native Mitigation |
 |---|---|---|---|
-| 1 | Framer Platform Foundations | F-01-01, F-01-05, W1-02-F1, F-01-02 | ~2 hours | ✅ DONE — F-01-01 ✅ (pre-existing), F-01-02 ✅, F-01-05 ✅ (bundle 16), **W1-02-F1 ✅ (fetchTimeoutMs PropertyControl verified in code)**; **W1-02-F3 ✅ (timezones Array control) added to this cluster** |
-| 2 | Cal.com Error-Message Surfaces | W1-02-F4 through F8, W1-06-F-06-10 | ~4 hours |
-| 3 | CC-5 Focus-Visible Restoration | W1-11-A1, W1-11-A5/A6/A7/A8, W2-29-N1, W1-10-A1 | ~3 hours |
-| 4 | PageUp/PageDown + H5 Fix Resurrection | W1-11-A2, W2-27-F11 | ~2 hours |
-| 5 | Phone/Email Regex + ReDoS Hardening | W1-04-C1, W1-04-H2, W1-04-L3, W1-20-H2, W1-20-M6 | ~4 hours |
-| 6 | sessionStorage Restore + Validation + Privacy | W1-04-H3, W1-12-F-12-2, F-12-1/3/4/5/6, W2-31-A-31-2/3 | ~6 hours |
-| 7 | Cal.com POST Body + Idempotency + Retry | W1-06-F-06-1, W1-06-F-06-4, W2-25-F6/F11/F12 | ~3 hours | ✅ DONE |
-| 8 | `validationCopy` + `handleContinue` Deps Cleanup | W1-04-H1, W1-04-M4, W2-33-A4 | ~1 hour | ✅ DONE |
-| 9 | Inline Object/Function Memoization | W1-14-F3/F4/F7, W1-08-CG-03, W1-16-P-02 | ~4 hours | ✅ DONE |
-| 10 | Theme/Color WCAG Compliance | W1-17-F-17-1/2/3, W2-36-N1, W1-17-F-17-11, F-17-4/5/6/7/8 | ~8 hours |
-| 11 | Mobile Responsive Touch Targets + Overflow | W1-19-F-01/02/03, F-04 through F-12 | ~6 hours | ✅ DONE |
-| 12 | Motion + Reduced-Motion Compliance | W1-18-F1/F2/F3, W2-37-A1/A2/A3 | ~3 hours | ✅ DONE |
-| 13 | ARIA Live Regions + Step Announcements | W1-10-A2, W1-10-A9, W2-28-F10, W1-10-A10, W1-10-A6 | ~3 hours | ✅ DONE |
-| 14 | Hardcoded Copy Polish | W1-02-F9 through F-23, W1-02-F24 | ~6 hours | ✅ DONE |
-| 15 | TypeScript Strictness | W1-15-TS-01 through TS-11, W2-34 Item 6 | ~4 hours | ✅ DONE |
-| 16 | Render-Scope Wiring (regression cluster from the `useBookingEngineState` extraction) | B16-R1..R6 | ~2 hours | ✅ DONE |
+| 1 | **W1-04-F-2** `navigatingRef` wedge | LOW-MED → INFO | React 18 flushes state between separate event-handler tasks; sub-frame (~16ms) double-click is automation-only; self-recovering via `handleBack` on non-zero steps; release effect fires on next genuine `safeCurrentIndex` change. |
+| 2 | **W1-04-F-7** Continue `onClick`+`onSubmit` double-invocation | LOW → INFO | React 18 automatic batching coalesces both calls' state updates into one render; second call early-returns via `navigatingRef`; redundant work is one pure `validateStep` (microseconds). |
+| 3 | **W1-08-F-08-02 cascade claim** (HIGH → LOW) | HIGH → LOW | **Incorrect cascade model**: ChoiceGroupInline's parent is `FieldRenderer` (itself `React.memo`'d at L9620), not BookingEngine. Per-keystroke in field A does NOT re-render field B's FieldRenderer. The "every parent render" cascade doesn't exist. **However**, the memo IS still defeated at FieldRenderer re-render (real issue, kept as LOW). |
+| 4 | **W1-14-F4** persist-restore missing `activeSteps`/`validationCopy` deps | LOW → hygiene | Mount-only effect by design; deps stable post-mount; captured first-render closure is intentional restore-on-mount semantic. |
+| 5 | **W1-14-F8** handlers omit stable helpers from deps | LOW → hygiene | React guarantees `useState` setter stability (lifetime) and `useCallback([])` stability. Safe by React's invariants. |
+| 6 | **W1-14-F9** `navigatingRef` release effect on first mount | INFO | Standard React effect behavior; ref already `false` at L7044 init — no-op. |
+| 7 | **W1-09-DT-Locale** `pageLocale()` called inline | LOW → INFO | `pageLocale()` returns primitive `string\|undefined`; `React.memo`'s `Object.is` value-compares strings — memo holds. Self-acknowledged cosmetic. |
+| 8 | **W1-05-F-05-03** fetch effect missing `errorCopy`/`timeoutMs` deps | MED → INFO (production) | `errorCopy` is `useMemo`'d (stable), `fetchTimeoutMs` is primitive; author edits only happen on Framer canvas where property-panel changes remount the component (effect re-runs fresh); published-site props are immutable. |
 
 ---
 
-### Bundle 16 sub-findings (fix cluster 16) — render-scope wiring
+## PRIOR-CYCLE FINDINGS RE-CONFIRMED FIXED (28 items)
 
-Diagnostic sweep (VS Code native-preview TS) surfaced a regression cluster: the `useBookingEngineState` extraction left several locals referenced by the main render without ever being returned, one constant was lost, and two children referenced parent-scope names bare. All were **runtime `ReferenceError`s** (the file only ever "transpiled" — nothing typechecked it):
+The following prior-cycle critical/high findings (from `/home/z/my-project/upload/Audit-Report.md`, 2026-08-15, 8,866-line baseline) are verified FIXED in the current 11,884-line source:
 
-- **B16-R1 (Critical, runtime):** `stepAnnouncement` — the W1-10-A2 combined sr-only live region rendered an undefined variable (screen-reader announcements dead since the extraction). — **✅ FIXED** (added to the state hook's returned object + destructure; region kept as `<output aria-live="polite">`, biome-clean while preserving implicit `role=status`).
-- **B16-R2 (Critical, runtime):** `regexPreviewVerdicts` (W1-20-M6 canvas regex preview) = undefined in render. — **✅ FIXED** (returned + destructured).
-- **B16-R3 (Critical, runtime):** `themeVerdicts` (F-17-5/6 canvas theme-contrast banner) = undefined in render. — **✅ FIXED** (returned + destructured).
-- **B16-R4 (Critical, runtime):** `ariaLabels` used bare inside `StepBody` (8 sites) — the component never received it via props. **Every form/datetime step render crashed.** — **✅ FIXED** (typed as `typeof DEFAULT_ARIA_LABELS`, added to `StepBodyProps`, destructured, passed at the call site; single computed source stays in `BookingEngine`).
-- **B16-R5 (Critical, runtime):** `ChoiceGroupInline` used `choiceGroupAriaLabel` (4 sites) without having it in `ChoiceGroupInlineProps` — choice fields crashed. — **✅ FIXED** (prop added + destructured + threaded from `FieldRenderer`'s existing `ariaLabels.choiceGroup`).
-- **B16-R6 (Critical, runtime):** `WCAG_TEXT_PICK_THRESHOLD` referenced in `getReadableTextColor` (ran on every themed text render) but never defined — **F-17-1's tie threshold (0.1791) was lost during its own fix.** — **✅ FIXED** (`const WCAG_TEXT_PICK_THRESHOLD = 0.1791` restored beside the documented derivation).
-- **B16-R7 (minor):** rawSlots union narrowing — member access on the `unknown[]` union arm (TS-2339 ×7). — **✅ FIXED** (one narrowed typed view: `json as { data?: unknown; slots?: unknown }` after the object check; every branch narrows before use).
-- **B16-R8 (minor):** restored-block typing — `parsed.currentIndex` (TS-2339 ×4), `new Date(slot.date)` on `unknown` (TS-2769), `validateStep(restoredValues)` (TS-2345). — **✅ FIXED** (`currentIndex?: unknown` added to the parse cast; `instanceof Date` narrowing; one `as BookingValues` at the validation call; merge-cast stays at the single `setValues` boundary).
-- **B16-R9 (lint):** `forEach` callback returning a value (biome `useIterableCallbackReturn`). — **✅ FIXED** (block body).
-- **B16-R10 (env, unfixed by design):** `Cannot find module 'framer'/'framer-motion'` — this repo ships without `node_modules`/tsconfig by design (Framer provides types at build); the two module-resolution errors are environmental, not code. No ambient `declare module` added because a hand-written stub would drift from Framer's real API surface (same rationale as TS-10/W2-34-Item-6).
-
-Also in this sweep: **F-01-02 ✅ FIXED** and **F-01-05 ✅ FIXED** (bundle 16 — see detail sections, Sub-Category 1a).
-
----
-
-## FALSE POSITIVES DISMISSED (9 findings)
-
-| # | Finding | Reason for Dismissal |
+| Prior ID | Description | Verified By |
 |---|---|---|
-| FP-1 | Wave1-22 FP-22-01 (Continue double-click skipping step) | React 18 batches the two `setCurrentIndex` calls; the second is a no-op (POST path is safe via `submittingRef`). Analytics duplication aspect is real (see D11). |
-| FP-2 | Wave1-22 FP-22-05 (TS-02 `await res.json()`) | Reclassified as Refactor (TypeScript strictness, no runtime impact). |
-| FP-3 | Wave1-22 FP-22-10 (theoretically-problematic-but-practically-harmless) | All moved to Refactor bucket (premature-optimization concerns). |
-| FP-4 | Wave1-09 DT-12 (CC-1 stale-slot) | Wave1-09 + Wave2-27-F5 confirmed already-fixed. Moved to Already-Fixed Items. |
-| FP-5 | Wave1-09 DT-13 (Time-grid labels timezone-correct) | Not a finding — confirmed safe. |
-| FP-6 | Wave1-09 DT-14 (Loading state PASS) | Not a finding — confirmed safe. |
-| FP-7 | Wave1-08 CG-11 (Roving tabIndex correct in normal case) | Not a finding — confirmed safe. |
-| FP-8 | Wave1-08 CG-12/13/14/15 (Arrow keys wrap, Home/End, Click, Controlled↔Uncontrolled) | Not findings — all confirmed safe. |
-| FP-9 | Wave1-13 F1/F2 (informational only) | Not findings — informational notes. |
+| F-01-01 | Framer layout annotations misplaced above non-exported helper | W2-32 ✅ (JSDoc now at L7879–7892, immediately above default export L7893) |
+| W1-04-C1 / D7 | `PHONE_REGEX` rejects valid international formats | W1-04 ✅ (generalized group/paren regex) |
+| W1-11-A1 / D5 | Inline `outline: "none"` overriding `:focus-visible` | W2-29 ✅ (inputBaseStyle L9726–9740 has no `outline` key) |
+| W1-19-F-01 | Calendar grid `minmax(44px, 1fr)` clipping Saturday column | W2-38 ✅ (now `minmax(0, 1fr)` at L1865) |
+| W1-04-H3 / D8 | sessionStorage restore advancing without re-validation | W2-24 ✅ (L6554–6581 loops validateStep over prior steps) |
+| W1-06-F-06-1 / W2-25-F4 | POST body missing required `end` field | W2-25 ✅ (L5319–5321 + threading at L7293) |
+| W1-04-C1 / H2 / H3 / L3 / M4 | All 5 prior W1-04 validation items | W2-24 ✅ |
+| W1-05-F1 / F3 / F4 | Cal.com cache-key credentials, per-attempt timeout, ±1 day TZ widening | W2-25 ✅ / W2-26 ✅ |
+| W1-10-A1 through A16 | All 14 prior W1-10 ARIA fixes | W2-28 ✅ |
+| W1-14-F6 | `startTransition` inside `useLayoutEffect` defeating before-paint clamp | W1-14 ✅ (L6722 explicitly avoids startTransition) |
+| W1-15-TS-01 through 10 | All prior W1-15 TS fixes (no `any`, no `as any`, no `@ts-ignore`, no `!.`) | W2-34 ✅ |
+| W1-18-F1 / F2 / F3 | All prior W1-18 motion fixes | W2-37 ✅ |
+| W2-30-F2 / F3 / F4 | All prior W2-30 cleanup fixes | W2-30 ✅ (100% cleanup verified) |
+| W2-33-A2 | `fallbackErrorLabel` stale closure | W1-14 ✅ |
+| W2-37-A1 / A2 / A3 | Prior W2-37 animation fixes | W2-37 ✅ |
 
 ---
 
-## ALREADY-FIXED ITEMS (9 — close out in `component_review.md`)
+## PRIOR-CYCLE FINDINGS RE-CONFIRMED STILL OPEN (5 items)
 
-| Original Issue | Fixed In | Verified By |
+| Prior ID | Description | Current Status |
 |---|---|---|
-| **CC-1** Stale-Slot Bug | `handleDateSelect` calls `setSelectedTime(null)` inside same `startTransition` as `setSelectedDate(date)` | Wave1-09 DT-12 ✅ + Wave2-27-F5 ✅ |
-| **CC-2** Demo-Grid Fallback | Demo grid now canvas-only via transitive guard | Wave1-13 §2.8 ✅ + Wave2-32 ✅ |
-| **CC-3** Silent Fake-Success | Hide-demo-when-unconfigured gates published site | Wave1-13 §2.2 ✅ |
-| **CC-6** Focus Management (partial) | `stepTitleRef` effect at L5175–5183 moves focus | Wave1-11 ✅ (residual: handleRetry — W1-11-A4) |
-| **CC-7** ChoiceGroupInline Accessible Name | `label={field.label}` passed in at L7308 | Wave1-20 ✅ |
-| **T1-H1** Roving Tabindex Breaks | `selectedOrFirstDateKey` (L2560–2572) | Wave1-11 ✅ |
-| **T9-M7** RenderTarget Computed on Every Render | Memoized via `React.useMemo` at L5611–5614 | Wave1-01 ✅ |
-| **T8-H1** useIsStaticRenderer (partial) | Added to `AnimatedStepContent` at L4481 | Wave1-01 ✅ (residual: 2 other motion paths — F-01-05) |
-| **T4-L2 / T5-C1** CSS Class Mismatch (className half) | `.be-input-${reactInstanceId}` → `.be-input` fixed at L6389–6399 | Wave1-11 ✅ (residual: inline `outline: "none"` half — W1-11-A1 Critical) |
+| W1-09-DT-03 | `firstDayOfWeek` uses `navigator.language` while `weekdayLabels`/`monthName` use `pageLocale()` — mismatched locales can misalign weekday header vs grid offset | ✅ FIXED — `firstDayOfWeek` memo (~L2942) now reads `pageLocale() || "en-US"`, matching `weekdayLabels`/`monthName` (verified in code). |
+| W1-09-DT-10 | TimeSlotList radiogroup handles only Arrows; no Home/End per WAI-ARIA radiogroup pattern | ✅ FIXED — TimeSlotList radiogroup `onKeyDown` (~L2699) handles Home/End: focuses the first/last non-elapsed slot and selects it via `onSelectTime` (verified in code). |
+| W1-13-F-13-10 | `themeVerdicts` / `regexPreviewVerdicts` memos run on published-site mount even though results are gated out of JSX by `isCanvas &&` | ✅ FIXED — `isCanvas` hoisted above both verdict memos in `useBookingEngineState` (~L7508, replacing the old render-section duplicate); both memos now early-return `[]` when `!isCanvas` (regex compilation sweep + 10-pair WCAG contrast math skip the published site entirely) with `isCanvas` added to both dep arrays. |
+| W1-15-TS-07 | `FieldConfig` flat interface vs discriminated union | W2-34 ❌ REJECTED the proposed fix — flat interface is correct Framer design |
+| W1-17-N6 | `getReadableTextColor` returns only `#000000`/`#FFFFFF` (by design) | Acceptable as-is |
 
 ---
 
-## KEY WAVE 2 CONTRIBUTIONS BEYOND WAVE 1
+## RECOMMENDED FIX PHASING (5-PHASE PLAN)
 
-| Sub-Agent | New Contributions |
-|---|---|
-| **W2-25** (Cal.com deep dive) | 7 NEW findings — `Retry-After` not read on 429, malformed JSON leaks raw error text, no `navigator.onLine` check, no Cancel button during in-flight submission, etc. |
-| **W2-29** (focus verification) | 2 NEW findings — TimeSlotList focus ring invisible on selected slot; `focusTimerRef` cleanup gated on `persistState`. |
-| **W2-31** (privacy/GDPR) | Reframed W1-12-F-12-2 from Medium to **High** (compliance issue, not UX). |
-| **W2-36** (theme) | 1 NEW finding — dark-mode `errorColor` `#F87171` and `successColor` `#16A34A` fail WCAG AA. |
-| **W2-37** (motion) | 3 NEW findings — author-customized `stepTransition` bypasses `prefersReducedMotion`; textarea auto-resize per-keystroke reflow; no `@media (prefers-reduced-motion: reduce)` rule. |
-| **W2-39** (form fields) | 9 NEW findings — duplicate React `key` on duplicate option labels; empty option label auto-selects empty value on mount; ReDoS amplification via live-validation; PHONE_REGEX accepts digit-only "extension" noise; etc. |
+### Phase 1 — Critical & Data-Loss (1 fix, ~30 min)
+1. **SYN-01** — Move `validation` runtime read from `props.validation` to `copy?.validation` (or move schema block out of `copy.controls`). Preserves already-saved author data. **Blocks every localization effort.**
+
+### Phase 2 — High-Severity Correctness (5 fixes, ~2 hours)
+2. **SYN-04** — Guard L7720 `currentStep.title` access with `currentStep ? \`${...}\` : ""`. Blocks canvas crash.
+3. **SYN-05** — Replace `.find()?.fields.find()` with `for...of` loop iterating ALL steps at L7115. Restores multi-step live re-validation.
+4. **SYN-08** — Memoize `opts` (`useMemo`) + `useCallback` `onChange` in `FieldRenderer` at L9870/L9931. Closes W1-08-F-08-02 + W1-08-F-08-05 + W1-16-P-16 + W1-20-F-1 simultaneously.
+5. **SYN-09** — Add `amLabel`/`pmLabel` to `getPayload` deps at L3480.
+6. **SYN-10** — Split `selected` into `presentationSelected` vs `formValue` in ChoiceGroupInline.
+
+### Phase 3 — Live API Verification + High-Impact Hardcoding (3 fixes, ~1 hour + curl)
+7. **SYN-06 + SYN-07** — Run `curl` against Cal.com v2 live API to verify query param names (`start`/`end` vs `startTime`/`endTime`) and slot shape (`{start, end}` vs `{time, bookingUid}`). If live API differs from code, fix at L4906 + L4733.
+8. **SYN-02** — Add 3 persistence-disclosure PropertyControls (`savedAnswersLabel`, `clearSavedAnswersLabel`, `saveFailedMessage`).
+9. **SYN-03** — Add `cancelSubmitLabel` to `buttonLabels` group.
+
+### Phase 4 — Medium-Severity Polish (12 fixes, ~3 hours)
+10. **W1-12-F-12-11** — Add `setHasSavedProgress(true)` on restore path (GDPR regression).
+11. **W1-12-F-12-12** — Guard `slot.date.getTime()` with `instanceof Date` (data loss prevention).
+12. **W1-14-F2** — Add `copy` to `handleSubmitBooking` deps.
+13. **W1-16-P-13** — Memoize `firstNonElapsedIndex` outside `.map` (O(N²)→O(N)).
+14. **W1-17-F17-N1** — Add `?? tokens[3]` fallback for alpha in legacy comma syntax.
+15. **W1-17-F17-N2** — Add `backdrop` param to `getReadableTextColor`, thread `theme.backgroundColor`.
+16. **W2-36-N1** — Brighten dark-theme accent to ≥4.5:1 on dark backgrounds.
+17. **W1-19-N1** — `minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN` at L1486.
+18. **W1-19-N2** — Add `minHeight: TOUCH_TARGET_MIN` to checkbox label.
+19. **W1-10-N1** — Add `aria-invalid`/`aria-describedby` to slot radiogroup.
+20. **W1-10-N2** — Scope all field IDs with `${reactInstanceId}-` prefix.
+21. **W1-10-N3** — Add `role="group"` + `aria-label` to 12h/24h toggle.
+
+### Phase 5 — Low-Severity Cleanup (~15 fixes, ~2 hours)
+22. **W1-04-F-3** — `validatePhone(str.trim(), vc)`.
+23. **W1-04-F-4** — Require alphabetic first TLD char in `EMAIL_REGEX`.
+24. **W1-04-F-8** — Add `noValidate` to `<form>`.
+25. **W1-08-F-08-06** — Use index-based `key` and `isSelected` for duplicate-label safety.
+26. **W1-14-F7** — Change textarea auto-resize to `useLayoutEffect`.
+27. **W1-07-F5/F7/F9** — Three timezone label/cache fixes.
+28. **W2-26-F26-1** — Widen Cal.com fetch range to ±2 days OR compute visitor-tz boundaries.
+29. **W1-19-N3/N4** — Form-grid container query + `env(safe-area-inset-bottom)` fallback consistency.
+30. **W1-18-F-1/F-2** — Swap `left`→`x`, `width`→`scaleX` for GPU-friendly animations.
+31. **W1-15-TS-01/06/08** — Three TypeScript cleanup fixes (all Framer-compatible).
+32. **W1-02-F4/F5/F6/F7** — Four customization PropertyControl additions.
+33. **W1-13-F-13-8/F-13-9** — Canvas banner borders + ARIA semantics.
+34. **W1-10-N4/N5/N6/N7/N8/N9/N10** — Seven low-severity ARIA polish items.
+35. **W2-29-N1** — `handleCancelSubmit` focus restoration.
+36. **W1-03-3/W1-03-4** — `handleBack` navigatingRef + pinned-step remap startTransition.
 
 ---
 
-## METHODOLOGY NOTES & LIMITATIONS
+## CONFLICT RESOLUTION LOG (7 cross-agent merges)
 
-1. **Wave 2-21 produced findings** but its scope (source-truth spot-check of 65 line references) is documented as a coverage-gap note. The 60 confirmed-accurate / 6 discrepancy / 0 hallucinated verdict is preserved in the synthesis.
-2. **Wave 2-22 outlier.** Wave2-22 was a "skeptic / false-positive catalog" meta-audit that flagged 10 false positives. 7 of those were directly contradicted by dedicated verifiers with empirical evidence (Node timing tests, source re-traces). The dedicated verifiers' verdicts win; only 3 of Wave 2-22's dismissals stand.
-3. **Severity calibration applied uniformly.** All findings re-mapped to canonical Critical/High/Medium/Low/Refactor rubric.
-4. **No new source-code reads beyond verification.** This synthesis relies on Wave 1 findings + Wave 2 verifications + targeted source reads.
-5. **Line numbers refer to the current source** `/home/z/my-project/upload/BookingEngine.tsx` (8 866 lines). If the source is refactored before fixes are applied, line numbers will shift but finding identifiers (e.g., F-01-01, W1-04-C1) remain stable.
-6. **Full per-finding evidence, code snippets, and remediation code** live in:
-   - `/home/z/my-project/wave1_findings/subagent_01.md` through `subagent_20.md` (10 390 lines total)
-   - `/home/z/my-project/wave2_findings/subagent_21.md` through `subagent_40.md` (9 660 lines total)
-   - `/home/z/my-project/worklog.md` (1 137 lines of multi-agent worklog)
+1. **SYN-01 (CRITICAL):** W1-01-F-01 (HIGH) + W1-02-F1 (CRITICAL) — both found the `validation` PropertyControl silent no-op via independent paths (brace-depth parse + interface cross-ref). Escalated to CRITICAL because impact is total.
+2. **SYN-08 (HIGH):** W1-08-F-02 + W1-16-P-16 + W1-20-F-1 — three sub-agents describe the same defect (ChoiceGroupInline memo break) from different angles. One fix (memoize `opts`, `useCallback` `onChange`) solves all three reported symptoms.
+3. **SYN-37 (MEDIUM):** W1-05-F-05-03 + W1-14-F3 — same underlying issue (Cal.com fetch effect incomplete dep array: `errorCopy` + `timeoutMs` + `copy` all missing).
+4. **SYN-48 (MEDIUM):** W1-07-F6 + W1-09-DT-TzToday — same defect (today computed browser-local when `timeZone` prop set).
+5. **SYN-61 (LOW):** W1-09-DT-10 + W1-11-F4 — same defect (TimeSlotList missing Home/End).
+6. **SYN-25 (LOW):** W1-02-F11 + W1-18-F-18-3 — same defect (hardcoded spring transitions not exposed via PropertyControls).
+7. **SYN-82 (LOW):** W1-14-F7 + prior W2-37-A2 mitigation — textarea auto-resize should be `useLayoutEffect`; prior cycle's no-write mitigation is in place but deeper fix open.
 
 ---
 
-*End of Executive Audit Summary. The 6 Critical findings above represent the must-fix-before-next-release set; Phases 2–5 outline the remaining 172 confirmed issues in priority order.*
+## UNRESOLVED VERIFICATION ITEMS (1)
+
+**Cal.com v2 Live OpenAPI Verification (SYN-06 + SYN-07):** Wave 1 explicitly flagged these as "needs Wave 2 verification against Cal.com's live OpenAPI." Wave 2 verified the code-level claims but could not fetch the live API (sandbox has no Cal.com credentials). If Cal.com v2 has migrated to `startTime`/`endTime` and `{time, bookingUid}` slot shape since the prior cycle, current code is broken (every availability fetch fails or returns empty calendar with no error). **Live OpenAPI fetch is the top compensating verification action.** Single curl command:
+
+```bash
+curl -H "Authorization: Bearer $CAL_API_KEY" \
+  -H "cal-api-version: 2024-09-04" \
+  "https://api.cal.com/v2/slots?eventTypeId=123&startTime=2026-08-16T00:00:00Z&endTime=2026-08-23T00:00:00Z&timeZone=UTC"
+```
+
+If 400/error → rename `start`→`startTime`, `end`→`endTime` at L4906–4910. Inspect response shape → if `{time, bookingUid}`, update `isCalSlot` at L4733 to accept either shape.
+
+---
+
+## AUDIT ARTIFACTS
+
+| Artifact | Path | Size |
+|---|---|---|
+| **Final Audit Report (this file)** | `/home/z/my-project/download/Audit-Report.md` | — |
+| Source file | `/home/z/my-project/upload/BookingEngine.tsx` | 11,884 lines, 519 KB |
+| Prior audit (reference) | `/home/z/my-project/upload/Audit-Report.md` | 963 lines, 120 KB |
+| Wave 1 findings (20 files) | `/home/z/my-project/wave1/subagent_01.md` through `subagent_20.md` | ~120 KB total |
+| Wave 2 verifications (19 files) | `/home/z/my-project/wave2/subagent_21.md` through `subagent_40.md` (subagent_33 missing — timed out) | ~520 KB total |
+| Regex test script | `/home/z/my-project/scripts/test_regex.js` | 103 assertions, re-runnable |
+| Shared worklog | `/home/z/my-project/worklog.md` | ~1,200 lines |
+
+**Re-run regex tests:** `node /home/z/my-project/scripts/test_regex.js`
+
+---
+
+*End of Audit Report.*
+
