@@ -383,53 +383,6 @@ Discovered by: sub-agent 1, session DR
 
 ---
 
-## DR-24 — "Buy Button" floating overlay renders on every Services page, links to https://x.com/, and uses a full homepage screenshot as its image
-
-Status: Open
-Category: UX & conversion
-Severity: Critical
-Location: Layout template `yDIYoKc7h` → Desktop/Tablet/Phone → "Buy Button" component instance `aqBIOKUF4` (component `sfrLnUdBr`). Sits inside the Layout template, so it appears on `/services`, `/services/:Services`, and every other page that uses Layout.
-
-Description:
-A floating "Buy Button" is placed `position: fixed; bottom: 70px; right: 20px; zIndex: 10` in the Layout template, so it overlays every Services page. Three concrete problems:
-1. Its `link` is set to `https://x.com/` (X/Twitter) — completely unrelated to a veterinary clinic, and clearly a placeholder that was never replaced.
-2. Its `image` is set to `https://framerusercontent.com/images/fm2cvVCqujlMPcHRgN6Vkir3kvA.png`, which is a full screenshot of the Vetly homepage (with header, hero, feature cards, social proof). This image is rendered at `width="auto" height="auto"`, so the entire homepage screenshot appears as a small floating thumbnail in the bottom-right corner of every page — visually confusing and clearly a configuration mistake.
-3. The image's `alt` is empty (`alt=""`), so the overlay is also invisible to screen readers (a11y concern).
-
-Visitors on `/services` see a small overlapping thumbnail near the service grid and bottom-right of the screen (the index screenshot VLM described it as "a small floating 'Vetly for $29' promotional sticker overlapping the top-right corner of the third card"; the detail screenshot VLM saw "a small floating badge on the right side"). The misreading of "20K+ Happy Pet Owners" inside the thumbnail as "$29" is itself evidence that the element is illegible at render size — it should not be there at all.
-
-Evidence:
-`framer.agent.getNode({ id: "aqBIOKUF4" })` returns attributes: `$control__variant: "Variant 2"`, `$control__link: "https://x.com/"`, `$control__image: { src: "https://framerusercontent.com/images/fm2cvVCqujlMPcHRgN6Vkir3kvA.png", alt: "" }`, `position: "fixed"`, `right: "20px"`, `bottom: "70px"`, `zIndex: "10"`. Confirmed present on Phone breakpoint (`wngbi8Un2aqBIOKUF4`) with identical attrs. Downloaded the image and VLM analysis confirms it is a screenshot of the homepage (with header/nav/hero/feature cards/social proof), not a button/sticker design.
-
-Recommended Fix:
-Either remove the Buy Button instance from the Layout template entirely, or replace `$control__image` with a properly-designed sticker PNG and replace `$control__link` with a relevant destination (e.g. `/booking` or a pricing page). Also set a meaningful `alt` attribute. This affects every page on the site — flag as a global concern for sub-agent #15 (Layout/global elements) as well.
-
-Confidence: High
-Discovered by: sub-agent 2, session DR
-
----
-
-## DR-25 — Detail Hero "Call Now" button uses placeholder phone number "+123-456-7890"
-
-Status: Open
-Category: Content & copy
-Severity: High
-Location: `/services/:Services` (node `lhpeg56oV`) → Desktop → Main → Hero → Text Container → Buttons → Outline Button instance `Tsglsx7S8` (component `NoQy1opGY`)
-
-Description:
-The secondary hero CTA "Call Now" links via `tel:+123-456-7890`, which is a classic placeholder phone number (123-456-7890 is the standard fake number used in templates). On a veterinary service detail page, a "Call Now" button is high-intent — pet owners may press it expecting to reach the clinic, especially for the "24/7 Emergency Care" service. Hitting a dead/wrong number is a direct conversion failure and damages trust. The same placeholder number also appears in the site Header (visible in screenshots), so this is part of a broader placeholder-copy problem.
-
-Evidence:
-`framer.agent.getNode({ id: "Tsglsx7S8" })` returns `$control__link: "tel:+123-456-7890"`, `$control__text: "Call Now"`. The header phone link (visible in index and detail screenshots) shows the same number rendered as `+123-456-7890`.
-
-Recommended Fix:
-Replace `tel:+123-456-7890` with the actual Vetly clinic phone number on this Outline Button instance (and on the matching Tablet/Phone replicas, plus the Header component's phone link). Coordinate with sub-agent #15 (global elements) for the header phone number.
-
-Confidence: High
-Discovered by: sub-agent 2, session DR
-
----
-
 ## DR-26 — Zero pricing transparency on either Services page; "Price list card" component (`XX2THh6jc`) is not used
 
 Status: Open

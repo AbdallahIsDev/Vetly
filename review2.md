@@ -1,44 +1,5 @@
 # review.md — Vetly Framer Audit Findings (TV session)
 
-This file is the shared, deduplicated findings log for the TV audit session. Every entry follows the §8.7 finding template. Findings are numbered `TV-1`, `TV-2`, … in order of merge (not discovery). The ordinal position of each `## TV-N` heading (1-indexed, top to bottom) is what `FIX_START`/`FIX_END` in a future Fix-Existing session will reference.
-
-## Audit summary
-
-- **Total findings:** 270
-- **Dropped during review:** 10 (methodology caveats, positive observations, superseded entries, wrong-attribute evidence)
-- **Merged duplicates:** 26 (cross-sub-agent duplicates consolidated into single entries)
-- **Sub-agents dispatched:** 15 (sub-agent 9 was a recovery continuation after timeout)
-- **Reviewers dispatched:** 5 (each audited 3 sub-review files adversarially)
-
-## Severity distribution
-
-- Critical: 9
-- High: 64
-- Medium: 95
-- Low: 101
-
-## Category distribution
-
-- Visual design & branding: 37
-- UX & conversion: 37
-- Accessibility & compliance: 34
-- Content & copy: 31
-- Components (native + code): 31
-- Performance & technical: 21
-- CMS: 20
-- SEO & metadata: 19
-- Site settings & structure: 16
-- Components (native + code) | Visual design & branding: 9
-- Components (native + code) | UX & conversion: 4
-- Components (native + code) | Accessibility & compliance: 3
-- Footer & global elements: 3
-- Components (native + code) | Performance & technical: 2
-- Accessibility & compliance | Components (native + code): 1
-- Components (native + code) | CMS: 1
-- Components (native + code) | Content & copy: 1
-
----
-
 ## TV-1 — "No items" placeholder text shown in multiple CMS collection list Empty States across the home page
 Status: Open
 Category: Content & copy
@@ -76,19 +37,6 @@ Evidence: Card instance `oTFX0kNfS` attribute `$control__description` = "Clear g
 Recommended Fix: Replace with a complete sentence, e.g., "Clear guidance, thoughtful care, and confident decisions so you always feel supported."
 Confidence: High
 Discovered by: sub-agent 1, session TV (originally TV-1-3)
-
----
-
-## TV-4 — Team section duplicates Dr. James Reed (Surgical Specialist) in cards #3 and #4
-Status: Open
-Category: Content & copy
-Severity: High
-Location: Home `/` — Team section, Team Card instances `ypW478CxZ` (#3) and `Pt7cl1zoH` (#4).
-Description: The Team section displays four team-member cards. Cards #3 and #4 both show "Dr. James Reed — Surgical Specialist". They use different images (`gQ3mb3KIWWsZHFPOiFuQ2x9LSUQ.webp` vs `PcTBm4JYn9qd4cCvhE1eOG0CW9Q.webp`) but the name and job title are identical. A real visitor will assume this is either a data entry error or a placeholder that was never replaced. Either the 4th slot should show a different team member, or the section should only show 3 cards.
-Evidence: Instance `ypW478CxZ` `$control__name`="Dr. James Reed", `$control__job`="Surgical Specialist", `$control__image`="https://framerusercontent.com/images/gQ3mb3KIWWsZHFPOiFuQ2x9LSUQ.webp"; instance `Pt7cl1zoH` `$control__name`="Dr. James Reed", `$control__job`="Surgical Specialist", `$control__image`="https://framerusercontent.com/images/PcTBm4JYn9qd4cCvhE1eOG0CW9Q.webp". Team section screenshot: https://framerusercontent.com/screenshots/on-demand/e6137f1c-adfa-48a7-bc32-73a49e8d8941.jpg
-Recommended Fix: Replace card #4's name/job with a different team member (e.g., a vet tech, receptionist, or another doctor), or change the grid to display only 3 cards.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-4)
 
 ---
 
