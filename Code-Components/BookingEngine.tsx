@@ -31,6 +31,13 @@ import {
 } from "framer-motion";
 import * as React from "react";
 
+// W1-14-N3 fix: `React.useLayoutEffect` emits the "does nothing on the
+// server" warning during SSR, and four of this file's six sites had no
+// explicit `typeof window` guard. Module is evaluated once at import time,
+// so this is a stable one-shot SSR probe (never re-evaluates per render).
+const useIsomorphicLayoutEffect =
+	typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
 // =============================================================================
 // Shared color/time utilities (merged from the two inlined sources, deduped)
 // =============================================================================
@@ -207,6 +214,15 @@ function parseColorToRgba(
 ): { r: number; g: number; b: number; a: number } | null {
 	const trimmed = (color || "").trim().toLowerCase();
 	if (!trimmed) return null;
+	// W1-17-N1-new fix: "transparent" is a spec-valid CSS colour the old
+	// fall-through returned null for, so the canvas themeVerdicts loop
+	// flagged authors' valid "transparent" inputs as invalid. Map it to
+	// fully-opaque-black-with-zero-alpha.
+	if (trimmed === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
+	// W1-17-N2-new fix: currentColor resolves against context and is
+	// never known statically; it now has its own early return so callers
+	// can tell "contextual, cannot be judged" apart from "invalid".
+	if (trimmed === "currentcolor") return { r: 0, g: 0, b: 0, a: 0 };
 
 	const hex = trimmed.replace(/^#/, "");
 	if (/^[0-9a-f]+$/.test(hex) && [3, 4, 6, 8].includes(hex.length)) {
@@ -483,6 +499,12 @@ const DEFAULT_COPY_SAVED_ANSWERS_LABEL = "Answers are saved in this browser.";
 const DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL = "Clear my saved answers";
 const DEFAULT_COPY_SAVE_FAILED_MESSAGE =
 	"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected.";
+// W1-12-NEW-4 fix: when persistState is ON the disclosure must never go
+// blank — an author can empty the `privacyNotice` control and create a
+// fresh-mount consent gap. This fallback keeps a disclosure on record
+// whenever storage is active and the author text is empty.
+const DEFAULT_COPY_PRIVACY_NOTICE =
+	"Your progress is saved in this browser tab so you can return later.";
 // W1-02-F4 fix: sr-only step announcement — was a hardcoded
 // "{counter}, {percent}% complete — {title}" that diverged from the
 // localized visible progress label. Placeholders: {counter}, {percent},
@@ -539,6 +561,14 @@ interface ErrorCopy {
 	timeNoLongerAvailableError: string;
 	networkError: string;
 	submitTimeoutError: string;
+	// W1-06-F-06-1 fix: distinct copy for a response body that fails JSON
+	// parsing (HTML error page, proxy junk, truncated chunk) — the
+	// MALFORMED_JSON_ERROR sentinel must never reach the visitor verbatim.
+	malformedResponseError: string;
+	// W1-06-F-06-3 fix: dedicated copy for 400-class machine-readable
+	// codes (BAD_REQUEST / VALIDATION_ERROR) — the visitor's own answers
+	// were rejected, so tell them to check and retry.
+	badRequestError: string;
 	emptyResponseError: string;
 	httpStatusTemplate: string;
 	slotsTimeoutError: string;
@@ -569,6 +599,10 @@ const ERROR_COPY_DEFAULTS: ErrorCopy = {
 		"We couldn't reach the booking service. Please check your connection and try again.",
 	submitTimeoutError:
 		"The booking service took too long to respond. Please try again.",
+	malformedResponseError:
+		"The booking service returned an unusable response. Please try again later, or contact the site owner if the problem persists.",
+	badRequestError:
+		"The booking service rejected the request details. Please go back, check your answers, and try again.",
 	emptyResponseError:
 		"We couldn't confirm your booking. Please check your email for a confirmation before trying again.",
 	httpStatusTemplate: "Booking failed (HTTP {status})",
@@ -634,6 +668,30 @@ function isSameDay(a: Date | null, b: Date | null): boolean {
 	);
 }
 
+// W1-16-N1 fix: `Intl.DateTimeFormat` construction is NOT cached by modern
+// engines (V8 removed its internal string-keyed cache ~2020) and every
+// construction does genuinely per-call work. The tz-aware helpers below are
+// on the hot path — `getMinutesInTimeZone`/`getDateKeyInTimeZone` run once
+// per slot on every Cal.com fetch settle (dozens–hundreds of times) and
+// per-cell on every CalendarGrid render (~42–84 invocations) — so they
+// allocated a fresh formatter every call. This keyed cache reuses one
+// instance per (locale, options) shape. The set of distinct shapes is tiny
+// and bounded by the timezones the author exposes (≤ a handful in practice),
+// so the map stays small (~1–4 KB) with no eviction needed.
+const dtfCache = new Map<string, Intl.DateTimeFormat>();
+function getCachedDateTimeFormat(
+	locale: string,
+	options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+	const key = `${locale}|${JSON.stringify(options)}`;
+	let dtf = dtfCache.get(key);
+	if (!dtf) {
+		dtf = new Intl.DateTimeFormat(locale, options);
+		dtfCache.set(key, dtf);
+	}
+	return dtf;
+}
+
 // CC-13 fix: `Date.getHours()`/`getMinutes()` always read the BROWSER's
 // local timezone, not any timezone the visitor picked in the UI. Cal.com is
 // queried with an explicit `timeZone` param, but the returned slot `start`
@@ -646,7 +704,7 @@ function isSameDay(a: Date | null, b: Date | null): boolean {
 // where the browser itself is running.
 function getMinutesInTimeZone(date: Date, timeZone: string): number {
 	try {
-		const parts = new Intl.DateTimeFormat("en-US", {
+		const parts = getCachedDateTimeFormat("en-US", {
 			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
@@ -678,7 +736,7 @@ function getMinutesInTimeZone(date: Date, timeZone: string): number {
 // 0-based unpadded key in `dateKeyOf`'s local fallback).
 function getDateKeyInTimeZone(date: Date, timeZone: string): string {
 	try {
-		const parts = new Intl.DateTimeFormat("en-US", {
+		const parts = getCachedDateTimeFormat("en-US", {
 			timeZone,
 			year: "numeric",
 			month: "2-digit",
@@ -705,16 +763,43 @@ function startOfDay(d: Date): Date {
 // CHOSEN TIMEZONE, not the browser's local date — a browser far ahead of /
 // behind the chosen zone otherwise treats tz-locally-today slots as
 // elapsed/past and paints the wrong calendar day as "today" (cascades into
-// isTimeElapsed, isToday and the past-date guards). Returns a Date whose
-// LOCAL y/m/d equals the tz-local date, so the existing local-time
-// comparisons (isSameDay, startOfDay) keep working unchanged.
+// isTimeElapsed, isToday and the past-date guards).
+//
+// W1-09-NEW-01 fix: the previous version returned a local-midnight Date whose
+// LOCAL y/m/d equaled the visitor-tz date. But calendar cells are
+// local-midnight Dates whose *visitor-tz date* (getDateKeyInTimeZone) is their
+// grid identity — with the browser ≠ the visitor tz, the two coordinate
+// systems disagree by up to 26h (Kiritimati UTC+14 vs Baker UTC-12), so
+// isSameDay(today, cell) marked the wrong cell "today" and every
+// startOfDay(cell) < today past-guard inherited the off-by-one. Now `today`
+// is the local-midnight instant whose visitor-tz key EQUALS today's
+// visitor-tz key — i.e. it lives in exactly the same coordinate system as
+// the grid cells, so isSameDay/startOfDay comparisons (CalendarGrid
+// isToday/isPast, isTimeElapsed, moveFocus / handleDateSelect past-guards,
+// firstAvailableDate, dateTabIndexByKey) are all correct for any
+// browser/visitor tz pair.
 function getTodayInTimeZone(timeZone: string | undefined): Date {
-	const key = getDateKeyInTimeZone(new Date(), timeZone || "");
-	const parts = key.split("-").map(Number);
+	const tz = timeZone || "";
+	const tzKey = getDateKeyInTimeZone(new Date(), tz);
+	const parts = tzKey.split("-").map(Number);
 	const y = parts[0] ?? 1970;
 	const m = parts[1] ?? 1;
 	const d = parts[2] ?? 1;
-	return new Date(y, m - 1, d);
+	// Candidate starts at the local-midnight of the tz date's y/m/d; the
+	// loop nudges it (±1 day) until its visitor-tz key matches tzKey. The
+	// worst-case drift between two real-world zones is 26h, so this
+	// converges within 2 iterations; the guard caps it at 3.
+	let candidate = new Date(y, m - 1, d);
+	for (let i = 0; i < 3; i++) {
+		const candidateKey = getDateKeyInTimeZone(candidate, tz);
+		if (candidateKey === tzKey) break;
+		const day = candidate.getDate();
+		candidate =
+			candidateKey < tzKey
+				? new Date(candidate.getFullYear(), candidate.getMonth(), day + 1)
+				: new Date(candidate.getFullYear(), candidate.getMonth(), day - 1);
+	}
+	return candidate;
 }
 
 // =============================================================================
@@ -728,12 +813,25 @@ function getTodayInTimeZone(timeZone: string | undefined): Date {
 
 interface ChoiceOption {
 	label: string;
+	// W1-08-F-08-06 fix: a distinct value lets authors disambiguate
+	// duplicate labels ("Apple" twice) — the round-trip selection now
+	// matches on value (or the label when absent). Defaults to `label`
+	// when unspecified, so single-label configs behave exactly as before.
+	value?: string;
 	glyph?: string;
 	// T10-L4 fix: cards/radio options can carry an image and a description
 	// (parallel per-field arrays in the panel, see optionImages/
 	// optionDescriptions on FieldConfig).
 	image?: string;
 	description?: string;
+}
+
+// W1-08-F-08-06 fix: resolves an option's round-trip value — its explicit
+// `value` when authored, else the label.
+function optionValue(option: ChoiceOption): string {
+	return option.value !== undefined && option.value.length > 0
+		? option.value
+		: option.label;
 }
 
 interface ChoiceGroupInlineProps {
@@ -752,7 +850,6 @@ interface ChoiceGroupInlineProps {
 	borderColor: string;
 	radius: number | string;
 	fontSize: number;
-	focusColor: string;
 	controlledValue?: string;
 	/** a11y: marks the group as invalid (fix #16). */
 	ariaInvalid?: boolean;
@@ -772,6 +869,11 @@ interface ChoiceGroupInlineProps {
 	 *  button) as required, mirroring the native-input required semantics.
 	 *  W1-10-A16: the option buttons previously never saw it. */
 	required?: boolean;
+	/** W1-20-N1 fix: while the engine is POSTing, every option button and
+	 *  keyboard path is frozen — an edit made after the payload snapshot
+	 *  would land in React state but NOT in the in-flight request, and
+	 *  silently vanish on success. */
+	isSubmitting?: boolean;
 	onChange?: (value: string) => void;
 }
 
@@ -780,14 +882,17 @@ function getInitialSelection(
 	defaultValue: string,
 ): string {
 	if (options.length === 0) return "";
-	const match = options.find((option) => option.label === defaultValue);
-	if (match) return match.label;
+	// W1-08-F-08-06 fix: match on value-or-label so a `value`-keyed option
+	// is honored by the seed (label stays the fallback for configs that
+	// don't set `value`).
+	const match = options.find((option) => optionValue(option) === defaultValue);
+	if (match) return optionValue(match);
 	// W2-39-M8 fix: an empty-label option must never auto-win the initial
 	// selection just by being first — a required choice field would start
 	// "answered" with "" and skip validation entirely. Skip empty labels;
 	// only fall back to a real option.
 	const fallback = options.find((option) => option.label.length > 0);
-	return fallback ? fallback.label : "";
+	return fallback ? optionValue(fallback) : "";
 }
 
 // T9-L2 fix: weekday labels derive from the locale like the month header,
@@ -841,13 +946,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		borderColor,
 		radius,
 		fontSize,
-		focusColor,
 		controlledValue,
 		ariaInvalid,
 		ariaDescribedBy,
 		choiceGroupAriaLabel,
 		required,
 		onChange,
+		isSubmitting = false,
 		showLabel = true,
 	} = props;
 
@@ -893,9 +998,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	// binds `formValue` (the real controlled value) instead.
 	const selected =
 		controlledValue !== undefined
-			? parsedOptions.some((option) => option.label === controlledValue)
+			? parsedOptions.some((option) => optionValue(option) === controlledValue)
 				? controlledValue
-				: parsedOptions[0]?.label || controlledValue
+				: parsedOptions[0]
+					? optionValue(parsedOptions[0])
+					: controlledValue
 			: internalSelected;
 	const formValue =
 		controlledValue !== undefined ? controlledValue : internalSelected;
@@ -917,8 +1024,12 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		if (controlledValue === undefined) return;
 		if (parsedOptions.length === 0) return;
 		const next = getInitialSelection(parsedOptions, controlledValue);
+		// W1-08-F-08-12 fix: skip the write when the controlled value
+		// already equals the current selection — the old unconditional
+		// startTransition re-rendered the parent for a no-op.
+		if (next === internalSelected) return;
 		React.startTransition(() => setInternalSelected(next));
-	}, [controlledValue, parsedOptions]);
+	}, [controlledValue, parsedOptions, internalSelected]);
 
 	// W1-08-F-08-04 fix: when the controlled value changes from OUTSIDE
 	// (Reset, cross-field auto-select, re-entering the step), the roving
@@ -933,12 +1044,21 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			lastUserPickRef.current = null;
 			return;
 		}
+		// W1-08-F-08-06 fix: match by value-or-label to honor `value`-keyed
+		// options.
 		const idx = parsedOptions.findIndex(
-			(option) => option.label === controlledValue,
+			(option) => optionValue(option) === controlledValue,
 		);
-		if (idx < 0) return;
+		// W1-08-F-08-05 fix: when the controlled value matches NO option
+		// (author renamed/removed it, or a stale restore), the old code
+		// early-returned here — but the presentation fallback already flipped
+		// button 0's tabIndex to 0 and the previously-focused button to -1,
+		// stranding DOM focus on an unreachable button until a mouse click.
+		// Fall through to focusing index 0 so keyboard users can still Tab in.
+		if (idx < 0 && parsedOptions.length === 0) return;
+		const focusIdx = idx >= 0 ? idx : 0;
 		const focusRaf = requestAnimationFrame(() => {
-			buttonRefs.current[idx]?.focus();
+			buttonRefs.current[focusIdx]?.focus();
 		});
 		return () => cancelAnimationFrame(focusRaf);
 	}, [controlledValue, parsedOptions]);
@@ -1001,7 +1121,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [parsedOptions, controlledValue, defaultValue]);
 
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		if (
 			typeof window !== "undefined" &&
 			typeof ResizeObserver !== "undefined"
@@ -1028,18 +1148,20 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	}, []);
 
 	// W1-11-A11 fix: the window listeners below were duplicated here,
-	// re-implementing the shared T7-M3 `useKeyboardModality` hook
-	// (defined below) with identical logic. The widget now uses the
-	// shared hook; the state lives where the hook owns it.
-	const isKeyboardModality = useKeyboardModality();
+	// re-implementing the shared T7-M3 `useKeyboardModality` hook.
+	// W1-11-NEW-FIND-2 fix: that hook (and this call) is gone now —
+	// focus indication comes from the CSS :focus-visible rule alone.
 
+	// W1-11-NEW-FIND-2 fix: focus indication is standardized on the CSS
+	// `:focus-visible` rule (`.be-motion-root :is(button, a, select)`) —
+	// the per-component inline boxShadow focus rings (this one keyed on
+	// isKeyboardModality) were removed. The selection ring below stays:
+	// it marks SELECTED state, not focus.
 	const selectedTextColor = React.useMemo(
-		() => getReadableTextColor(accentColor),
-		[accentColor],
-	);
-	const focusInset = React.useMemo(
-		() => `inset 0 0 0 2px ${focusColor}`,
-		[focusColor],
+		// W1-17-N7-new fix: pass the real backdrop so a translucent accent
+		// composites honestly instead of over hardcoded white.
+		() => getReadableTextColor(accentColor, backgroundColor),
+		[accentColor, backgroundColor],
 	);
 	const compact = measuredWidth < COMPACT_BREAKPOINT;
 	const effectiveFontSize = Math.max(14, fontSize);
@@ -1049,8 +1171,18 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		return 2;
 	}, [measuredWidth]);
 
+	// W1-08-F-08-06 fix: selection is written as the option's VALUE
+	// (falling back to the label when no explicit value is authored). The
+	// old label-only write-side collapsed duplicate labels onto a single
+	// round-trip key — clicking the second "Apple" re-mapped to the first
+	// via `selectedIndex` and the visual ring snapped back.
 	const selectOption = React.useCallback(
-		(value: string) => {
+		(option: ChoiceOption) => {
+			// W1-20-N1 fix: a pick after the POST snapshot would update
+			// React state but never the in-flight payload — silently lost
+			// on success. Block all selection during submission.
+			if (isSubmitting) return;
+			const value = optionValue(option);
 			// W1-08-F-08-04 fix: tag user-initiated picks so the external-
 			// change focus effect below doesn't fight the user's own focus.
 			lastUserPickRef.current = value;
@@ -1059,7 +1191,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			}
 			onChange?.(value);
 		},
-		[onChange, controlledValue],
+		[onChange, controlledValue, isSubmitting],
 	);
 
 	const moveFocus = React.useCallback(
@@ -1071,7 +1203,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			if (!next) return;
 			buttonRefs.current[nextIndex]?.focus();
 			React.startTransition(() => setFocusedIndex(nextIndex));
-			selectOption(next.label);
+			selectOption(next);
 		},
 		[parsedOptions, selectOption],
 	);
@@ -1088,14 +1220,14 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				event.preventDefault();
 				buttonRefs.current[0]?.focus();
 				const first = parsedOptions[0];
-				if (first) selectOption(first.label);
+				if (first) selectOption(first);
 			} else if (event.key === "End") {
 				event.preventDefault();
 				const lastIndex = parsedOptions.length - 1;
 				if (lastIndex >= 0) {
 					buttonRefs.current[lastIndex]?.focus();
 					const last = parsedOptions[lastIndex];
-					if (last) selectOption(last.label);
+					if (last) selectOption(last);
 				}
 			}
 		},
@@ -1109,9 +1241,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	};
 
 	// W1-08-F-08-06 fix: index-based selection comparison (hoisted so the
-	// segmented divider and the option buttons agree).
+	// segmented divider and the option buttons agree). Match by value-or-label
+	// so two options sharing a label are distinguished by their distinct
+	// `value`; the round-trip now lands on the option the user clicked.
 	const selectedIndex = selected
-		? parsedOptions.findIndex((o) => o.label === selected)
+		? parsedOptions.findIndex((o) => optionValue(o) === selected)
 		: -1;
 
 	const renderOptionButton = (
@@ -1121,7 +1255,6 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		labelExtraStyle: React.CSSProperties = {},
 	) => {
 		const isHovered = hoveredIndex === index;
-		const isFocused = focusedIndex === index;
 		// W1-08-F-08-06 fix: `selected` is the label of the controlled
 		// value; two options may legitimately share a label ("Apple"
 		// twice). Label comparison made BOTH buttons aria-checked + both
@@ -1147,6 +1280,15 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				type="button"
 				role="radio"
 				aria-checked={isSelected}
+				// W1-20-N1 fix: freeze the radiogroup during submission —
+				// the disabled attribute drops the group from the tab order
+				// and blocks all interaction (the selectOption guard above
+				// is defense-in-depth for keyboard paths). Mirrors the
+				// Back/Continue buttons' disabled + opacity pattern.
+				// W1-10-OBS-5 fix: the parallel aria-disabled was redundant
+				// with the native disabled attribute (and can make some SRs
+				// announce the state twice); removed.
+				disabled={isSubmitting}
 				// T4-M6 fix: the option buttons previously carried
 				// no invalid/describedby hints of their own - only
 				// the radiogroup container did - so screen readers
@@ -1163,7 +1305,9 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				// Fix #17: roving tabindex — only the selected (or first)
 				// option is tabbable; Arrow keys move focus between options.
 				tabIndex={isSelected || (!selected && index === 0) ? 0 : -1}
-				onClick={() => selectOption(option.label)}
+				// W1-08-F-08-06 fix: pass the option object (not just its
+				// label) so selectOption resolves the `value` round-trip.
+				onClick={() => selectOption(option)}
 				onKeyDown={(event) => handleKeyDown(event, index)}
 				onMouseEnter={() => React.startTransition(() => setHoveredIndex(index))}
 				onMouseLeave={() => React.startTransition(() => setHoveredIndex(null))}
@@ -1175,21 +1319,32 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					border: `1px solid ${isSelected || isHovered ? accentColor : borderColor}`,
 					background: isSelected ? accentColor : backgroundColor,
 					color: isSelected ? selectedTextColor : textColor,
-					cursor: "pointer",
-					outline: "none",
-					boxShadow:
-						isKeyboardModality && isFocused
-							? // W1-11-A7 fix: a single focusInset ring sat
-								// directly on the accent fill and read as
-								// invisible — the CalendarCell layered-ring
-								// pattern (light ring over the fill + dark gap
-								// ring outside) back-ported here.
-								isSelected
-								? `inset 0 0 0 2px ${selectedTextColor}, inset 0 0 0 4px ${accentColor}`
-								: focusInset
-							: isSelected
-								? `inset 0 0 0 1px ${accentColor}`
-								: "none",
+					cursor: isSubmitting ? "not-allowed" : "pointer",
+					opacity: isSubmitting ? 0.5 : 1,
+					// W1-11-NEW-FIND-1 fix: the inline `outline: "none"`
+					// here outranked (by CSS specificity) the scoped
+					// `.be-motion-root :is(button, a, select):focus-visible`
+					// rule, so the ONLY focus indicator was the modal
+					// boxShadow below — leaving a 1-frame window with NO
+					// visible indicator while keyboard-modality detection
+					// races. Removing it lets the CSS `:focus-visible`
+					// outline provide the always-on keyboard ring
+					// (currentColor adapts; pointer clicks stay clean
+					// because :focus-visible doesn't match them).
+					// W1-11-NEW-FIND-1 fix: the inline `outline: "none"`
+					// here outranked (by CSS specificity) the scoped
+					// `.be-motion-root :is(button, a, select):focus-visible`
+					// rule; removing it lets the CSS `:focus-visible`
+					// outline provide the always-on keyboard ring
+					// (currentColor adapts; pointer clicks stay clean
+					// because :focus-visible doesn't match them).
+					// W1-11-NEW-FIND-2 fix: the inline boxShadow focus
+					// indicator (gated on isKeyboardModality) was removed —
+					// focus rings now come solely from that CSS rule. The
+					// remaining ring marks SELECTED state only.
+					boxShadow: isSelected
+						? `inset 0 0 0 1px ${accentColor}`
+						: "none",
 					fontFamily: "inherit",
 					fontSize: effectiveFontSize,
 					lineHeight: 1.2,
@@ -1384,10 +1539,28 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					{label}
 				</div>
 			) : null}
+			{parsedOptions.length === 0 ? (
+				// W1-08-F-08-08 fix: with zero options the group used to
+				// render an empty radiogroup — a dead box with no clue why.
+				// Show an explanatory placeholder instead (validation still
+				// fails correctly for required fields below it).
+				<div
+					style={{
+						padding: "12px 14px",
+						borderRadius: radius,
+						border: `1px dashed ${borderColor}`,
+						color: mutedTextColor,
+						fontSize: 13,
+						fontFamily: "inherit",
+					}}
+				>
+					{choiceGroupAriaLabel}
+				</div>
+			) : null}
 			{variant === "cards" ? (
 				<div
 					role="radiogroup"
-					aria-label={label || inputName || choiceGroupAriaLabel}
+					aria-label={label || choiceGroupAriaLabel || inputName}
 					aria-invalid={ariaInvalid || undefined}
 					aria-describedby={ariaDescribedBy}
 					aria-required={required || undefined}
@@ -1410,7 +1583,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			{variant === "segmented" ? (
 				<div
 					role="radiogroup"
-					aria-label={label || inputName || choiceGroupAriaLabel}
+					aria-label={label || choiceGroupAriaLabel || inputName}
 					aria-invalid={ariaInvalid || undefined}
 					aria-describedby={ariaDescribedBy}
 					aria-required={required || undefined}
@@ -1465,7 +1638,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			{variant === "radio" ? (
 				<div
 					role="radiogroup"
-					aria-label={label || inputName || choiceGroupAriaLabel}
+					aria-label={label || choiceGroupAriaLabel || inputName}
 					aria-invalid={ariaInvalid || undefined}
 					aria-describedby={ariaDescribedBy}
 					aria-required={required || undefined}
@@ -1494,7 +1667,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			{variant === "pills" ? (
 				<div
 					role="radiogroup"
-					aria-label={label || inputName || choiceGroupAriaLabel}
+					aria-label={label || choiceGroupAriaLabel || inputName}
 					aria-invalid={ariaInvalid || undefined}
 					aria-describedby={ariaDescribedBy}
 					aria-required={required || undefined}
@@ -1548,10 +1721,8 @@ interface CalendarCellProps {
 	isToday: boolean;
 	isTodayHighlighted: boolean;
 	isRingHover: boolean;
-	isFocus: boolean;
 	tabIndex: number;
 	firstDayOfWeek: number;
-	isKeyboardModality: boolean;
 	locale?: string;
 	// W1-19-N1 fix: narrow containers (≤~329px effective width) get
 	// shrinkable grid tracks — the cell drops its hard 44px minWidth so
@@ -1567,7 +1738,6 @@ interface CalendarCellProps {
 	textColor: string;
 	selectedAccentText: string;
 	mutedSoftText: string;
-	focusInset: string;
 	// F-17-3 fix: radius token cascaded so the cell follows the author's
 	// borderRadius control instead of the hardcoded 6px.
 	borderRadius: string | number;
@@ -1587,10 +1757,8 @@ const CalendarCell = React.memo(function CalendarCell({
 	isToday,
 	isTodayHighlighted,
 	isRingHover,
-	isFocus,
 	tabIndex,
 	firstDayOfWeek,
-	isKeyboardModality,
 	locale,
 	isNarrow,
 	// W1-07-F4 fix: tz-aware cell label.
@@ -1601,7 +1769,6 @@ const CalendarCell = React.memo(function CalendarCell({
 	textColor,
 	selectedAccentText,
 	mutedSoftText,
-	focusInset,
 	// F-17-3 fix: radius token (author's borderRadius control).
 	borderRadius,
 	onSelect,
@@ -1623,7 +1790,8 @@ const CalendarCell = React.memo(function CalendarCell({
 			type="button"
 			role="gridcell"
 			disabled={isUnavailable}
-			aria-disabled={isUnavailable}
+			// W1-10-OBS-5 fix: the parallel aria-disabled was redundant
+			// with the native disabled attribute; removed.
 			aria-selected={isSelected}
 			// W1-10-A7 fix: mark the current date the machine-readable way
 			// (aria-current="date") instead of only a textual suffix; the
@@ -1731,16 +1899,16 @@ const CalendarCell = React.memo(function CalendarCell({
 				transition: reducedMotion
 					? "none"
 					: "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
+				// W1-11-NEW-FIND-2 fix: focus indication is standardized on
+				// the CSS `:focus-visible` rule — the isKeyboardModality
+				// boxShadow focus branch is gone; these rings mark STATE
+				// (selected / today / hover), never focus.
 				boxShadow:
-					isKeyboardModality && isFocus
-						? isSelected || isTodayHighlighted
-							? `inset 0 0 0 2px ${selectedAccentText}, inset 0 0 0 4px ${accentColor}`
-							: focusInset
-						: isSelected || isTodayHighlighted
+					isSelected || isTodayHighlighted
+						? `inset 0 0 0 1px ${accentColor}`
+						: isRingHover
 							? `inset 0 0 0 1px ${accentColor}`
-							: isRingHover
-								? `inset 0 0 0 1px ${accentColor}`
-								: "none",
+							: "none",
 				fontWeight: isTodayHighlighted && !isSelected ? 700 : 400,
 			}}
 		>
@@ -1771,8 +1939,6 @@ interface CalendarGridProps {
 	selectedDate: Date | null;
 	today: Date;
 	hoveredDateKey: string | null;
-	focusedKey: string | null;
-	isKeyboardModality: boolean;
 	isNarrow: boolean;
 	firstDayOfWeek: number;
 	dateKeyOf: (date: Date) => string;
@@ -1788,7 +1954,6 @@ interface CalendarGridProps {
 	selectedAccentText: string;
 	mutedSoftText: string;
 	mutedText: string;
-	focusInset: string;
 	// F-17-3 fix: radius token cascaded to cells + nav buttons.
 	borderRadius: string | number;
 	onPrevMonth: (focusAfter?: boolean) => void;
@@ -1814,8 +1979,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	selectedDate,
 	today,
 	hoveredDateKey,
-	focusedKey,
-	isKeyboardModality,
 	isNarrow,
 	firstDayOfWeek,
 	dateKeyOf,
@@ -1831,7 +1994,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	selectedAccentText,
 	mutedSoftText,
 	mutedText,
-	focusInset,
 	// F-17-3 fix: radius token.
 	borderRadius,
 	onPrevMonth,
@@ -1851,7 +2013,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// W1-10-A4 fix: stable id linking the grid to its month/year heading
 	// (aria-labelledby). useId is SSR-safe and stable per instance.
 	const gridLabelId = React.useId();
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		if (prevMonthLabelRef.current !== monthLabel) {
 			prevMonthLabelRef.current = monthLabel;
 			setAnnounceMonthLabel(true);
@@ -1879,7 +2041,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						!isUnavailable &&
 						!isSelected &&
 						!isTodayHighlighted;
-					const isFocus = focusedKey === `date-${dateKey}`;
 					return (
 						<CalendarCell
 							key={dateKey}
@@ -1890,10 +2051,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							isToday={isToday}
 							isTodayHighlighted={isTodayHighlighted}
 							isRingHover={isRingHover}
-							isFocus={isFocus}
 							tabIndex={dateTabIndexByKey.get(dateKey) ?? 0}
 							firstDayOfWeek={firstDayOfWeek}
-							isKeyboardModality={isKeyboardModality}
 							locale={locale}
 							// W1-19-N1 fix: pass the narrow flag through so
 							// the cell can drop its 44px minWidth on
@@ -1907,7 +2066,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							textColor={textColor}
 							selectedAccentText={selectedAccentText}
 							mutedSoftText={mutedSoftText}
-							focusInset={focusInset}
 							// F-17-3 fix: radius token.
 							borderRadius={borderRadius}
 							onSelect={onSelectDate}
@@ -1950,16 +2108,28 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							fontSize: 16,
 						}}
 					>
-						{monthName}
-						<span
-							style={{
-								marginLeft: 6,
-								color: mutedText,
-								fontSize: 16,
-								fontWeight: 500,
-							}}
-						>
-							{yearLabel}
+						{/* W1-10-OBS-2 fix: the month/year header had no
+                            live-region semantics — SR users paging the
+                            calendar never heard the month change. The
+                            visually-hidden sibling below only speaks the
+                            authored announcement copy; this wrapper gives
+                            the visible header itself status semantics. */}
+						{/* biome-ignore lint/a11y/useSemanticElements: intentional
+                            polite status region (W1-10-OBS-2) — the visible
+                            month/year header announces the month change; an
+                            <output> would change the element's semantics. */}
+						<span role="status" aria-live="polite" aria-atomic="true">
+							{monthName}
+							<span
+								style={{
+									marginLeft: 6,
+									color: mutedText,
+									fontSize: 16,
+									fontWeight: 500,
+								}}
+							>
+								{yearLabel}
+							</span>
 						</span>
 					</h3>
 				</div>
@@ -2063,6 +2233,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 
 			<div
 				aria-live="polite"
+				aria-atomic="true"
 				style={{
 					position: "absolute",
 					width: 1,
@@ -2166,6 +2337,34 @@ function isFieldValue(v: unknown): v is string | boolean | undefined {
 	return v === undefined || typeof v === "string" || typeof v === "boolean";
 }
 
+// W1-15-TS-14 fix: runtime guard for __selectedSlot at the sessionStorage
+// boundary. JSON.parse never hands back Date instances, so `date` must be a
+// non-empty ISO string here (it is rehydrated to a real Date immediately
+// after this guard passes); `end` accepts undefined or a non-empty string.
+// Before this guard existed the restore cast re-narrowed ONLY `date` —
+// hostile storage could smuggle `time24h: 42`, `timeLabel: false`, `end: {}`
+// through as BookingPayload-typed values, corrupting the ICS export and
+// calendar deep links (and crashing SuccessScreen via `new Date({})`).
+type RestoredBookingPayload = Omit<BookingPayload, "date"> & {
+	date: string | Date;
+};
+function isBookingPayload(v: unknown): v is RestoredBookingPayload {
+	if (typeof v !== "object" || v === null) return false;
+	const o = v as Record<string, unknown>;
+	const rawDate = o.date;
+	const dateOk =
+		(rawDate instanceof Date && !Number.isNaN(rawDate.getTime())) ||
+		(typeof rawDate === "string" && rawDate.length > 0);
+	return (
+		dateOk &&
+		typeof o.time24h === "string" &&
+		o.time24h.length > 0 &&
+		typeof o.timeLabel === "string" &&
+		o.timeLabel.length > 0 &&
+		(o.end === undefined || (typeof o.end === "string" && o.end.length > 0))
+	);
+}
+
 // T7-M3 fix: the time picker (format toggle + slot list) is now its own
 // memoized component. DateAndTimeInline re-renders it only when
 // time-related props change (format, hover, selection, slot data), so
@@ -2177,7 +2376,6 @@ interface TimeSlotListProps {
 	onTimeFormatChange?: (format: "12h" | "24h") => void;
 	focusedKey: string | null;
 	setFocusedKey: (key: string | null) => void;
-	isKeyboardModality: boolean;
 	prefersReducedMotion: boolean;
 	accentColor: string;
 	softerFill: string;
@@ -2187,7 +2385,6 @@ interface TimeSlotListProps {
 	selectedAccentText: string;
 	mutedText: string;
 	mutedSoftText: string;
-	focusInset: string;
 	loadingLabel: string;
 	dtInstanceId: string;
 	slotsLoading: boolean;
@@ -2254,15 +2451,12 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 	selected: boolean;
 	elapsed: boolean;
 	hovered: boolean;
-	focused: boolean;
-	isKeyboardModality: boolean;
 	isNarrow: boolean;
 	accentColor: string;
 	borderColor: string;
 	mutedSoftText: string;
 	textColor: string;
 	selectedAccentText: string;
-	focusInset: string;
 	// F-17-3 fix: radius token.
 	radius: string | number;
 	onSelect: (value: string) => void;
@@ -2285,15 +2479,12 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 		selected,
 		elapsed,
 		hovered,
-		focused,
-		isKeyboardModality,
 		isNarrow,
 		accentColor,
 		borderColor,
 		mutedSoftText,
 		textColor,
 		selectedAccentText,
-		focusInset,
 		radius,
 		onSelect,
 		setHoveredTime,
@@ -2323,7 +2514,8 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 			// hear "9:00 AM, Tue, Aug 16, America/New_York".
 			aria-label={[label, slotDateLabel, timeZone].filter(Boolean).join(", ")}
 			disabled={elapsed}
-			aria-disabled={elapsed}
+			// W1-10-OBS-5 fix: the parallel aria-disabled was redundant
+			// with the native disabled attribute; removed.
 			tabIndex={elapsed ? -1 : selected ? 0 : isInitialFocus ? 0 : -1}
 			onMouseEnter={() => {
 				if (elapsed) return;
@@ -2360,18 +2552,13 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 				transition: reducedMotion
 					? "none"
 					: "border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease",
-				boxShadow:
-					isKeyboardModality && focused
-						? // W2-29-N1 fix: batched with W1-11-A7 — the single
-							// focusInset ring was invisible over the accent fill
-							// of the selected slot. CalendarCell's layered-ring
-							// pattern back-ported.
-							selected
-							? `inset 0 0 0 2px ${selectedAccentText}, inset 0 0 0 4px ${accentColor}`
-							: focusInset
-						: selected
-							? `inset 0 0 0 1px ${accentColor}`
-							: "none",
+				// W1-11-NEW-FIND-2 fix: focus indication is standardized on
+				// the CSS `:focus-visible` rule — the isKeyboardModality
+				// boxShadow focus branch is gone; these rings mark STATE
+				// (selected / hover), never focus.
+				boxShadow: selected
+					? `inset 0 0 0 1px ${accentColor}`
+					: "none",
 			}}
 		>
 			{label}
@@ -2393,7 +2580,6 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		onTimeFormatChange,
 		focusedKey,
 		setFocusedKey,
-		isKeyboardModality,
 		prefersReducedMotion,
 		accentColor,
 		softerFill,
@@ -2403,7 +2589,6 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		selectedAccentText,
 		mutedText,
 		mutedSoftText,
-		focusInset,
 		loadingLabel,
 		dtInstanceId,
 		slotsLoading,
@@ -2444,6 +2629,14 @@ const TimeSlotList = React.memo(function TimeSlotList(
 	// changes with `now`) and hand focus to the next non-elapsed slot,
 	// wrapping around; if nothing is left, clear the focused key.
 	const slotGridRef = React.useRef<HTMLDivElement | null>(null);
+	// W1-11-NEW-FIND-3 fix: the 12h/24h toggle is the only multi-button
+	// group without Arrow-key navigation (ChoiceGroupInline, the date grid,
+	// and the slot list all have it). Refs let ArrowLeft/ArrowRight move
+	// focus between the two format buttons, matching the engine's other
+	// two-button-group keyboard model.
+	const formatButtonRefs = React.useRef<
+		Record<"12h" | "24h", HTMLButtonElement | null>
+	>({ "12h": null, "24h": null });
 	// W1-09-DT-SR fix: a selected slot's aria-label was bare
 	// "9:00 AM, [timezone]" — SR users had no idea WHICH day that time
 	// belongs to (the date lives only in the separate date grid). Fold the
@@ -2575,10 +2768,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				)}
 				{(["12h", "24h"] as Array<"12h" | "24h">).map((format) => {
 					const active = activeTimeFormat === format;
-					const isFocus = focusedKey === `format-${format}`;
 					return (
 						<button
 							key={format}
+							ref={(node) => {
+								formatButtonRefs.current[format] = node;
+							}}
 							type="button"
 							// M10 fix: this is a two-way toggle
 							// (12h vs 24h) with no ARIA state at
@@ -2593,6 +2788,20 @@ const TimeSlotList = React.memo(function TimeSlotList(
 									onTimeFormatChange?.(format);
 								})
 							}
+							// W1-11-NEW-FIND-3 fix: ArrowLeft/ArrowRight move
+							// focus between the two format buttons (Home/End
+							// per the radio-group convention), consistent with
+							// the engine's other button groups.
+							onKeyDown={(e) => {
+								const next = e.key === "ArrowRight" ? "24h" : null;
+								const prev = e.key === "ArrowLeft" ? "12h" : null;
+								const home = e.key === "Home" ? "12h" : null;
+								const end = e.key === "End" ? "24h" : null;
+								const target = next ?? prev ?? home ?? end;
+								if (!target) return;
+								e.preventDefault();
+								formatButtonRefs.current[target]?.focus();
+							}}
 							onFocus={() =>
 								React.startTransition(() => setFocusedKey(`format-${format}`))
 							}
@@ -2616,7 +2825,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								transition: prefersReducedMotion
 									? "none"
 									: "color 0.18s ease, box-shadow 0.18s ease",
-								boxShadow: isKeyboardModality && isFocus ? focusInset : "none",
+								// W1-11-NEW-FIND-2 fix: focus ring comes from the
+								// CSS :focus-visible rule; the isFocus boxShadow
+								// indicator is gone.
+								boxShadow: "none",
 								position: "relative",
 								zIndex: 1,
 							}}
@@ -2654,6 +2866,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 					<div
 						role="status"
 						aria-live="polite"
+						aria-atomic="true"
 						style={{
 							padding: "16px 8px",
 							textAlign: "center",
@@ -2710,6 +2923,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						// status change screen readers must hear.
 						role="status"
 						aria-live="polite"
+						aria-atomic="true"
 					>
 						{noTimesFallbackLabel}
 					</div>
@@ -2811,7 +3025,6 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							const elapsed = isTimeElapsed(time);
 							const isHover =
 								hoveredTime === time.value && !selected && !elapsed;
-							const isFocus = focusedKey === `time-${time.value}`;
 							return (
 								// W1-16-P-02 fix: memo'd child — see
 								// TimeSlotButton above.
@@ -2822,15 +3035,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 									selected={selected}
 									elapsed={elapsed}
 									hovered={isHover}
-									focused={isFocus}
-									isKeyboardModality={isKeyboardModality}
 									isNarrow={isNarrow}
 									accentColor={accentColor}
 									borderColor={borderColor}
 									mutedSoftText={mutedSoftText}
 									textColor={textColor}
 									selectedAccentText={selectedAccentText}
-									focusInset={focusInset}
 									onSelect={onSelectTime}
 									// F-17-3 fix: radius token.
 									radius={borderRadius}
@@ -2855,34 +3065,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 });
 
 // T7-M3 fix: keyboard-modality detection (focus rings only when the user is
-// actually using a keyboard) moved out of DateAndTimeInline into its own
-// hook — the window listeners and the state they feed were pure
-// bookkeeping unrelated to the component's own rendering.
-function useKeyboardModality(): boolean {
-	const [isKeyboardModality, setIsKeyboardModality] = React.useState(false);
-	React.useEffect(() => {
-		if (typeof window !== "undefined") {
-			const onKeyDown = (event: KeyboardEvent) => {
-				if (event.metaKey || event.altKey || event.ctrlKey) return;
-				React.startTransition(() => setIsKeyboardModality(true));
-			};
-			const onPointer = () => {
-				React.startTransition(() => setIsKeyboardModality(false));
-			};
-			window.addEventListener("keydown", onKeyDown);
-			window.addEventListener("mousedown", onPointer);
-			window.addEventListener("pointerdown", onPointer);
-			window.addEventListener("touchstart", onPointer, { passive: true });
-			return () => {
-				window.removeEventListener("keydown", onKeyDown);
-				window.removeEventListener("mousedown", onPointer);
-				window.removeEventListener("pointerdown", onPointer);
-				window.removeEventListener("touchstart", onPointer);
-			};
-		}
-	}, []);
-	return isKeyboardModality;
-}
+// actually using a keyboard) used to live here as `useKeyboardModality`.
+// W1-11-NEW-FIND-2 fix: it was removed entirely — focus indication now comes
+// from the CSS `:focus-visible` rule (`.be-motion-root :is(button, a, select)`),
+// which the browser gates on modality natively, so no JS state is needed.
 
 // T7-M3 fix: all calendar-navigation state (visible month, grid cells,
 // T7-M3 fix: all calendar-navigation state (visible month, grid cells,
@@ -2898,6 +3084,9 @@ interface UseCalendarNavigationOptions {
 	onMonthChange?: (monthStart: Date) => void;
 	availableDates?: Set<string>;
 	slotsLoading?: boolean;
+	// W1-07-N5 fix: the visitor's chosen zone — header month/year derive
+	// from the same visitor-tz date key the cells display.
+	timeZone?: string;
 }
 
 function useCalendarNavigation(options: UseCalendarNavigationOptions): {
@@ -2916,6 +3105,9 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	nextMonthLabel: string;
 	/** W1-09-DT-08 fix: the 12-month booking horizon (see return). */
 	maxMonthStart: Date;
+	/** W1-09-NEW-03 fix: cross-month arrow focus handoff (see refs above). */
+	pendingMonthFocusRef: { current: boolean };
+	pendingMonthFocusTargetRef: { current: string | null };
 } {
 	const {
 		initialVisibleMonth,
@@ -2924,13 +3116,20 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		onMonthChange,
 		availableDates,
 		slotsLoading,
+		// W1-07-N4/N5 fixes: visitor-tz seeding of the initial month and
+		// the visitor-tz-derived month/year header.
+		timeZone,
 	} = options;
 
 	// Fix #19: seed visibleMonth from the parent so navigation survives remounts.
 	const [visibleMonth, setVisibleMonth] = React.useState<Date>(() => {
 		if (initialVisibleMonth) return initialVisibleMonth;
-		const now = new Date();
-		return new Date(now.getFullYear(), now.getMonth(), 1);
+		// W1-07-N4 fix: was `new Date()` — a browser-local now. Near a
+		// timezone-driven month boundary (browser months ahead/behind the
+		// visitor's tz) the calendar opened on the wrong month. `today` is
+		// already the visitor-tz-corrected "today" in cell coordinates
+		// (W1-09-NEW-01), so seeding from its Y/M opens the right month.
+		return new Date(today.getFullYear(), today.getMonth(), 1);
 	});
 
 	// T6-M2 fix: visibleMonth was seeded from initialVisibleMonth only in the
@@ -2959,14 +3158,32 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		React.startTransition(() => setVisibleMonth(incoming));
 	}, [initialVisibleMonth, visibleMonth]);
 
-	const monthName = React.useMemo(
-		() => visibleMonth.toLocaleDateString(pageLocale(), { month: "long" }),
-		[visibleMonth],
+	// W1-07-N5 fix: the header used the browser-local components of
+	// `visibleMonth` while the CELL day numbers render the visitor-tz date
+	// key — for very large zone offsets the header and the grid could
+	// disagree about the month. Derive from the same visitor-tz date key
+	// the cells display (its YYYY-MM is the month the grid shows), then
+	// resolve the month's LOCALE name from the month index alone (a month
+	// name is zone-independent; the index keeps locale-awareness).
+	const visibleMonthKey = React.useMemo(
+		() => getDateKeyInTimeZone(visibleMonth, timeZone || ""),
+		[visibleMonth, timeZone],
 	);
-	const yearLabel = React.useMemo(
-		() => String(visibleMonth.getFullYear()),
-		[visibleMonth],
-	);
+	const monthName = React.useMemo(() => {
+		const m = Number(visibleMonthKey.slice(5, 7));
+		if (!Number.isFinite(m) || m < 1 || m > 12) {
+			return visibleMonth.toLocaleDateString(pageLocale(), { month: "long" });
+		}
+		return new Date(2000, m - 1, 1).toLocaleDateString(pageLocale(), {
+			month: "long",
+		});
+	}, [visibleMonthKey, visibleMonth]);
+	const yearLabel = React.useMemo(() => {
+		const y = Number(visibleMonthKey.slice(0, 4));
+		return Number.isFinite(y) && y > 0
+			? String(y)
+			: String(visibleMonth.getFullYear());
+	}, [visibleMonthKey, visibleMonth]);
 
 	// M7 fix: first day of the week was hardcoded to Sunday. Most of the
 	// world (and most Cal.com hosts) uses Monday. `Intl.Locale.weekInfo` is
@@ -3061,6 +3278,15 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// re-focus the grid's "active" cell (tabIndex 1 — see
 	// `dateTabIndexByKey`) once it exists.
 	const pendingMonthFocusRef = React.useRef(false);
+	// W1-09-NEW-03 fix: cross-month ARROW navigation previously scheduled a
+	// single rAF immediately after `setVisibleMonth` — under
+	// startTransition deferral (scheduler load) that frame could fire while
+	// the OLD grid was still mounted, focusing a cell that unmounts with it
+	// and dropping keyboard focus to document.body. Arrows now set this
+	// target key + the pending flag and let the post-commit effect below
+	// focus the exact cell once the new month actually exists. Exposed so
+	// the DateAndTimeInline moveFocus callback can set it.
+	const pendingMonthFocusTargetRef = React.useRef<string | null>(null);
 
 	// L4 fix: both of these now use the functional `setState` updater form,
 	// reading the *actual* latest committed month rather than whatever
@@ -3109,14 +3335,25 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	}, [visibleMonth, onMonthChange]);
 
 	// H5 fix (continued): once the new month has actually rendered, focus
-	// its "active" cell if a Page Up/Down triggered this change.
+	// its "active" cell if a Page Up/Down (or W1-09-NEW-03 cross-month
+	// arrow) triggered this change. Prefer the explicit target key when the
+	// cross-month arrow path set one; otherwise fall back to the grid's
+	// tabIndex=1 active cell.
 	React.useEffect(() => {
 		if (!pendingMonthFocusRef.current) return;
 		pendingMonthFocusRef.current = false;
+		const targetKey = pendingMonthFocusTargetRef.current;
+		pendingMonthFocusTargetRef.current = null;
 		// W2-30-F4 fix: cancellable frame — invalidated by the cleanup
 		// below if the month flips again (or the widget unmounts) before
 		// the frame fires.
 		const focusRaf = requestAnimationFrame(() => {
+			if (targetKey) {
+				rootRef.current
+					?.querySelector<HTMLElement>(`[data-date-key="${targetKey}"]`)
+					?.focus();
+				return;
+			}
 			const activeCell =
 				rootRef.current?.querySelector<HTMLElement>('[tabindex="1"]');
 			if (activeCell) {
@@ -3196,6 +3433,10 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		// it to clamp arrow/PageDown moves to the same bound the nav
 		// buttons already respect.
 		maxMonthStart,
+		// W1-09-NEW-03 fix: cross-month arrow focus handoff — the arrow
+		// path sets these, the post-commit effect above consumes them.
+		pendingMonthFocusRef,
+		pendingMonthFocusTargetRef,
 	};
 }
 
@@ -3319,7 +3560,7 @@ function useTimeGrid(options: UseTimeGridOptions): {
 				}
 				const abbrevOf = (instant: string): string | null => {
 					try {
-						const parts = new Intl.DateTimeFormat("en", {
+						const parts = getCachedDateTimeFormat("en", {
 							timeZone,
 							timeZoneName: "short",
 						}).formatToParts(new Date(instant));
@@ -3331,7 +3572,7 @@ function useTimeGrid(options: UseTimeGridOptions): {
 						// DST fall-back collision branch. Fall back to the
 						// UTC-offset suffix ("GMT-05:00" vs "GMT-06:00"),
 						// which still disambiguates the folded instants.
-						const longParts = new Intl.DateTimeFormat("en", {
+						const longParts = getCachedDateTimeFormat("en", {
 							timeZone,
 							timeZoneName: "longOffset",
 						}).formatToParts(new Date(instant));
@@ -3444,7 +3685,6 @@ interface DateAndTimeInlineProps {
 	endTime: string;
 	interval: number;
 	timeFormat: "12h" | "24h";
-	focusColor: string;
 	initialDate?: Date | null;
 	initialTime?: string | null;
 	/** Fix #19: parent-controlled visible month so navigation survives remounts. */
@@ -3525,7 +3765,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		endTime,
 		interval,
 		timeFormat,
-		focusColor,
 		initialDate,
 		initialTime,
 		initialVisibleMonth,
@@ -3607,6 +3846,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// a later move can cancel the stale one (and unmount can too). Lives
 	// here — moveFocus is this component's callback.
 	const focusRafRef = React.useRef(0);
+	// W2-29-N1 fix: arms when a date is picked whose slots fetch is still
+	// in flight (the single-rAF auto-focus finds no slot buttons yet); the
+	// post-commit effect below re-focuses the first pickable slot once the
+	// fetch resolves.
+	const pendingSlotListFocusRef = React.useRef(false);
 	React.useEffect(() => {
 		return () => {
 			if (focusRafRef.current) cancelAnimationFrame(focusRafRef.current);
@@ -3628,6 +3872,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		prevMonthLabel,
 		nextMonthLabel,
 		maxMonthStart,
+		pendingMonthFocusRef,
+		pendingMonthFocusTargetRef,
 	} = useCalendarNavigation({
 		initialVisibleMonth,
 		today,
@@ -3635,6 +3881,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		onMonthChange,
 		availableDates,
 		slotsLoading,
+		// W1-07-N4/N5 fixes: visitor-tz month seeding + header derivation.
+		timeZone,
 	});
 	const [selectedDate, setSelectedDate] = React.useState<Date | null>(
 		() => initialDate ?? null,
@@ -3698,10 +3946,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	);
 
 	const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
-	const isKeyboardModality = useKeyboardModality();
+	// W1-11-NEW-FIND-2 fix: useKeyboardModality (and its state) is gone —
+	// focus rings come from the CSS :focus-visible rule alone now.
 	const lastReadyKeyRef = React.useRef<string>("");
 
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		if (
 			typeof window !== "undefined" &&
 			typeof ResizeObserver !== "undefined"
@@ -3740,8 +3989,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 
 	const isNarrow = measuredWidth < COMPACT_BREAKPOINT;
 	const selectedAccentText = React.useMemo(
-		() => getReadableTextColor(accentColor),
-		[accentColor],
+		// W1-17-N7-new fix: pass the real backdrop so a translucent accent
+		// composites honestly instead of over hardcoded white.
+		() => getReadableTextColor(accentColor, backgroundColor),
+		[accentColor, backgroundColor],
 	);
 	const mutedText = React.useMemo(() => withAlpha(textColor, 0.6), [textColor]);
 	const mutedSoftText = React.useMemo(
@@ -3760,10 +4011,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		() => `1px solid ${borderColor}`,
 		[borderColor],
 	);
-	const focusInset = React.useMemo(
-		() => `inset 0 0 0 2px ${focusColor}`,
-		[focusColor],
-	);
+	// W1-11-NEW-FIND-2 fix: the `focusInset` shadow memo is gone —
+	// focus rings come from the CSS :focus-visible rule alone.
 
 	// L5 fix (shared helper): a single, locale-independent key format used
 	// everywhere a date needs to be looked up (grid cells, tabIndex map,
@@ -3962,10 +4211,44 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					)
 					?.focus();
 			});
+			// W2-29-N1 fix: the rAF above misses when `slotsLoading` is
+			// still true at fire time (the list renders only the loading
+			// div — querySelector returns null, focus stays stranded on
+			// the calendar cell, and nothing re-triggers when the slots
+			// arrive). Arm the pending flag; the effect keyed on
+			// slotsLoading/timeOptions below completes the focus move.
+			pendingSlotListFocusRef.current = true;
 			if (onDateChange) onDateChange(date);
 		},
 		[onDateChange, today],
 	);
+
+	// W2-29-N1 fix: completes the date-pick auto-focus when it fired
+	// while the slots fetch was still in flight. Runs once the load
+	// settles AND the new day's slot buttons exist; clears the flag as
+	// soon as it attempts the move so a later (unrelated) slots change
+	// doesn't yank focus. The frame is tracked like every other focus
+	// move (focusRafRef) so a follow-up move/unmount cancels it.
+	React.useEffect(() => {
+		if (!pendingSlotListFocusRef.current) return;
+		if (slotsLoading) return;
+		if (timeOptions.length === 0) {
+			// The fetch resolved with nothing to pick (empty day); a
+			// focus move is meaningless — disarm instead of retrying on
+			// every unrelated slots update.
+			pendingSlotListFocusRef.current = false;
+			return;
+		}
+		pendingSlotListFocusRef.current = false;
+		if (focusRafRef.current) cancelAnimationFrame(focusRafRef.current);
+		focusRafRef.current = requestAnimationFrame(() => {
+			rootRef.current
+				?.querySelector<HTMLButtonElement>(
+					"button[role='radio']:not([disabled])",
+				)
+				?.focus();
+		});
+	}, [slotsLoading, timeOptions]);
 
 	// H2/H3/M12 fix: a single helper for every keyboard move (arrows,
 	// Home, End) that used to be duplicated per-key with inconsistent
@@ -3996,6 +4279,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// identity-stable across fetches while still honoring the latest
 	// availability set on every keypress.
 	const hasKnownAvailabilityRef = React.useRef(hasKnownAvailability);
+	// W1-14-N2 doc: this render-phase write is INTENTIONAL (not an effect) —
+	// see the W1-16-P-15 note above. Moving it to useEffect would add a
+	// one-render lag and re-break the 42-cell memoization the fix protects.
 	hasKnownAvailabilityRef.current = hasKnownAvailability;
 
 	const moveFocus = React.useCallback(
@@ -4006,15 +4292,27 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			// booking horizon (maxMonthStart) that the nav buttons already
 			// respect. Mirror the same clamp here.
 			if (startOfDay(target).getTime() > maxMonthStart.getTime()) return;
-			if (!hasKnownAvailabilityRef.current(target)) return;
-			const inVisibleMonth =
-				target.getFullYear() === visibleMonth.getFullYear() &&
-				target.getMonth() === visibleMonth.getMonth();
-			if (!inVisibleMonth) {
-				const monthStart = new Date(target.getFullYear(), target.getMonth(), 1);
-				React.startTransition(() => setVisibleMonth(monthStart));
-			}
-			const key = dateKeyOf(target);
+		if (!hasKnownAvailabilityRef.current(target)) return;
+		const inVisibleMonth =
+			target.getFullYear() === visibleMonth.getFullYear() &&
+			target.getMonth() === visibleMonth.getMonth();
+		if (!inVisibleMonth) {
+			const monthStart = new Date(target.getFullYear(), target.getMonth(), 1);
+			// W1-09-NEW-03 fix: cross-month arrow moves previously scheduled
+			// a single rAF here. Under startTransition deferral (scheduler
+			// load) that frame could fire while the OLD grid was still
+			// mounted — focusing (or missing) the target in the outgoing
+			// grid and dropping focus to document.body after commit. Hand
+			// the target key to the same pendingMonthFocusRef contract that
+			// PageUp/PageDown already use: the post-commit effect (in
+			// useCalendarNavigation) focuses the exact cell once the new
+			// month exists.
+			pendingMonthFocusRef.current = true;
+			pendingMonthFocusTargetRef.current = dateKeyOf(target);
+			React.startTransition(() => setVisibleMonth(monthStart));
+			return;
+		}
+		const key = dateKeyOf(target);
 			// W2-30-F4 fix: the frame is tracked and cancelled before the next
 			// move issues a new one (and on unmount below), instead of letting
 			// stale focus frames queue up.
@@ -4111,8 +4409,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						selectedDate={selectedDate}
 						today={today}
 						hoveredDateKey={hoveredDateKey}
-						focusedKey={focusedKey}
-						isKeyboardModality={isKeyboardModality}
 						isNarrow={isNarrow}
 						firstDayOfWeek={firstDayOfWeek}
 						dateKeyOf={dateKeyOf}
@@ -4128,7 +4424,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						selectedAccentText={selectedAccentText}
 						mutedSoftText={mutedSoftText}
 						mutedText={mutedText}
-						focusInset={focusInset}
 						// F-17-3 fix: radius token (the `radius` prop this
 						// inline component already receives).
 						borderRadius={String(radius)}
@@ -4148,7 +4443,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					onTimeFormatChange={onTimeFormatChange}
 					focusedKey={focusedKey}
 					setFocusedKey={setFocusedKey}
-					isKeyboardModality={isKeyboardModality}
 					prefersReducedMotion={prefersReducedMotion}
 					accentColor={accentColor}
 					softerFill={softerFill}
@@ -4158,7 +4452,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					selectedAccentText={selectedAccentText}
 					mutedText={mutedText}
 					mutedSoftText={mutedSoftText}
-					focusInset={focusInset}
 					// F-17-3 fix: radius token.
 					borderRadius={String(radius)}
 					loadingLabel={loadingLabel}
@@ -4195,6 +4488,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				<div
 					role="status"
 					aria-live="polite"
+					aria-atomic="true"
 					style={{
 						position: "absolute",
 						width: 1,
@@ -4287,6 +4581,12 @@ interface FieldConfig {
 	placeholder?: string;
 	required: boolean;
 	options?: Array<string>;
+	// W1-08-F-08-06 fix: parallel per-option values, aligned by index with
+	// `options` — lets authors disambiguate duplicate labels (two "Apple"s)
+	// so the round-trip selection lands on the option the visitor clicked.
+	// Empty/absent entries fall back to using the label as the value
+	// (identical to pre-fix behavior).
+	optionValues?: Array<string>;
 	// T10-L4 fix: parallel per-option image URLs and descriptions, aligned
 	// by index with `options`. Empty arrays keep the plain text-only cards.
 	optionImages?: Array<string>;
@@ -4510,8 +4810,9 @@ interface BookingEngineCopyProps {
 // panel bug: the panel couldn't hold a stable open state for a control
 // that might vanish out from under the very edit being made inside it.
 //
-// Scoped exception: the per-field `options` Array (inside each step's
-// `fields` list) DOES use `hidden`, keyed off that same field's own
+// Scoped exception: the per-field choice-Array controls (`options`,
+// `optionValues`, `optionImages`, `optionDescriptions` — all inside each
+// step's `fields` list) DO use `hidden`, keyed off that same field's own
 // `fieldType`. This exact pattern shipped in the original version of
 // this component with no reported instability - unlike `fields` before,
 // it was never implicated in the flaky-panel bug - so it's kept as a
@@ -4567,6 +4868,26 @@ interface BookingEngineConfigProps {
 	// (both the availability GET and the booking POST use it). Defaults to
 	// 18000ms when the control hasn't been saved on an old instance.
 	fetchTimeoutMs: number;
+	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
+	// deployments use the engine without forking. Default: Cal.com cloud.
+	calApiBaseUrl?: string;
+	// W1-02-F27 fix: `cal-api-version` header value sent with both the
+	// slots GET and the bookings POST.
+	calApiVersion?: string;
+	// W1-02-F30 fix: the per-month slots cache TTL. Tune down for
+	// high-velocity availability (concert tickets) or up for low-churn
+	// bookings (salons).
+	slotsCacheTtlMs?: number;
+	// W2-23-N1 fix: meeting-duration fallback (ms) for ICS exports,
+	// Google/Outlook deep links, and the success screen when the Cal.com
+	// slot carries no end.
+	defaultMeetingDurationMs?: number;
+	// W1-02-F28 fix: .ics download filename prefix (the "-YYYY-MM-DD.ics"
+	// part is appended automatically).
+	icsDownloadFilenamePrefix?: string;
+	// W1-02-F29 fix: fallback UID domain used ONLY when crypto.randomUUID
+	// is unavailable (older browsers) — branding for the non-UUID UID path.
+	icsUidDomain?: string;
 	// W1-02-F3 fix: author-curated timezone picker list. Each entry maps a
 	// visitor-facing label to a canonical IANA timezone value. Absent (old
 	// canvases) or empty arrays fall back to the built-in COMMON_TIMEZONES.
@@ -4649,6 +4970,20 @@ const CHOICE_FIELD_TYPES = ["select", "segmented", "pills", "cards", "radio"];
 const TEXT_FIELD_TYPES = ["text", "textarea"];
 // T7-H8 fix: default ICS meeting duration when the Cal.com slot lacks an end.
 const DEFAULT_MEETING_DURATION_MS = 30 * 60 * 1000;
+// W1-02-F26 fix: Cal.com v2 base URL is author-configurable so self-hosted
+// deployments can point at their own instance. Trailing slashes are stripped
+// at the use site (the path builder appends "/v2/...").
+const DEFAULT_CAL_API_BASE_URL = "https://api.cal.com";
+// W1-02-F27 fix: the `cal-api-version` header value is author-configurable
+// so future Cal.com v2 minor versions can be adopted without a code change.
+const DEFAULT_CAL_API_VERSION = "2024-09-04";
+// W1-02-F28 fix: .ics download filename prefix is brandable. The YYYY-MM-DD
+// stamp and ".ics" extension always follow it.
+const DEFAULT_ICS_FILENAME_PREFIX = "booking-";
+// W1-02-F29 fix: fallback UID domain when crypto.randomUUID is unavailable
+// (RFC 5545 requires a UID; the domain after the @ is decorative on the
+// non-UUID path — author-brandable per W1-02-F29).
+const DEFAULT_ICS_UID_DOMAIN = "@booking-engine";
 
 const DEFAULT_DARK_THEME = {
 	// T5-H11 fix: the "#0099FF" accent has poor contrast against both
@@ -4660,7 +4995,11 @@ const DEFAULT_DARK_THEME = {
 	// "#3B82F6" (blue-500) passes the accent-on-dark pairs (~5.1:1 on
 	// #0F1115, ~4.5:1 on #1A1D23) and flips the auto text picker to black
 	// on the accent (~5.7:1) — consistent with the F-17-1 picker.
-	accentColor: "#3B82F6",
+	// W1-17-N6-new fix: #3B82F6 on #1A1D23 sat only +0.09 above AA 4.5:1
+	// (4.5901:1). #4F8EF7 is the same blue family with a slight luminance
+	// bump — ~5.16:1 on the dark surface (margin +0.66) without materially
+	// changing the look.
+	accentColor: "#4F8EF7",
 	backgroundColor: "#0F1115",
 	surfaceColor: "#1A1D23",
 	textPrimaryColor: "#FFFFFF",
@@ -5179,9 +5518,28 @@ function validateStep(
 				slot.date instanceof Date && !Number.isNaN(slot.date.getTime())
 					? slot.date.getTime()
 					: Number.NaN;
-			const startMs = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot.time24h)
-				? new Date(slot.time24h).getTime()
-				: slotDateMs;
+			const isIsoSlot = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot.time24h);
+			let startMs: number;
+			if (isIsoSlot) {
+				startMs = new Date(slot.time24h).getTime();
+			} else if (!Number.isNaN(slotDateMs)) {
+				// W1-07-N6 fix: demo-slot `time24h` is a bare "HH:MM" —
+				// the old fallback used the CELL-MIDNIGHT epoch, so every
+				// slot on today's demo cell read as "already in the past"
+				// after midnight and was rejected at Continue even though
+				// the slot list plainly showed it as upcoming. Reconstruct
+				// the picked instant (cell midnight + HH:MM) the same way
+				// isTimeElapsed does, so the two paths agree.
+				const d = new Date(
+					slot.date.getFullYear(),
+					slot.date.getMonth(),
+					slot.date.getDate(),
+				);
+				d.setMinutes(parseTimeToMinutes(slot.time24h));
+				startMs = d.getTime();
+			} else {
+				startMs = Number.NaN;
+			}
 			if (Number.isNaN(startMs)) {
 				errors[SELECTED_SLOT_KEY] = vc.pickDateTimeError;
 			} else if (startMs <= Date.now()) {
@@ -5240,14 +5598,27 @@ interface CalSlot {
 // { time, bookingUid }. Accept all three defensively — `time` feeds `start`,
 // `end` stays optional — so a server that ignores `format` can never render
 // an empty calendar with no error.
-function isCalSlot(s: unknown): s is CalSlot {
-	if (typeof s !== "object" || s === null) return false;
+//
+// W1-15-TS-10 fix: the old `isCalSlot` type guard claimed `s is CalSlot`
+// even for the seated { time, bookingUid } shape where `start` is ABSENT —
+// the guard's local `start` fallback was never written back to the object,
+// so downstream consumers read `slot.start === undefined` (Invalid Date,
+// NaN minutes, un-selectable row). A mapper instead: normalize every
+// accepted shape into a REAL CalSlot (the `time` fallback baked INTO the
+// returned object) or null. Framer-compatible: internal helper, same
+// return type downstream.
+function normalizeCalSlot(s: unknown): CalSlot | null {
+	if (typeof s !== "object" || s === null) return null;
 	const raw = s as { start?: unknown; time?: unknown; end?: unknown };
 	const start = typeof raw.start === "string" ? raw.start : raw.time;
-	return (
-		typeof start === "string" &&
-		(typeof raw.end === "string" || raw.end === undefined)
-	);
+	if (typeof start !== "string" || start.length === 0) return null;
+	if (raw.end !== undefined && typeof raw.end !== "string") return null;
+	return {
+		start,
+		...(typeof raw.end === "string" && raw.end.length > 0
+			? { end: raw.end }
+			: {}),
+	};
 }
 
 interface UseCalcomSlotsResult {
@@ -5278,7 +5649,12 @@ function monthCacheKey(
 	apiKey: string,
 	eventTypeId: string,
 ): string {
-	return `${monthStart.getFullYear()}-${monthStart.getMonth()}|${timeZone}|${apiKey}|${eventTypeId}`;
+	// W1-05-N5 fix: the key used browser-local getFullYear()/getMonth(),
+	// which mislabels the visitor-tz month when the browser tz and the
+	// visitor tz straddle a month boundary. getDateKeyInTimeZone already
+	// produces the visitor-tz "YYYY-MM" the slot fetch window is built
+	// around, so the key now matches the month actually requested.
+	return `${getDateKeyInTimeZone(monthStart, timeZone || "").slice(0, 7)}|${timeZone}|${apiKey}|${eventTypeId}`;
 }
 
 // CC-15 fix: shared timeout for both Cal.com calls. 18s comfortably covers a
@@ -5322,8 +5698,24 @@ function useCalcomSlots(
 	errorCopy?: Partial<ErrorCopy>,
 	// W1-02-F1 fix (bundle 17): author-tunable timeout override.
 	timeoutMs?: number,
+	// W1-02-F26 fix: Cal.com v2 API base URL (self-hosted deployments).
+	apiBaseUrl?: string,
+	// W1-02-F27 fix: `cal-api-version` header value.
+	apiVersion?: string,
+	// W1-02-F30 fix: cache TTL override for the month-keyed slots cache.
+	cacheTtlMs?: number,
 ): UseCalcomSlotsResult {
 	const copy = { ...ERROR_COPY_DEFAULTS, ...(errorCopy || {}) };
+	// W1-02-F26/F27/F30 fixes: resolve the author-tunable overrides once
+	// (the component's resolved values are passed in; defaults keep this
+	// hook honest for any future internal caller). Trailing slashes are
+	// stripped so the "/v2/..." suffix joins cleanly.
+	const apiBase = (apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "");
+	const apiVer = apiVersion || DEFAULT_CAL_API_VERSION;
+	const cacheTtl =
+		typeof cacheTtlMs === "number" && cacheTtlMs >= 0
+			? cacheTtlMs
+			: SLOTS_CACHE_TTL_MS;
 	// F-01-02 fix: was `RenderTarget.current() === RenderTarget.canvas` —
 	// a single-target guard. `useIsStaticRenderer()` also covers `export`
 	// and `thumbnail` targets, so the Cal.com availability fetch (with its
@@ -5404,7 +5796,8 @@ function useCalcomSlots(
 		const cached = cacheRef.current.get(monthKey);
 		// W1-05-F-04 fix: honor the TTL — a fresh-enough entry short-circuits
 		// the fetch; a stale one falls through and is replaced below.
-		if (cached && Date.now() - cached.fetchedAt < SLOTS_CACHE_TTL_MS) {
+		// W1-02-F30 fix: the TTL is author-tunable via slotsCacheTtlMs.
+		if (cached && Date.now() - cached.fetchedAt < cacheTtl) {
 			setSlots(cached.slots);
 			setLoading(false);
 			setError(null);
@@ -5444,7 +5837,7 @@ function useCalcomSlots(
 		end.setDate(end.getDate() + 2);
 		const startStr = start.toISOString();
 		const endStr = end.toISOString();
-		const url = `https://api.cal.com/v2/slots?eventTypeId=${encodeURIComponent(
+		const url = `${apiBase}/v2/slots?eventTypeId=${encodeURIComponent(
 			eventTypeId,
 		)}&start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(
 			endStr,
@@ -5503,7 +5896,7 @@ function useCalcomSlots(
 				method: "GET",
 				headers: {
 					Authorization: `Bearer ${apiKey}`,
-					"cal-api-version": "2024-09-04",
+					"cal-api-version": apiVer,
 				},
 				signal: controller.signal,
 			})
@@ -5577,20 +5970,28 @@ function useCalcomSlots(
 							// through to `rawSlots = []` (empty calendar, no
 							// error). Read `data.slots` if present (legacy
 							// nesting), else flatten the date-key map.
-							const slots = (data as { slots?: unknown }).slots;
-							if (slots && typeof slots === "object") {
-								rawSlots = Object.values(slots).flat().filter(isCalSlot);
-							} else {
-								rawSlots = Object.values(data).flat().filter(isCalSlot);
-							}
+						const slots = (data as { slots?: unknown }).slots;
+						if (slots && typeof slots === "object") {
+							// W1-15-TS-10 fix: normalization happens once at the
+							// mapping step below (normalizeCalSlot), so the raw
+							// shape stays unknown here.
+							rawSlots = Object.values(slots).flat();
+						} else {
+							rawSlots = Object.values(data).flat();
+						}
 						} else if (Array.isArray(body.slots)) {
 							rawSlots = body.slots;
 						}
 					} else if (Array.isArray(json)) {
 						rawSlots = json;
 					}
+					// W1-15-TS-10 fix: normalize each accepted shape into a REAL
+					// CalSlot (the seated-slot `time` fallback baked into the
+					// object) or null, instead of filtering through a guard
+					// that lied about `start`'s presence.
 					const mapped = rawSlots
-						.filter(isCalSlot)
+						.map(normalizeCalSlot)
+						.filter((slot): slot is CalSlot => slot !== null)
 						.map((slot) => {
 							const d = new Date(slot.start);
 							// CC-13 fix: was `d.getHours()`, which reads the
@@ -5609,6 +6010,13 @@ function useCalcomSlots(
 								minutes,
 							};
 						})
+						// W1-05-N3 fix: an invalid `start` ISO string survives
+						// normalizeCalSlot (it only checks string-ness) as an
+						// Invalid Date → NaN minutes → garbled label + a row
+						// whose value sorts nowhere sensible. Drop it instead
+						// of rendering one unusable slot row per malformed
+						// slot.
+						.filter((slot) => !Number.isNaN(slot.minutes))
 						.sort((a, b) => (a.value < b.value ? -1 : 1));
 					if (cancelled) return;
 					// W1-05-F-04 fix: stamp the entry with its fetch time so the
@@ -5691,12 +6099,19 @@ function useCalcomSlots(
 						// shared readJson must not reach the visitor verbatim —
 						// map it to the same generic fallback copy as any other
 						// unclassifiable failure.
+						// W1-05-N2 fix: raw `plainErr?.message` ("HTTP 400",
+						// "Failed to fetch") is developer-oriented and must not
+						// surface either. A network-layer TypeError (browser
+						// fetch rejection, CORS, firewall) gets the actionable
+						// networkError copy; everything else classifiable gets
+						// the author fallback label or the generic slot copy.
 						message =
 							plainErr?.message === MALFORMED_JSON_ERROR
 								? copy.slotsFallbackError
-								: plainErr?.message ||
-									fallbackErrorLabel ||
-									copy.slotsFallbackError;
+								: plainErr instanceof TypeError ||
+									  plainErr?.name === "TypeError"
+									? copy.networkError
+									: fallbackErrorLabel || copy.slotsFallbackError;
 					}
 					setError(message);
 					setSlots([]);
@@ -5748,6 +6163,13 @@ interface SubmitBookingResult {
 	// carries one — lets the caller branch on codes instead of guessing
 	// from message substrings.
 	errorCode?: string;
+	// W1-06-F-06-4 fix: when true, `error` is ALREADY visitor-facing copy
+	// (mapped inside this module — timeout, network, malformed-body,
+	// empty-response paths) and the caller must NOT run it through
+	// mapCalcomError again. The defensive second mapping used to degrade
+	// the friendly string down to the generic fallback (the timeout copy
+	// has no "TIMEOUT" code branch and no matching substring).
+	alreadyMapped?: boolean;
 }
 
 // CC-11 fix: what actually gets kept in state and handed to SuccessScreen.
@@ -5796,6 +6218,10 @@ async function submitCalcomBooking(params: {
 	errorCopy?: Partial<ErrorCopy>;
 	// W1-02-F1 fix (bundle 17): author-tunable timeout override.
 	timeoutMs?: number;
+	// W1-02-F26 fix: Cal.com v2 API base URL (self-hosted deployments).
+	apiBaseUrl?: string;
+	// W1-02-F27 fix: `cal-api-version` header value.
+	apiVersion?: string;
 }): Promise<SubmitBookingResult> {
 	const {
 		apiKey,
@@ -5811,8 +6237,14 @@ async function submitCalcomBooking(params: {
 		externalSignal,
 		errorCopy: errorCopyParam,
 		timeoutMs,
+		apiBaseUrl,
+		apiVersion,
 	} = params;
 	const copy = { ...ERROR_COPY_DEFAULTS, ...(errorCopyParam || {}) };
+	// W1-02-F26/F27 fixes: resolve the author-tunable base URL + API
+	// version header once (trailing slashes normalized for the join).
+	const apiBase = (apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "");
+	const apiVer = apiVersion || DEFAULT_CAL_API_VERSION;
 	// H4 fix: `Number(eventTypeId)` silently produced `NaN` for any
 	// non-purely-numeric event type ID (e.g. a slug), and `JSON.stringify`
 	// serializes `NaN` as `null` — so the request body sent
@@ -5870,12 +6302,12 @@ async function submitCalcomBooking(params: {
 		};
 	}
 	try {
-		const res = await fetch("https://api.cal.com/v2/bookings", {
+		const res = await fetch(`${apiBase}/v2/bookings`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${apiKey}`,
-				"cal-api-version": "2024-09-04",
+				"cal-api-version": apiVer,
 				// W1-06-F-06-4 fix: VERIFIED against Cal.com v2's published
 				// OpenAPI (POST /v2/bookings) — `X-Idempotency-Key` is NOT a
 				// documented parameter. The header is sent anyway as a harmless
@@ -5921,7 +6353,19 @@ async function submitCalcomBooking(params: {
 			}),
 			signal: controller.signal,
 		});
-		const json = await readJson<{
+		// W1-06-F-06-1 fix: parse the body tolerantly and BEFORE the
+		// `!res.ok` branch. The old shape called the throwing `readJson`
+		// first, so a 4xx/5xx whose body wasn't JSON (HTML error page,
+		// proxy junk) threw MALFORMED_JSON_ERROR and skipped the
+		// status-aware mapping below — the HTTP status context was lost.
+		// Here the parse can never throw; `json === null` means "body was
+		// not JSON" and each branch decides what that means for it. The
+		// throwing `readJson` sentinel remains the GET path's contract.
+		// T3-M1 fix: named interface for the tolerant POST body below —
+		// a bare inline annotation worked until control-flow narrowing made
+		// `as typeof json` (json still narrowed to `null` at that point)
+		// cast the parse result to `null`, collapsing every later access.
+		interface CalcomSubmitResponseJson {
 			data?: {
 				booking?: { uid?: string; rescheduleUrl?: string; cancelUrl?: string };
 				uid?: string;
@@ -5942,28 +6386,62 @@ async function submitCalcomBooking(params: {
 			};
 			message?: string;
 			code?: string;
-		} | null>(res);
+		}
+		let json: CalcomSubmitResponseJson | null = null;
+		let bodyWasMalformed = false;
+		{
+			const rawText = await res.text();
+			if (rawText.trim()) {
+				try {
+					json = JSON.parse(rawText) as CalcomSubmitResponseJson | null;
+				} catch {
+					json = null;
+					bodyWasMalformed = true;
+				}
+			}
+		}
 		if (!res.ok) {
-			const msg =
-				json?.error?.message ||
-				json?.message ||
-				json?.error ||
-				copy.httpStatusTemplate.replace("{status}", String(res.status));
+			const apiError = json?.error?.message || json?.message || json?.error;
 			// T3-M2 fix: carry Cal.com's machine-readable code through so
 			// mapCalcomError can branch on it before falling back to
 			// substring matching.
 			const code = json?.error?.code || json?.code || json?.error?.errorCode;
-			return { success: false, error: String(msg), errorCode: code };
+			if (apiError) {
+				return { success: false, error: String(apiError), errorCode: code };
+			}
+			// W1-06-F-06-4 fix: no machine-readable error from Cal.com —
+			// use the author-facing template; it is already visitor-facing
+			// copy, so flag it to skip the consumer's mapper (which would
+			// otherwise degrade it to the generic fallback).
+			return {
+				success: false,
+				error: copy.httpStatusTemplate.replace("{status}", String(res.status)),
+				errorCode: code,
+				alreadyMapped: true,
+			};
 		}
 		// T3-M6 fix: a 2xx status with an empty/null body used to sail
 		// through as success — the visitor got a confirmation screen for a
 		// booking there's no record of. An empty body is not a confirmation;
 		// fail with copy that tells them what to check.
-		if (!json || (typeof json === "object" && Object.keys(json).length === 0)) {
+		// W1-06-F-06-1 fix: a 2xx whose body was NOT JSON (truncated chunk,
+		// proxy junk) gets the dedicated malformed-response copy instead —
+		// the visitor sees "unusable response" rather than the
+		// empty-confirmation phrasing.
+		if (
+			bodyWasMalformed ||
+			!json ||
+			(typeof json === "object" && Object.keys(json).length === 0)
+		) {
 			return {
 				success: false,
-				error: copy.emptyResponseError,
-				errorCode: "EMPTY_RESPONSE",
+				error: bodyWasMalformed
+					? copy.malformedResponseError
+					: copy.emptyResponseError,
+				errorCode: bodyWasMalformed ? MALFORMED_JSON_ERROR : "EMPTY_RESPONSE",
+				// W1-06-F-06-4 fix: already visitor-facing copy (see
+				// SubmitBookingResult.alreadyMapped).
+				alreadyMapped: true,
 			};
 		}
 		// T3-M1 fix: was `json?.data?.uid || json?.data?.id || json?.uid ||
@@ -6002,20 +6480,39 @@ async function submitCalcomBooking(params: {
 				? (err as Error & { code?: string; errorCode?: string })
 				: null;
 		const timedOut = errObj?.name === "AbortError";
+		// W1-06-F-06-1 fix: the malformed-body sentinel gets its own
+		// dedicated copy token here instead of falling through
+		// mapCalcomError into the generic fallback — a visitor who hit an
+		// HTML error page from a proxy now sees "unusable response" copy
+		// rather than "something went wrong". (Defensive: the POST body
+		// parse above is tolerant, so this branch primarily future-proofs
+		// against readJson-based callers.)
+		const malformed = errObj?.message === MALFORMED_JSON_ERROR;
+		const mappedError = timedOut
+			? copy.submitTimeoutError
+			: malformed
+				? copy.malformedResponseError
+				: mapCalcomError(
+						errObj?.message || "",
+						errObj?.code || errObj?.errorCode,
+						copy,
+					);
 		return {
 			success: false,
 			// T3-H2 fix: route non-timeout network errors through the same
 			// mapper as API errors so a failed POST during connectivity
 			// trouble gets a useful, actionable message instead of one
 			// catch-all string.
-			error: timedOut
-				? copy.submitTimeoutError
-				: mapCalcomError(
-						errObj?.message || "",
-						errObj?.code || errObj?.errorCode,
-						copy,
-					),
-			errorCode: timedOut ? "TIMEOUT" : errObj?.code || errObj?.errorCode || "",
+			error: mappedError,
+			errorCode: timedOut
+				? "TIMEOUT"
+				: malformed
+					? MALFORMED_JSON_ERROR
+					: errObj?.code || errObj?.errorCode || "",
+			// W1-06-F-06-4 fix: the string above is already visitor-facing
+			// copy — flag it so handleSubmitBooking's mapCalcomError pass
+			// does not re-map (and degrade) it.
+			alreadyMapped: true,
 		};
 	} finally {
 		clearTimeout(timeoutId);
@@ -6058,6 +6555,24 @@ function mapCalcomError(
 		case "INVALID_EMAIL_ADDRESS":
 		case "INVALID_EMAIL":
 			return copy.invalidEmailError;
+		// W1-06-F-06-3 fix: machine-readable 429/5xx/400-class codes now
+		// map to dedicated, visitor-actionable copy instead of falling to
+		// the generic fallback. Rate-limit reuses `slotsRateLimitGenericError`
+		// (no Retry-After hint is available to the mapper here); server-side
+		// reuses `slotsUnavailableError`; the 400-class gets its own
+		// `badRequestError` token.
+		case "RATE_LIMIT_EXCEEDED":
+		case "RATE_LIMIT":
+		case "TOO_MANY_REQUESTS":
+			return copy.slotsRateLimitGenericError;
+		case "INTERNAL_ERROR":
+		case "SERVER_ERROR":
+		case "INTERNAL_SERVER_ERROR":
+			return copy.slotsUnavailableError;
+		case "BAD_REQUEST":
+		case "VALIDATION_ERROR":
+		case "INVALID_REQUEST":
+			return copy.badRequestError;
 		default:
 			break;
 	}
@@ -6069,6 +6584,12 @@ function mapCalcomError(
 		return copy.invalidEmailError;
 	if (m.includes("unauthorized") || m.includes("api key"))
 		return copy.credentialError;
+	// W1-06-F-06-3 fix: substring heuristics for the 429/5xx classes that
+	// substring-matched nothing before (only "network"/"fetch" covered).
+	if (m.includes("rate limit") || m.includes("too many requests"))
+		return copy.slotsRateLimitGenericError;
+	if (m.includes("internal") || m.includes("server error"))
+		return copy.slotsUnavailableError;
 	if (m.includes("network") || m.includes("fetch")) return copy.networkError;
 	return fallback;
 }
@@ -6091,7 +6612,12 @@ function makeIdempotencyKey(): string {
 // Convert to one stable sentinel the catch ladders map to friendly copy.
 const MALFORMED_JSON_ERROR = "MALFORMED_JSON_RESPONSE";
 
-async function readJson<T>(res: Response): Promise<T> {
+// W1-15-TS-15 fix: the generic was unconstrained — readJson<string> would
+// type-check even though res.json() only yields JSON objects/arrays. The
+// constraint covers both shapes the slot endpoint returns.
+async function readJson<
+	T extends Record<string, unknown> | unknown[],
+>(res: Response): Promise<T> {
 	try {
 		return (await res.json()) as T;
 	} catch {
@@ -6158,6 +6684,10 @@ function replaceCopyTokens(
 	text: string,
 	steps: NormalizedStep[],
 	values: BookingValues,
+	// W1-07-N1 fix: format the {date} token in the visitor's chosen zone
+	// so it agrees with the SuccessScreen/ReviewStepBody labels; a corrupt
+	// zone string falls back to browser-local (isValidTimeZone guard).
+	timeZone?: string,
 ): string {
 	if (typeof text !== "string" || !text.includes("{")) return text;
 	const formFields =
@@ -6167,22 +6697,19 @@ function replaceCopyTokens(
 		formFields.find((field) => field.isPrimaryName) || findEmailField(steps);
 	const name = nameField ? String(values[nameField.id] ?? "").trim() : "";
 	const slot = values[SELECTED_SLOT_KEY];
-	// W1-07-F7 fix: use the slot's UTC instant when real (`time24h` has a
-	// "T"); `slot.date` is the cell-midnight demo fallback only.
+	// W1-07-N1 fix: same zoned options the CalendarCell aria-label uses.
+	const tzOpts = isValidTimeZone(timeZone) ? { timeZone } : undefined;
+	const dateOpts: Intl.DateTimeFormatOptions = {
+		weekday: "long",
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+		...tzOpts,
+	};
 	const date = slot
 		? /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-			? new Date(slot.time24h).toLocaleDateString(pageLocale(), {
-					weekday: "long",
-					year: "numeric",
-					month: "long",
-					day: "numeric",
-				})
-			: slot.date.toLocaleDateString(pageLocale(), {
-					weekday: "long",
-					year: "numeric",
-					month: "long",
-					day: "numeric",
-				})
+			? new Date(slot.time24h).toLocaleDateString(pageLocale(), dateOpts)
+			: slot.date.toLocaleDateString(pageLocale(), dateOpts)
 		: "";
 	return text.replace(/\{name\}/g, name).replace(/\{date\}/g, date);
 }
@@ -6196,6 +6723,22 @@ function autocompleteToken(field: NormalizedField): string | undefined {
 	if (field.fieldType === "email") return "email";
 	if (field.fieldType === "phone") return "tel";
 	if (field.isPrimaryName) return "name";
+	// W1-20-N8 fix: the original table covered name/email/phone only —
+	// address and organization fields never got a browser-autofill token.
+	// Order matters: the specific address components must be tested before
+	// the bare "address" / "name" fallbacks that would swallow them.
+	if (/\b(postal|zip)\b/.test(label)) return "postal-code";
+	if (/\b(country|nation)\b/.test(label)) return "country";
+	if (/\baddress\b[^,;]*\b(1|one|line)\b|\bstreet\b|\baddress line 1\b/.test(label))
+		return "street-address";
+	if (/\baddress\b[^,;]*\b(2|two)\b|\bapt\b|\bapartment\b|\bsuite\b|\bunit\b/.test(label))
+		return "address-line2";
+	if (/\b(state|province|region)\b/.test(label)) return "address-level1";
+	if (/\b(city|town)\b/.test(label)) return "address-level2";
+	if (/\borganization\b|\borganisation\b|\bcompany\b|\bemployer\b/.test(label))
+		return "organization";
+	if (/\btitle\b|\bjob title\b|\bposition\b|\bdepartment\b/.test(label))
+		return "organization-title";
 	if (/\b(email|e-mail|mail)\b/.test(label)) return "email";
 	if (/\b(phone|tel|mobile|cell)\b/.test(label)) return "tel";
 	if (/\b(first|given)\b/.test(label)) return "given-name";
@@ -6232,6 +6775,9 @@ function buildNotesPayload(
 	selectedTimeLabel: string = DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL,
 	datePrefix: string = DEFAULT_COPY_NOTES_DATE_PREFIX,
 	timePrefix: string = DEFAULT_COPY_NOTES_TIME_PREFIX,
+	// W1-07-N1 fix: format the notes date-prefix in the visitor's chosen
+	// zone so it matches the success-screen label and on-screen copy.
+	timeZone?: string,
 ): string {
 	// T3-L5 fix: the primary-name and email fields used to be included here
 	// AND in the `attendee` object — so every booking's notes carried the
@@ -6261,19 +6807,17 @@ function buildNotesPayload(
 		// W1-07-F7 fix: same instant-vs-cell-midnight derivation as the
 		// success/review labels so every derived string agrees with the
 		// clicked cell and the ICS filename.
+		const tzOpts = isValidTimeZone(timeZone) ? { timeZone } : undefined;
+		const dateOpts: Intl.DateTimeFormatOptions = {
+			weekday: "long",
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+			...tzOpts,
+		};
 		const dateStr = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-			? new Date(slot.time24h).toLocaleDateString(pageLocale(), {
-					weekday: "long",
-					year: "numeric",
-					month: "long",
-					day: "numeric",
-				})
-			: slot.date.toLocaleDateString(pageLocale(), {
-					weekday: "long",
-					year: "numeric",
-					month: "long",
-					day: "numeric",
-				});
+			? new Date(slot.time24h).toLocaleDateString(pageLocale(), dateOpts)
+			: slot.date.toLocaleDateString(pageLocale(), dateOpts);
 		lines.push(selectedTimeLabel);
 		lines.push(`${datePrefix}${dateStr}`);
 		lines.push(`${timePrefix}${slot.timeLabel}`);
@@ -6331,6 +6875,14 @@ function buildIcsDataUri(
 	summary?: string,
 	prodid: string = DEFAULT_COPY_ICS_PRODID,
 	summaryFallback: string = DEFAULT_COPY_ICS_SUMMARY_FALLBACK,
+	// W2-23-N1 fix: author-tunable fallback meeting duration (ms) when the
+	// Cal.com slot carries no end — the old hardcoded 30 minutes couldn't
+	// fit 15-min clinics or 60-min salons.
+	meetingDurationMs: number = DEFAULT_MEETING_DURATION_MS,
+	// W1-02-F29 fix: fallback UID domain for the non-UUID UID path (only
+	// used when crypto.randomUUID is unavailable). Author-brandable; the
+	// default keeps historical UIDs stable.
+	uidDomain: string = DEFAULT_ICS_UID_DOMAIN,
 ): string {
 	const toIcsDate = (d: Date) =>
 		d
@@ -6346,15 +6898,33 @@ function buildIcsDataUri(
 	if (isIso) {
 		startDate = new Date(slot.time24h);
 		// Fix #11: use the real Cal.com slot end if we captured it.
-		endDate = slot.end
-			? new Date(slot.end)
-			: new Date(startDate.getTime() + DEFAULT_MEETING_DURATION_MS);
+		// W2-31-NEW-1 fix: a hostile/corrupt `slot.end` (restored from
+		// sessionStorage or smuggled by a malformed API shape) yields an
+		// Invalid Date here — `toIcsDate(endDate).toISOString()` then
+		// throws RangeError: Invalid time value and crashes the
+		// SuccessScreen render. Guard it: only a parseable, non-NaN end
+		// is trusted; anything else falls back to start + default
+		// duration. (isBookingPayload at the restore boundary closes the
+		// `end: {}` vector specifically; this is defense-in-depth.)
+		const slotEnd = slot.end ? new Date(slot.end) : null;
+		endDate =
+			slotEnd && !Number.isNaN(slotEnd.getTime())
+				? slotEnd
+				: new Date(startDate.getTime() + meetingDurationMs);
+		// Defense-in-depth on the start too: an unparseable ISO slot time
+		// must not emit "DTSTART:Invalid Date" / crash the ICS build.
+		if (Number.isNaN(startDate.getTime())) {
+			startDate = new Date();
+		}
+		if (Number.isNaN(endDate.getTime())) {
+			endDate = new Date(startDate.getTime() + meetingDurationMs);
+		}
 	} else {
 		// Demo grid: combine the picked date with the HH:MM time string.
 		const mins = parseTimeToMinutes(slot.time24h);
 		startDate = new Date(slot.date);
 		startDate.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
-		endDate = new Date(startDate.getTime() + DEFAULT_MEETING_DURATION_MS);
+		endDate = new Date(startDate.getTime() + meetingDurationMs);
 	}
 	const start = toIcsDate(startDate);
 	const end = toIcsDate(endDate);
@@ -6364,7 +6934,7 @@ function buildIcsDataUri(
 	const uid =
 		typeof crypto !== "undefined" && "randomUUID" in crypto
 			? crypto.randomUUID()
-			: `${Date.now()}-${Math.random().toString(36).slice(2)}@booking-engine`;
+			: `${Date.now()}-${Math.random().toString(36).slice(2)}${uidDomain}`;
 	// T3-M3 fix: was "SUMMARY:Booking" and nothing else. STATUS:
 	// CONFIRMED + SEQUENCE:0 are the RFC 5545 way to mark a confirmed
 	// event, and DESCRIPTION carries the collected booking answers
@@ -6384,7 +6954,13 @@ function buildIcsDataUri(
 		`DTEND:${end}`,
 		`SUMMARY:${escapeIcsText(summary || summaryFallback)}`,
 		...(description
-			? [`DESCRIPTION:${escapeIcsText(description).slice(0, 500)}`]
+			? // W1-06-F-06-2 fix: slice the RAW text to 500 chars FIRST, then
+				// escape. The old order (escape → slice) could cut a 2-char
+				// escape sequence in half (e.g. `\;` → dangling `\`), which
+				// strict RFC 5545 parsers may use to drop DESCRIPTION or the
+				// whole VEVENT. Slicing the unescaped source leaves every
+				// escape sequence intact.
+				[`DESCRIPTION:${escapeIcsText(description.slice(0, 500))}`]
 			: []),
 		"STATUS:CONFIRMED",
 		"SEQUENCE:0",
@@ -6452,25 +7028,35 @@ function buildCalendarDeepLink(
 	slot: BookingPayload,
 	summary: string,
 	description?: string,
+	// W2-23-N1 fix: author-tunable fallback duration when the slot lacks
+	// an end (mirrors buildIcsDataUri's parameter).
+	meetingDurationMs: number = DEFAULT_MEETING_DURATION_MS,
 ): string {
 	const start = new Date(slot.time24h);
 	if (Number.isNaN(start.getTime())) return "";
 	const endMs =
 		slot.end && !Number.isNaN(new Date(slot.end).getTime())
 			? new Date(slot.end).getTime()
-			: start.getTime() + DEFAULT_MEETING_DURATION_MS;
+			: start.getTime() + meetingDurationMs;
 	const end = new Date(endMs);
 	const toCompact = (d: Date) =>
 		d
 			.toISOString()
 			.replace(/[-:]/g, "")
 			.replace(/\.\d{3}/, "");
+	// W1-09-NEW-02 fix: Google's `dates` wants the basic-ISO UTC form
+	// (YYYYMMDDTHHMMSSZ), but Outlook's `startdt`/`enddt` want extended ISO
+	// WITH separators and WITHOUT the `Z` suffix (interpreted relative to
+	// the viewer). Feeding Google's compact-UTC form into Outlook produces
+	// an event at the wrong instant (or a rejected link). Separate
+	// formatter per provider.
+	const toExtended = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "");
 	const text = encodeURIComponent(summary);
 	const details = encodeURIComponent(description || "");
 	if (provider === "google") {
 		return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${toCompact(start)}/${toCompact(end)}&details=${details}`;
 	}
-	return `https://outlook.live.com/calendar/0/action/compose?subject=${text}&startdt=${toCompact(start)}&enddt=${toCompact(end)}&body=${details}`;
+	return `https://outlook.live.com/calendar/0/action/compose?subject=${text}&startdt=${toExtended(start)}&enddt=${toExtended(end)}&body=${details}`;
 }
 
 // =============================================================================
@@ -6494,7 +7080,7 @@ function AnimatedStepContent(props: {
 	children: React.ReactNode;
 }) {
 	const [isPresent] = usePresence();
-	// W1-18-F2 fix: `layout` makes framer re-measure this subtree on every
+	// W1-18-F3 fix: `layout` makes framer re-measure this subtree on every
 	// keystroke (layout animations are the expensive ones); under
 	// prefers-reduced-motion it's disabled entirely.
 	const reducedMotion = useReducedMotion();
@@ -6513,7 +7099,15 @@ function AnimatedStepContent(props: {
 			exit={{ opacity: 0, y: -12 }}
 			transition={props.transition}
 			style={{ position: "relative" }}
+			// W1-11-NEW-FIND-5 fix: aria-hidden only hides the exiting step
+			// from screen readers — Tab still reached its focusable elements
+			// during the ~16ms AnimatePresence exit window, and when the old
+			// step unmounted the focus dropped to <body>. `inert` removes the
+			// departing subtree from BOTH the accessibility tree and the Tab
+			// order while it plays out (supported natively as a boolean prop
+			// by React 19).
 			aria-hidden={isPresent ? undefined : true}
+			inert={isPresent ? undefined : true}
 		>
 			{props.children}
 		</motion.div>
@@ -6663,6 +7257,38 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// W1-02-F1 fix (bundle 17): author-tunable timeout; `??` only fires
 	// for pre-save instances that never got the new control.
 	const fetchTimeoutMs = props.fetchTimeoutMs ?? FETCH_TIMEOUT_MS;
+	// W1-02-F26/F27 fixes: self-hosted Cal.com base URL + API version
+	// header are author-tunable; trailing slashes are normalized so the
+	// "/v2/..." suffix always joins cleanly. `??` covers instances saved
+	// before these controls existed.
+	const calApiBaseUrl = (
+		props.calApiBaseUrl ?? DEFAULT_CAL_API_BASE_URL
+	).replace(/\/+$/, "");
+	const calApiVersion =
+		(typeof props.calApiVersion === "string" && props.calApiVersion.trim()) ||
+		DEFAULT_CAL_API_VERSION;
+	// W1-02-F30 fix: author-tunable slots cache TTL (the read site in
+	// useCalcomSlots checks freshness against it).
+	const slotsCacheTtlMs =
+		typeof props.slotsCacheTtlMs === "number" && props.slotsCacheTtlMs >= 0
+			? props.slotsCacheTtlMs
+			: SLOTS_CACHE_TTL_MS;
+	// W2-23-N1 fix: author-tunable fallback meeting duration (ICS export,
+	// deep links, success screen) when Cal.com's slot carries no end.
+	const meetingDurationMs =
+		typeof props.defaultMeetingDurationMs === "number" &&
+		props.defaultMeetingDurationMs > 0
+			? props.defaultMeetingDurationMs
+			: DEFAULT_MEETING_DURATION_MS;
+	// W1-02-F28/F29 fixes: author-brandable .ics filename prefix and
+	// non-UUID UID domain.
+	const icsFilenamePrefix =
+		(typeof props.icsDownloadFilenamePrefix === "string" &&
+			props.icsDownloadFilenamePrefix) ||
+		DEFAULT_ICS_FILENAME_PREFIX;
+	const icsUidDomain =
+		(typeof props.icsUidDomain === "string" && props.icsUidDomain.trim()) ||
+		DEFAULT_ICS_UID_DOMAIN;
 
 	// T5-M8 fix: honor the visitor's prefers-reduced-motion setting - the
 	// step fades/glides, the progress-bar spring, and the toggle slider all
@@ -6835,13 +7461,15 @@ function useBookingEngineState(props: BookingEngineProps) {
 						"#15803D",
 						DEFAULT_DARK_THEME.successColor,
 					),
-					// W1-17-F-17-13 fix: `pick` takes string colors; the
-					// borderRadius token may carry a numeric radius from
-					// Framer's BorderRadius control, so it compares/inlines
-					// directly instead of going through `pick`.
-					borderRadius: isDefault(borderRadius, "12px")
-						? DEFAULT_DARK_THEME.borderRadius
-						: borderRadius,
+					// W1-17-N5-new fix: the old dark branch used to swap the
+					// radius token to `DEFAULT_DARK_THEME.borderRadius` when it
+					// detected the light default "12px" — but no runtime site
+					// ever consumed `theme.borderRadius` (everything reads the
+					// raw prop), so the swap was invisible dead logic AND a
+					// latent footgun (a future dark-radius change would only hit
+					// the canvas banner). Both branches now carry the raw prop;
+					// borderRadius is documented as NOT theme-aware.
+					borderRadius,
 				}
 			: {
 					accentColor,
@@ -6963,7 +7591,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		const remapped =
 			pinnedIndex !== -1
 				? pinnedIndex
-				: Math.min(currentIndex, totalActive - 1);
+				: // W1-03-5 fix: the fallback used raw `currentIndex`; the
+					// clamped `safeCurrentIndex` is the semantically correct
+					// value when the pinned ID is stale/missing.
+					Math.min(safeCurrentIndex, totalActive - 1);
 		if (remapped !== currentIndex) {
 			// W1-03-4 fix: `React.startTransition` deferred the commit —
 			// the "before paint" guarantee this render-phase remap exists
@@ -6992,8 +7623,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// reads this derived value, so there is no second source of truth to
 	// drift. The child's own selectedDate/selectedTime are local UI state.
 	const [pickedDate, setPickedDate] = React.useState<Date | null>(null);
-	const selectedDate =
-		pickedDate ?? (values[SELECTED_SLOT_KEY]?.date as Date | null) ?? null;
+	// W1-15-TS-12 fix: the `as Date | null` cast was redundant — the trailing
+	// `?? null` already widens `undefined` to `null`.
+	const selectedDate = pickedDate ?? values[SELECTED_SLOT_KEY]?.date ?? null;
 	const [visibleMonth, setVisibleMonth] = React.useState<Date | null>(null);
 	const [timeZone, setTimeZone] = React.useState<string>(() =>
 		detectTimezone(),
@@ -7052,15 +7684,22 @@ function useBookingEngineState(props: BookingEngineProps) {
 					return;
 				}
 				const restoredValues = parsed.values || {};
-				// W1-15-TS-05 fix: `__selectedSlot` is unknown at parse time;
-				// narrow it to the one shape this block rehydrates so the
-				// restored-object branch below is typed, never `any`.
-				const restoredSlot = restoredValues[SELECTED_SLOT_KEY] as
-					| (Omit<BookingPayload, "date"> & { date?: unknown })
-					| undefined;
+				// W1-15-TS-14 fix: the previous `as (Omit<BookingPayload,
+				// "date"> & { date?: unknown }) | undefined` cast re-narrowed
+				// only `date` while accepting `time24h`/`timeLabel`/`end`
+				// unvalidated — hostile sessionStorage could smuggle
+				// non-string values that corrupt ICS/calendar-deep-link
+				// consumers downstream. Full runtime guard first; anything
+				// that fails is purged rather than guessed at. `date` is
+				// still rehydrated from its ISO string to a real Date below.
+				const rawSlot = restoredValues[SELECTED_SLOT_KEY];
+				if (rawSlot !== undefined && !isBookingPayload(rawSlot)) {
+					restoredValues[SELECTED_SLOT_KEY] = undefined;
+				}
+				const restoredSlot = isBookingPayload(rawSlot) ? rawSlot : undefined;
 				// Fix #3: re-hydrate __selectedSlot.date from ISO string to
 				// a real Date object so downstream Date methods don't throw.
-				if (restoredSlot?.date && !(restoredSlot.date instanceof Date)) {
+				if (restoredSlot && !(restoredSlot.date instanceof Date)) {
 					try {
 						// W1-15-TS-06 fix: `typeof` narrow instead of a raw
 						// `as string` cast — non-string, non-Date junk feeds an
@@ -7069,12 +7708,11 @@ function useBookingEngineState(props: BookingEngineProps) {
 						// cleanly (same outcome as before, without the opaque
 						// `new Date(unknown)` construction or a thrown
 						// `.getTime()` TypeError).
-						restoredSlot.date = new Date(
+						const rehydratedDate = new Date(
 							typeof restoredSlot.date === "string" ? restoredSlot.date : "",
 						);
-						const rehydratedDate =
-							restoredSlot.date instanceof Date ? restoredSlot.date : null;
-						if (!rehydratedDate || Number.isNaN(rehydratedDate.getTime())) {
+						restoredSlot.date = rehydratedDate;
+						if (Number.isNaN(rehydratedDate.getTime())) {
 							restoredValues[SELECTED_SLOT_KEY] = undefined;
 						}
 					} catch {
@@ -7092,9 +7730,18 @@ function useBookingEngineState(props: BookingEngineProps) {
 				const restoredEntries = Object.entries(restoredValues).filter(
 					([key, value]) => key === SELECTED_SLOT_KEY || isFieldValue(value),
 				);
+				// W1-15-TS-11 fix: bind the FILTERED map once and pass it to
+				// both setValues and validateStep — the latter used to get
+				// the unfiltered `restoredValues` (hostile arrays/numbers in
+				// the hostile-sessionStorage shape reached validateStep
+				// despite the boundary narrow). Defensive `String(value)`
+				// coercion still stands, but the type lie is gone.
+				const filteredValues = Object.fromEntries(
+					restoredEntries,
+				) as BookingValues;
 				setValues((prev) => ({
 					...prev,
-					...(Object.fromEntries(restoredEntries) as BookingValues),
+					...filteredValues,
 				}));
 				if (restoredSlot) {
 					const slot = restoredSlot;
@@ -7164,11 +7811,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 						const prior = activeSteps[i];
 						if (
 							prior &&
-							!validateStep(
-								prior,
-								restoredValues as BookingValues,
-								validationCopy,
-							).valid
+							!validateStep(prior, filteredValues, validationCopy)
+								.valid
 						) {
 							restoredIndex = i;
 							break;
@@ -7328,7 +7972,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// commits before the browser paints, closing the window during which a
 	// stale currentIndex could be visible (the `safeCurrentIndex` clamp
 	// above still covers the very first render, before any effect runs).
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		// W1-14-F6 fix: was wrapping setCurrentIndex in startTransition —
 		// a deferred update commits after paint, so the layout-effect
 		// guarantee (correction applied before paint) was defeated. The
@@ -7364,6 +8008,11 @@ function useBookingEngineState(props: BookingEngineProps) {
 		copy?.availabilityErrorLabel,
 		errorCopy,
 		fetchTimeoutMs,
+		// W1-02-F26/F27/F30 fixes: self-hosted base URL, API version
+		// header, and author-tunable cache TTL.
+		calApiBaseUrl,
+		calApiVersion,
+		slotsCacheTtlMs,
 	);
 
 	// Task 1 M6 fix (completion): `hasKnownAvailability`/`availableDates`
@@ -7589,6 +8238,33 @@ function useBookingEngineState(props: BookingEngineProps) {
 				}`,
 			});
 		}
+		// W2-36-N1/N3 fix: the border colour is UI chrome, judged against
+		// WCAG 1.4.11's 3:1 non-text threshold (not text's 4.5:1). The
+		// 10-pair list above skipped it, so authors got no canvas warning
+		// for a failing custom border; it now gets both pairs.
+		const borderPairs: Array<[string, string, string]> = [
+			["border on page", theme.borderColor, theme.backgroundColor],
+			["border on surface", theme.borderColor, theme.surfaceColor],
+		];
+		for (const [label, fg, bg] of borderPairs) {
+			const fgParts = parseColorToRgb(fg);
+			const bgParts = parseColorToRgb(bg);
+			if (!fgParts || !bgParts) continue;
+			const ratio = wcagContrastRatio(
+				relativeLuminance(fgParts.r, fgParts.g, fgParts.b),
+				relativeLuminance(bgParts.r, bgParts.g, bgParts.b),
+			);
+			verdicts.push({
+				label,
+				ratio,
+				kind: ratio >= 3 ? "ok" : "warn",
+				message: `contrast ${ratio.toFixed(2)}:1 — ${
+					ratio >= 3
+						? "WCAG 1.4.11 non-text contrast passes"
+						: "below the 1.4.11 3:1 non-text threshold (defaults are a documented aesthetic compromise; only custom borders need attention)"
+				}`,
+			});
+		}
 		const picked = getReadableTextColor(
 			theme.accentColor,
 			theme.backgroundColor,
@@ -7622,6 +8298,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 			["success", successColor],
 		];
 		for (const [label, value] of rawColors) {
+			// W1-17-N2-new fix: currentColor is context-dependent and valid
+			// CSS but can't be judged statically; skip it instead of letting
+			// it look "invalid".
+			if ((value || "").trim().toLowerCase() === "currentcolor") continue;
 			if (!parseColorToRgba(value)) {
 				verdicts.push({
 					label: `theme ${label}`,
@@ -7750,12 +8430,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// `errors` or `touched`.
 	const handleFieldChange = React.useCallback(
 		(fieldId: string, value: string | boolean | undefined) => {
-			setValues((prev) => ({ ...prev, [fieldId]: value }));
-			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
-			// visitor who fixed what the error described kept seeing a stale
-			// error until the next submit attempt. Re-validate the single
-			// touched field immediately so errors clear (or appear) live.
-			//
 			// SYN-05 fix: `activeSteps.find()` only examined the FIRST step
 			// holding form/datetime fields, so fields in any later form step
 			// never re-validated here — their stale errors survived until the
@@ -7768,8 +8442,24 @@ function useBookingEngineState(props: BookingEngineProps) {
 					if (field) break;
 				}
 			}
+			// W1-20-N2 fix: normalize pasted/typed whitespace BEFORE storage.
+			// Validation already trims internally (EMAIL_REGEX.test(str.trim())
+			// etc.), so a whitespace-padded email used to pass green here and
+			// then get rejected by Cal.com's server-side check at POST time.
+			// Storing the trimmed value keeps validation, the POST payload and
+			// sessionStorage restore all in agreement. Textareas are exempted —
+			// multi-line content can legitimately carry leading indentation.
+			const sanitized =
+				typeof value === "string" && field?.fieldType !== "textarea"
+					? value.trim()
+					: value;
+			setValues((prev) => ({ ...prev, [fieldId]: sanitized }));
+			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
+			// visitor who fixed what the error described kept seeing a stale
+			// error until the next submit attempt. Re-validate the single
+			// touched field immediately so errors clear (or appear) live.
 			if (!field) return;
-			const err = validateField(field, value, validationCopy);
+			const err = validateField(field, sanitized, validationCopy);
 			setErrors((prev) => ({ ...prev, [fieldId]: err }));
 		},
 		[activeSteps, validationCopy],
@@ -7907,6 +8597,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 			copy.notesSelectedTimeLabel,
 			copy.notesDatePrefix,
 			copy.notesTimePrefix,
+			// W1-07-N1 fix: notes date string is formatted in the
+			// visitor's chosen zone like the on-screen labels.
+			timeZone,
 		);
 		const bookingFieldsResponses = buildBookingFieldsResponses(
 			activeSteps,
@@ -7956,6 +8649,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// author-tunable timeout into the POST.
 			errorCopy,
 			timeoutMs: fetchTimeoutMs,
+			// W1-02-F26/F27 fixes: same self-hosted base URL + API version
+			// as the slots GET.
+			apiBaseUrl: calApiBaseUrl,
+			apiVersion: calApiVersion,
 		});
 		abortControllerRef.current = null;
 
@@ -8002,12 +8699,18 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// W1-02-F19 fix: the unknown-error and catch-all fallbacks are
 			// copy-driven. W1-02-F4–F8 fix: branch copy comes from the
 			// merged ErrorCopy too.
-			const errorMessage = mapCalcomError(
-				result.error || copy.unknownErrorLabel,
-				result.errorCode,
-				errorCopy,
-				copy.errorFallbackMessage,
-			);
+			// W1-06-F-06-4 fix: only map RAW errors — when the POST layer
+			// already resolved a visitor-facing string (timeout, network,
+			// malformed/empty body), trust it instead of re-mapping and
+			// degrading it to the generic fallback.
+			const errorMessage = result.alreadyMapped
+				? (result.error || copy.errorFallbackMessage)
+				: mapCalcomError(
+						result.error || copy.unknownErrorLabel,
+						result.errorCode,
+						errorCopy,
+						copy.errorFallbackMessage,
+					);
 			setSubmitError(errorMessage);
 			transitionFlowStatus("error");
 			emitAnalytics("booking_error", {
@@ -8026,11 +8729,18 @@ function useBookingEngineState(props: BookingEngineProps) {
 		emitAnalytics,
 		errorCopy,
 		fetchTimeoutMs,
+		// W1-02-F26/F27 fixes: a live base-URL/version edit in the panel
+		// re-targets the POST on the next submit.
+		calApiBaseUrl,
+		calApiVersion,
 		// W1-14-F2 fix: the body reads copy.unknownErrorLabel and
-		// copy.errorFallbackMessage (L7949/7952) — an author editing the
+		// copy.errorFallbackMessage (L7949/7952) - an author editing the
 		// Copy panel in Framer kept stale error strings being POSTed
 		// server-side.
 		copy,
+		// W1-14-N1 fix: stable-identity ([] deps) callback read by the body,
+		// listed for exhaustive-deps correctness.
+		transitionFlowStatus,
 	]);
 
 	const handleContinue = React.useCallback(() => {
@@ -8147,6 +8857,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		validationCopy,
 		focusFirstInvalidField,
 		handleSubmitBooking,
+		// W1-14-N1 fix: both of these are stable-identity ([] deps) callbacks
+		// the body reads — listed for exhaustive-deps correctness, no
+		// runtime behavior change.
+		scheduleFocusTimer,
 		setSubmitError,
 		transitionFlowStatus,
 		emitAnalytics,
@@ -8175,6 +8889,17 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const handleJumpToStep = React.useCallback(
 		(stepIndex: number) => {
 			if (stepIndex < 0 || stepIndex >= activeSteps.length) return;
+			// W1-04-§1.3 fix: this is the backward-only "Edit" path
+			// (ReviewStepBody is the sole caller); refuse any forward jump
+			// so a future caller cannot use it to skip past an unvalidated
+			// step. Forward navigation stays gated behind validateStep via
+			// handleContinue.
+			if (stepIndex > safeCurrentIndex) return;
+			// W1-03-7 fix: claim the navigation lock exactly like
+			// handleContinue/handleBack do, so a double-click on the Edit
+			// link cannot trigger two transitions in the same commit.
+			if (navigatingRef.current) return;
+			navigatingRef.current = true;
 			if (flowStatus === "submitting") {
 				setSubmitError(null);
 				idempotencyKeyRef.current = null;
@@ -8195,7 +8920,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			transitionFlowStatus("in-progress");
 			React.startTransition(() => setCurrentIndex(stepIndex));
 		},
-		[activeSteps.length, flowStatus, transitionFlowStatus],
+		[activeSteps.length, flowStatus, transitionFlowStatus, safeCurrentIndex],
 	);
 
 	const handleRetry = React.useCallback(() => {
@@ -8235,7 +8960,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		scheduleFocusTimer(() => {
 			stepTitleRef.current?.focus();
 		});
-	}, [submitError, activeSteps, slotsRefetch, scheduleFocusTimer]);
+	}, [submitError, activeSteps, slotsRefetch, scheduleFocusTimer, transitionFlowStatus]);
 
 	// W2-25-F11 fix: while the POST is in flight (up to FETCH_TIMEOUT_MS)
 	// the visitor previously had no escape except page navigation — the
@@ -8259,7 +8984,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		scheduleFocusTimer(() => {
 			stepTitleRef.current?.focus();
 		});
-	}, [flowStatus, scheduleFocusTimer]);
+	}, [flowStatus, scheduleFocusTimer, transitionFlowStatus]);
 
 	const handleRestart = React.useCallback(() => {
 		setValues({});
@@ -8283,7 +9008,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 				);
 			}
 		}
-	}, [persistState, sessionKey]);
+	}, [persistState, sessionKey, transitionFlowStatus]);
 
 	// W2-31-A-31-3 fix: GDPR data self-service — lets the visitor wipe their
 	// saved answers (and the sessionStorage entry) without abandoning the
@@ -8397,7 +9122,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		: "";
 	const announcedStepRef = React.useRef(safeCurrentIndex);
 	const [stepAnnouncement, setStepAnnouncement] = React.useState("");
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		if (announcedStepRef.current === safeCurrentIndex) return;
 		announcedStepRef.current = safeCurrentIndex;
 		setStepAnnouncement(stepAnnouncementText);
@@ -8553,6 +9278,14 @@ function useBookingEngineState(props: BookingEngineProps) {
 		regexPreviewVerdicts,
 		errorCopy,
 		fetchTimeoutMs,
+		// W1-02-F26/F27/F30 + W2-23-N1 + W1-02-F28/F29 fixes: the
+		// resolved author-tunable Cal.com + ICS integration values.
+		calApiBaseUrl,
+		calApiVersion,
+		slotsCacheTtlMs,
+		meetingDurationMs,
+		icsFilenamePrefix,
+		icsUidDomain,
 	};
 }
 
@@ -8641,6 +9374,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 		handleClearSavedAnswers,
 		regexPreviewVerdicts,
 		errorCopy,
+		// W1-02-F28/F29 + W2-23-N1 fixes: resolved author-tunable ICS
+		// branding + duration values, threaded to the SuccessScreen.
+		meetingDurationMs,
+		icsFilenamePrefix,
+		icsUidDomain,
 	} = useBookingEngineState(props);
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
@@ -8654,8 +9392,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 	// spinner border — same pattern the file memoizes everywhere else
 	// (see L861, L3375).
 	const accentTextOnSurface = React.useMemo(
-		() => getReadableTextColor(theme.accentColor),
-		[theme.accentColor],
+		// W1-17-N7-new fix: pass the real backdrop (the surface the accent
+		// button lives on) so a translucent accent composites honestly.
+		() => getReadableTextColor(theme.accentColor, theme.surfaceColor),
+		[theme.accentColor, theme.surfaceColor],
 	);
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
@@ -8699,12 +9439,25 @@ export default function BookingEngine(props: BookingEngineProps) {
 		if (!isCanvas) return null;
 		return (
 			<RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
+				{/* biome-ignore lint/a11y/useSemanticElements: intentional
+                    polite status region (W1-13-N1) — the canvas-only
+                    empty-pipeline notice announces on mount; an <output>
+                    would change the element's semantics. */}
 				<div
+					// W1-13-N1 fix: bring this canvas-only notice up to the
+					// F-13-8/F-13-9 standard the other banners use — polite
+					// status region (announces on mount) plus a 1px outline
+					// so it never disappears on low-contrast canvas themes.
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
 					style={{
 						padding: 24,
 						color: theme.textPrimaryColor,
 						fontSize: 14,
 						lineHeight: 1.5,
+						borderRadius: theme.borderRadius,
+						border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
 					}}
 				>
 					<div
@@ -8763,6 +9516,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 					notesTimePrefix={copy.notesTimePrefix}
 					icsProdid={copy.icsProdid}
 					icsSummaryFallback={copy.icsSummaryFallback}
+					// W1-02-F28/F29 + W2-23-N1 fixes: brandable .ics filename
+					// prefix + UID domain, and the author-tunable fallback
+					// meeting duration (ICS + deep links).
+					icsFilenamePrefix={icsFilenamePrefix}
+					icsUidDomain={icsUidDomain}
+					meetingDurationMs={meetingDurationMs}
 				/>
 			</RootShell>
 		);
@@ -8797,6 +9556,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                 first-render spout). */}
 			<output
 				aria-live="polite"
+				aria-atomic="true"
 				style={{
 					position: "absolute",
 					width: 1,
@@ -8825,6 +9585,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// author nudges, not visitor errors.
 					role="status"
 					aria-live="polite"
+					aria-atomic="true"
 					style={{
 						padding: "10px 14px",
 						marginBottom: 12,
@@ -8852,6 +9613,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// W1-13-F-13-9 fix: silent div → polite status region.
 					role="status"
 					aria-live="polite"
+					aria-atomic="true"
 					style={{
 						padding: "10px 14px",
 						marginBottom: 12,
@@ -8884,6 +9646,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// region (each warning announces on mount).
 							role="status"
 							aria-live="polite"
+							aria-atomic="true"
 							style={{
 								padding: "10px 14px",
 								marginBottom: 8,
@@ -8916,6 +9679,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// region for author-facing verdicts.
 							role="status"
 							aria-live="polite"
+							aria-atomic="true"
 							style={{
 								padding: "10px 14px",
 								marginBottom: 8,
@@ -8975,6 +9739,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// region for author-facing verdicts.
 							role="status"
 							aria-live="polite"
+							aria-atomic="true"
 							style={{
 								padding: "10px 14px",
 								marginBottom: 8,
@@ -9026,10 +9791,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// change screen readers never heard. W1-10-A2
 							// fix: the ANNOUNCEMENT now comes from the
 							// single combined sr-only region above; this
-							// visible row keeps only the visual text plus
-							// W1-10-A6 fix: marks itself as the current
-							// step's indicator.
-							aria-current="step"
+							// visible row keeps only the visual text.
+							// W1-10-OBS-3 fix: the W1-10-A6 era marked this
+							// row aria-current="step", but that token is for
+							// step INDICATOR/step links in a multi-step flow,
+							// not plain text rows — semantically stretched,
+							// so it's reserved for actual step navigation.
 						>
 							<span>{counterText}</span>
 							<span>
@@ -9143,9 +9910,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 							}}
 							// Same T5-H8 fix as the top counter: step progress reaches
 							// screen readers via the combined sr-only
-							// region. This row is the visible step
-							// indicator (W1-10-A6).
-							aria-current="step"
+							// region. W1-10-OBS-3 fix: this row no longer
+							// carries aria-current="step" (that token is
+							// reserved for real step indicators/links).
 						>
 							<span>{counterText}</span>
 							<span>
@@ -9260,6 +10027,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 							onRetrySlots={slotsRefetch}
 							hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
 							engineWidth={engineWidth}
+							// W1-20-N1 fix: freeze all authored fields during
+							// the POST (see StepBodyProps.isSubmitting).
+							isSubmitting={isSubmitting}
 						/>
 					</AnimatedStepContent>
 				</AnimatePresence>
@@ -9270,21 +10040,31 @@ export default function BookingEngine(props: BookingEngineProps) {
                 sitting under the fields where the visitor looks for
                 reassurance before submitting. Both render only when they
                 have something to say. */}
-			{hasRequiredFields || (copy.privacyNotice || "").trim() ? (
-				<div
-					style={{
-						marginTop: 12,
-						fontSize: 12,
-						color: theme.textSecondaryColor,
-						lineHeight: 1.5,
-					}}
-				>
-					{hasRequiredFields ? <div>{copy.requiredFieldsHint}</div> : null}
-					{(copy.privacyNotice || "").trim() ? (
-						<div style={{ marginTop: hasRequiredFields ? 4 : 0 }}>
-							{copy.privacyNotice}
-						</div>
-					) : null}
+		{/* W1-12-NEW-4 fix: a blank-authored notice no longer hides the
+        whole disclosure block when persistState is ON — the fallback
+        constant must render instead (consent gap). */}
+		{hasRequiredFields ||
+		(copy.privacyNotice || "").trim() ||
+		persistState ? (
+			<div
+				style={{
+					marginTop: 12,
+					fontSize: 12,
+					color: theme.textSecondaryColor,
+					lineHeight: 1.5,
+				}}
+			>
+				{hasRequiredFields ? <div>{copy.requiredFieldsHint}</div> : null}
+				{(copy.privacyNotice || "").trim() || persistState ? (
+					<div style={{ marginTop: hasRequiredFields ? 4 : 0 }}>
+						{/* W1-12-NEW-4 fix: blank-authored notice on a
+                            persistState-ON flow is a consent gap; the
+                            shared fallback constant keeps the disclosure
+                            when persistence is active. */}
+						{copy.privacyNotice ||
+							(persistState ? DEFAULT_COPY_PRIVACY_NOTICE : "")}
+					</div>
+				) : null}
 					{/* W2-31-A-31-2/A-31-3 fix: when persistence is enabled,
                         expose the disclosure (privacyNotice) and the data
                         self-service affordance; when a save failed (quota),
@@ -9300,6 +10080,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// without stealing focus.
 							role="status"
 							aria-live="polite"
+							aria-atomic="true"
 							style={{
 								marginTop: 4,
 								display: "flex",
@@ -9344,6 +10125,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 							// were NOT being saved.
 							role="status"
 							aria-live="polite"
+							aria-atomic="true"
 							style={{
 								marginTop: 4,
 								fontSize: 11,
@@ -9516,6 +10298,16 @@ export default function BookingEngine(props: BookingEngineProps) {
    control (WebKit/Blink; Firefox/Edge are handled inline via
    scrollbarWidth/msOverflowStyle on the element itself). */
 .be-scrollbar-none::-webkit-scrollbar { display: none; }
+/* W2-36-N2 fix: the browser default placeholder (currentColor at ~50%
+   opacity) computed to ~3.35:1 in light mode — below AA 4.5:1. Explicit
+   60% pre-blend of the primary text over the surface (~4.6:1 light,
+   ~6.7:1 dark) restores AA in both modes; opacity:1 stops the browser
+   from double-dimming the pre-blended colour. */
+.be-motion-root input::placeholder,
+.be-motion-root textarea::placeholder {
+    color: ${withAlpha(theme.textPrimaryColor, 0.6, theme.surfaceColor)};
+    opacity: 1;
+}
 @keyframes be-spin-${reactInstanceId} { to { transform: rotate(360deg); } }
 `}</style>
 		</RootShell>
@@ -9692,6 +10484,12 @@ interface StepBodyProps {
 	 *  the form grid collapses to one column below COMPACT_BREAKPOINT
 	 *  regardless of viewport width. */
 	engineWidth: number;
+	/** W1-20-N1 fix: mirrors the engine's flowStatus === "submitting" —
+	 *  threaded to FieldRenderer so every authored field (inputs, choice
+	 *  groups, checkboxes) freezes during the POST. Edits made after the
+	 *  payload snapshot used to land in state but never in the in-flight
+	 *  request, then vanish on success. */
+	isSubmitting?: boolean;
 }
 
 const StepBody = React.memo(function StepBody(props: StepBodyProps) {
@@ -9726,6 +10524,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		errorCopy,
 		timezoneOptions,
 		engineWidth,
+		isSubmitting = false,
 	} = props;
 
 	// Task 2 M5 fix: `detectTimezone()` (an `Intl.DateTimeFormat` call) was
@@ -9734,6 +10533,26 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	// timezone selector was actually shown. Memoized with `[]` deps since
 	// the visitor's system timezone won't change over the life of the page.
 	const detectedTimeZone = React.useMemo(() => detectTimezone(), []);
+
+	// W1-01-F-06 fix: this used to run window.matchMedia("(pointer:
+	// coarse)") inline in the select's style object on every render —
+	// allocating a fresh MediaQueryList each time — while FieldRenderer
+	// wrapped the identical query in a useMemo. Mirror that: SSR-safe,
+	// try/catch-guarded, computed once for the mount (the visitor's
+	// pointer type won't change mid-session).
+	const selectFontSize = React.useMemo(() => {
+		if (
+			typeof window === "undefined" ||
+			typeof window.matchMedia !== "function"
+		) {
+			return 14;
+		}
+		try {
+			return window.matchMedia("(pointer: coarse)").matches ? 16 : 14;
+		} catch {
+			return 14;
+		}
+	}, []);
 
 	// W1-02-F6/F7 fix: resolved copy for the counter format and required
 	// marker (W1-02-F24 single-source: schema default === runtime
@@ -9797,6 +10616,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						selectOptionLabel={copy.selectOptionLabel}
 						characterCountTemplate={characterCountTemplate}
 						requiredFieldMarker={requiredFieldMarker}
+						// W1-20-N1 fix: freeze authored fields during the POST.
+						isSubmitting={isSubmitting}
 					/>
 				))}
 			</div>
@@ -9905,6 +10726,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						// ones — announce when a chosen day has no slots.
 						role="status"
 						aria-live="polite"
+						aria-atomic="true"
 					>
 						{copy.noTimesLabel}
 					</div>
@@ -9958,7 +10780,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							endTime={copy.demoEndTime}
 							interval={copy.demoInterval}
 							timeFormat={timeFormat}
-							focusColor={theme.accentColor}
 							initialDate={selectedDate}
 							initialTime={
 								values[SELECTED_SLOT_KEY]
@@ -10066,12 +10887,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							fontFamily: "inherit",
 							// W1-19-F-02 fix: same iOS zoom guard as the
 							// flow's field inputs (16px on coarse pointers).
-							fontSize:
-								typeof window !== "undefined" &&
-								typeof window.matchMedia === "function" &&
-								window.matchMedia("(pointer: coarse)").matches
-									? 16
-									: 14,
+							// W1-01-F-06 fix: value is the memoized
+							// selectFontSize above — no per-render
+							// MediaQueryList allocation.
+							fontSize: selectFontSize,
 							cursor: "pointer",
 						}}
 					>
@@ -10121,6 +10940,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							selectOptionLabel={copy.selectOptionLabel}
 							characterCountTemplate={characterCountTemplate}
 							requiredFieldMarker={requiredFieldMarker}
+							// W1-20-N1 fix: freeze authored fields during the POST.
+							isSubmitting={isSubmitting}
 						/>
 					),
 				)}
@@ -10369,6 +11190,9 @@ interface FieldRendererProps {
 	// (engine resolves the copy fallbacks so this stays a plain string).
 	characterCountTemplate: string;
 	requiredFieldMarker: string;
+	// W1-20-N1 fix: freezes every input/choice/checkbox during the POST
+	// (threaded from StepBodyProps.isSubmitting).
+	isSubmitting?: boolean;
 }
 
 const FieldRenderer = React.memo(function FieldRenderer(
@@ -10386,6 +11210,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		selectOptionLabel,
 		characterCountTemplate,
 		requiredFieldMarker,
+		isSubmitting = false,
 	} = props;
 
 	// W1-10-N2 fix: field ids were global literals (`${fieldInstanceId}-be-field-${field.id}`),
@@ -10408,7 +11233,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// W1-14-F7 fix: useLayoutEffect — the measurement+write happens in the
 	// same commit as the value change, so the box never renders one frame
 	// at the stale height (flicker) before the effect corrects it.
-	React.useLayoutEffect(() => {
+	useIsomorphicLayoutEffect(() => {
 		if (field.fieldType !== "textarea") return;
 		const el = textareaRef.current;
 		if (!el) return;
@@ -10436,10 +11261,14 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		() =>
 			(field.options || []).map((opt, idx) => ({
 				label: opt,
+				// W1-08-F-08-06 fix: thread the author-authored value through
+				// (parallel to optionImages/optionDescriptions). Empty entries
+				// fall back to the label as the value (optionValue handles that).
+				value: field.optionValues?.[idx] || undefined,
 				image: field.optionImages?.[idx] || undefined,
 				description: field.optionDescriptions?.[idx] || undefined,
 			})),
-		[field.options, field.optionImages, field.optionDescriptions],
+		[field.options, field.optionValues, field.optionImages, field.optionDescriptions],
 	);
 	const handleChoiceChange = React.useCallback(
 		(value: string) => onFieldChange(field.id, value),
@@ -10553,11 +11382,19 @@ const FieldRenderer = React.memo(function FieldRenderer(
 					{labelEl}
 					<textarea
 						id={`${fieldInstanceId}-be-field-${field.id}`}
-						name={field.id}
+						// W1-20-N5 fix: prefer the author-mapped Cal field id
+						// as the semantic form name — autofill/password
+						// managers key on name, and "step-1-field-0" gives
+						// them nothing. Falls back to the normalized id.
+						name={field.calFieldId || field.id}
 						className={`be-input`}
 						value={typeof value === "string" ? value : ""}
 						placeholder={field.placeholder || ""}
 						required={field.required}
+						// W1-20-N1 fix: freeze during the POST — an edit after
+						// the payload snapshot would only land in state and
+						// vanish on success.
+						disabled={isSubmitting}
 						// T10-M4/T10-M5 fix: cap input length; also lets the
 						// counter below show a real ceiling.
 						maxLength={maxLen}
@@ -10587,6 +11424,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// textarea's aria-describedby.
 						role="status"
 						aria-live="polite"
+						aria-atomic="true"
 						id={counterId}
 						style={{
 							marginTop: 4,
@@ -10614,10 +11452,14 @@ const FieldRenderer = React.memo(function FieldRenderer(
 					<div style={{ position: "relative" }}>
 						<select
 							id={`${fieldInstanceId}-be-field-${field.id}`}
-							name={field.id}
+							// W1-20-N5 fix: same semantic-name preference as
+							// the textarea/input sites above.
+							name={field.calFieldId || field.id}
 							className={`be-input`}
 							value={typeof value === "string" ? value : ""}
 							required={field.required}
+							// W1-20-N1 fix: freeze during the POST (see textarea).
+							disabled={isSubmitting}
 							onChange={(e) => onFieldChange(field.id, e.target.value)}
 							aria-invalid={!!error}
 							aria-describedby={
@@ -10625,7 +11467,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							}
 							style={{
 								...inputBaseStyle,
-								cursor: "pointer",
+								cursor: isSubmitting ? "not-allowed" : "pointer",
 								appearance: "none",
 								paddingRight: 36,
 							}}
@@ -10725,7 +11567,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						borderColor={theme.borderColor}
 						radius={borderRadius}
 						fontSize={14}
-						focusColor={theme.accentColor}
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
 						ariaDescribedBy={
@@ -10734,6 +11575,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						onChange={handleChoiceChange}
 						choiceGroupAriaLabel={choiceGroupAriaLabel}
 						required={field.required}
+						// W1-20-N1 fix: freeze the radiogroup during the POST
+						// (mirrors the native-input disabled above).
+						isSubmitting={isSubmitting}
 					/>
 					{errorEl}
 				</div>
@@ -10757,13 +11601,21 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							// label row is the tap target, so it gets the
 							// same 44px floor as the F-03 Edit button.
 							minHeight: TOUCH_TARGET_MIN,
+							// W1-20-N1 fix: the label row is the tap target —
+							// dim/pointer-cue it when the POST is in flight.
+							opacity: isSubmitting ? 0.5 : 1,
+							...(isSubmitting ? { cursor: "not-allowed" } : {}),
 						}}
 					>
 						<input
 							type="checkbox"
-							name={field.id}
+							// W1-20-N5 fix: same semantic-name preference as
+							// the other input sites.
+							name={field.calFieldId || field.id}
 							checked={checked}
 							required={field.required}
+							// W1-20-N1 fix: freeze during the POST (see textarea).
+							disabled={isSubmitting}
 							onChange={(e) => onFieldChange(field.id, e.target.checked)}
 							aria-invalid={!!error}
 							// Fix #16: associate the error with the checkbox.
@@ -10806,7 +11658,10 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// W1-20-M2 fix: `name` was missing everywhere, so
 						// password managers couldn't group fields and
 						// autofill had nothing to key on.
-						name={field.id}
+						// W1-20-N5 fix: the author-mapped Cal field id is
+						// the semantic name autofill keys on; the normalized
+						// internal id stays as the fallback.
+						name={field.calFieldId || field.id}
 						className={`be-input`}
 						type={
 							field.fieldType === "email"
@@ -10814,6 +11669,16 @@ const FieldRenderer = React.memo(function FieldRenderer(
 								: field.fieldType === "phone"
 									? "tel"
 									: "text"
+						}
+						// W1-20-N3 fix: surface the author's custom-regex as a
+						// native `pattern` hint too. The form is `noValidate`
+						// (W1-04-F-8) so enforcement stays with our own
+						// validateField — this only gives browsers/autofill a
+						// declarative description of the expected format.
+						pattern={
+							(field.validationRule ?? "type") === "custom-regex"
+								? field.customRegex || undefined
+								: undefined
 						}
 						// W1-20-M1 fix: mobile keyboards — email and phone
 						// fields pulled up the full QWERTY instead of the
@@ -10838,6 +11703,8 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// T10-M4 fix: unbounded input — cap by the per-field
 						// setting or the type's built-in default.
 						maxLength={maxLen}
+						// W1-20-N1 fix: freeze during the POST (see textarea).
+						disabled={isSubmitting}
 						onChange={(e) => onFieldChange(field.id, e.target.value)}
 						aria-invalid={!!error}
 						aria-describedby={
@@ -10859,6 +11726,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// input's aria-describedby.
 						role="status"
 						aria-live="polite"
+						aria-atomic="true"
 						id={counterId}
 						style={{
 							marginTop: 4,
@@ -10922,6 +11790,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	notesTimePrefix: string;
 	icsProdid: string;
 	icsSummaryFallback: string;
+	// W1-02-F28 fix: brandable .ics download filename prefix.
+	icsFilenamePrefix: string;
+	// W1-02-F29 fix: brandable fallback UID domain (non-UUID path only).
+	icsUidDomain: string;
+	// W2-23-N1 fix: author-tunable fallback meeting duration (ms).
+	meetingDurationMs: number;
 }) {
 	const {
 		steps,
@@ -10955,6 +11829,9 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		notesTimePrefix,
 		icsProdid,
 		icsSummaryFallback,
+		icsFilenamePrefix,
+		icsUidDomain,
+		meetingDurationMs,
 	} = props;
 
 	// CC-6 fix: this screen replaces the whole step flow, so screen-reader
@@ -10965,6 +11842,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	React.useEffect(() => {
 		headingRef.current?.focus();
 	}, []);
+
+	// W1-18-N2 fix: the checkmark previously appeared instantly — a brief
+	// scale/fade entrance makes the confirmation feel celebratory. Gated
+	// on prefers-reduced-motion (fade-only, no transform, short duration).
+	const reducedMotion = useReducedMotion();
 
 	// Build a label/value summary from every form step's fields.
 	const entries: Array<{ id?: string; label: string; value: string }> = [];
@@ -11034,17 +11916,25 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			notesSelectedTimeLabel,
 			notesDatePrefix,
 			notesTimePrefix,
+			// W1-07-N1 fix: same zoned formatting as the on-screen labels.
+			timeZone,
 		);
 		const cut = raw.indexOf(notesSelectedTimeLabel);
 		return cut > 0 ? raw.slice(0, cut).trim() : raw;
-	}, [steps, values, notesSelectedTimeLabel, notesDatePrefix, notesTimePrefix]);
+	}, [steps, values, notesSelectedTimeLabel, notesDatePrefix, notesTimePrefix, timeZone]);
 	const icsDateStamp = (() => {
 		if (!values[SELECTED_SLOT_KEY]) return "";
 		const slot = values[SELECTED_SLOT_KEY];
 		const iso = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
 			? slot.time24h
 			: slot.date.toISOString();
-		return iso.slice(0, 10);
+		// W1-07-N2 fix: was `iso.slice(0, 10)` — the UTC calendar date,
+		// which disagrees with the visitor-tz date shown on the success
+		// screen on cross-tz bookings (NYC visitor booking a late-UTC
+		// slot saw Dec 16 on screen but downloaded booking-12-15.ics).
+		// getDateKeyInTimeZone formats the key in the visitor's zone
+		// (invalid zone falls back to browser-local, same guard chain).
+		return getDateKeyInTimeZone(new Date(iso), timeZone || "");
 	})();
 
 	const icsUri = values[SELECTED_SLOT_KEY]
@@ -11054,13 +11944,22 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				icsSummaryLabel,
 				icsProdid,
 				icsSummaryFallback,
+				// W2-23-N1 fix: author-tunable fallback duration.
+				meetingDurationMs,
+				// W1-02-F29 fix: author-brandable UID domain.
+				icsUidDomain,
 			)
 		: "";
 
 	// T10-H5 fix: Google/Outlook deep links need a real UTC instant — the
 	// demo grid's "HH:MM" times have no date, so gate both links on the
 	// same ISO check the submit path uses.
-	const slot = values[SELECTED_SLOT_KEY] as BookingPayload | undefined;
+	// W1-15-TS-13 fix: the raw cast discarded the string/boolean union the
+	// values map actually holds. Narrow through the shared runtime guard
+	// instead — same outcome, no type lie.
+	const slot = isBookingPayload(values[SELECTED_SLOT_KEY])
+		? (values[SELECTED_SLOT_KEY] as BookingPayload)
+		: undefined;
 	const hasIsoSlotTime =
 		!!slot && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slot.time24h);
 	const googleCalUri =
@@ -11070,6 +11969,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					slot,
 					icsSummaryLabel,
 					icsDescription || undefined,
+					// W2-23-N1 fix: author-tunable fallback duration.
+					meetingDurationMs,
 				)
 			: "";
 	const outlookCalUri =
@@ -11079,6 +11980,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					slot,
 					icsSummaryLabel,
 					icsDescription || undefined,
+					// W2-23-N1 fix: author-tunable fallback duration.
+					meetingDurationMs,
 				)
 			: "";
 
@@ -11094,7 +11997,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		/* biome-ignore lint/a11y/useSemanticElements: intentional assertive
             live region (CC-6) announcing the success screen; <output> is not
             a screen-level alert container. */
-		<div role="status" aria-live="assertive">
+		<div role="status" aria-live="assertive" aria-atomic="true">
 			{/* Circle with checkmark — centered, on top */}
 			<div
 				style={{
@@ -11103,6 +12006,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					marginBottom: 16,
 				}}
 			>
+				<motion.div
+					initial={reducedMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
+					animate={reducedMotion ? { opacity: 1 } : { scale: 1, opacity: 1 }}
+					transition={{ duration: reducedMotion ? 0.15 : 0.35, ease: "easeOut" }}
+				>
 				<div
 					style={{
 						width: CHECKMARK_ICON_SIZE,
@@ -11115,7 +12023,9 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						// invisible for low-vision users. Pick the
 						// readable ink per the ACTUAL success color
 						// so custom colors stay legible too.
-						color: getReadableTextColor(successColor),
+						// W1-17-N7-new fix: pass the real backdrop
+						// (the surface this icon sits on).
+						color: getReadableTextColor(successColor, surfaceColor),
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
@@ -11138,6 +12048,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						<polyline points="20 6 9 17 4 12" />
 					</svg>
 				</div>
+				</motion.div>
 			</div>
 
 			{/* Title — centered, under the circle */}
@@ -11155,7 +12066,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					outline: "none",
 				}}
 			>
-				{replaceCopyTokens(successTitle, steps, values)}
+				{replaceCopyTokens(successTitle, steps, values, timeZone)}
 			</h2>
 
 			{/* Subtitle — smaller, centered, under the title */}
@@ -11168,7 +12079,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					lineHeight: 1.5,
 				}}
 			>
-				{replaceCopyTokens(successSubtitle, steps, values)}
+				{replaceCopyTokens(successSubtitle, steps, values, timeZone)}
 			</div>
 
 			{/* Info card — collected booking details */}
@@ -11232,7 +12143,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						// bookings made later downloads silently overwrite
 						// earlier ones in the Downloads folder. Date-stamp
 						// the filename instead.
-						download={`booking-${icsDateStamp}.ics`}
+						// W1-02-F28 fix: filename prefix is author-brandable
+						// (default "booking-"); the YYYY-MM-DD stamp + ".ics"
+						// extension always follow it.
+						download={`${icsFilenamePrefix}${icsDateStamp}.ics`}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
@@ -11344,7 +12258,9 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						color: getReadableTextColor(accentColor),
+						// W1-17-N7-new fix: pass the real backdrop
+						// (the surface this button sits on).
+						color: getReadableTextColor(accentColor, surfaceColor),
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -11428,6 +12344,9 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		errorColor,
 		textPrimaryColor,
 		textSecondaryColor,
+		// W1-17-N7-new fix: the retry-button text picker needs the real
+		// backdrop; it was declared in props but never destructured.
+		surfaceColor,
 		borderColor,
 		borderRadius,
 		accentColor,
@@ -11448,7 +12367,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	}, []);
 
 	return (
-		<div role="alert" aria-live="assertive">
+		<div role="alert" aria-live="assertive" aria-atomic="true">
 			<div
 				style={{
 					display: "flex",
@@ -11533,7 +12452,9 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						color: getReadableTextColor(accentColor),
+						// W1-17-N7-new fix: pass the real backdrop
+						// (the surface this button sits on).
+						color: getReadableTextColor(accentColor, surfaceColor),
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -11560,7 +12481,13 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 							borderRadius: borderRadius,
 							border: `1px solid ${borderColor}`,
 							background: "transparent",
-							color: textSecondaryColor,
+							// W1-11-NEW-FIND-6 fix: the focus outline uses
+							// currentColor (the global :focus-visible rule),
+							// so a deliberately muted textSecondaryColor could
+							// fall under the 3:1 indicator-contrast threshold.
+							// textPrimaryColor keeps the outline legible no
+							// matter how quiet the secondary token is.
+							color: textPrimaryColor,
 							fontFamily: "inherit",
 							fontSize: 14,
 							fontWeight: 600,
@@ -11799,6 +12726,21 @@ function makeFieldObjectControls() {
 		// T10-L4 fix: parallel image/description arrays for choice options,
 		// aligned by index with `options`. Same narrow exception to Safety
 		// Rule #2 as `options` itself (Array hidden by sibling fieldType).
+		// W1-08-F-08-06 fix: `optionValues` follows the same exception/
+		// pattern — see the scoped-exception note above `options`.
+		optionValues: {
+			type: ControlType.Array,
+			title: "Option Values",
+			maxCount: 12,
+			defaultValue: [],
+			control: {
+				type: ControlType.String,
+				defaultValue: "",
+				placeholder: "Distinct form value (blank = use label)",
+			},
+			hidden: (p: FieldControlProps) =>
+				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
+		},
 		optionImages: {
 			type: ControlType.Array,
 			title: "Option Images",
@@ -12549,6 +13491,19 @@ addPropertyControls(BookingEngine, {
 						title: "Submit Timed Out",
 						defaultValue: ERROR_COPY_DEFAULTS.submitTimeoutError,
 					},
+					// W1-06-F-06-1 fix: author-facing controls for the two
+					// new copy tokens (malformed body / 400-class) so the
+					// 100%-customizable principle holds for them too.
+					malformedResponseError: {
+						type: ControlType.String,
+						title: "Unusable Response",
+						defaultValue: ERROR_COPY_DEFAULTS.malformedResponseError,
+					},
+					badRequestError: {
+						type: ControlType.String,
+						title: "Request Rejected (400)",
+						defaultValue: ERROR_COPY_DEFAULTS.badRequestError,
+					},
 					emptyResponseError: {
 						type: ControlType.String,
 						title: "Empty Confirmation",
@@ -12639,47 +13594,47 @@ addPropertyControls(BookingEngine, {
 					requiredFieldError: {
 						type: ControlType.String,
 						title: "Required Field",
-						defaultValue: "This field is required",
+						defaultValue: DEFAULT_VALIDATION_COPY.requiredFieldError,
 					},
 					emailError: {
 						type: ControlType.String,
 						title: "Invalid Email",
-						defaultValue: "Enter a valid email address",
+						defaultValue: DEFAULT_VALIDATION_COPY.emailError,
 					},
 					phoneError: {
 						type: ControlType.String,
 						title: "Invalid Phone",
-						defaultValue: "Enter a valid phone number",
+						defaultValue: DEFAULT_VALIDATION_COPY.phoneError,
 					},
 					minLengthError: {
 						type: ControlType.String,
 						title: "Too Short",
-						defaultValue: "Must be at least 3 characters",
+						defaultValue: DEFAULT_VALIDATION_COPY.minLengthError,
 					},
 					pickDateTimeError: {
 						type: ControlType.String,
 						title: "No Time Picked",
-						defaultValue: "Please pick a date and time",
+						defaultValue: DEFAULT_VALIDATION_COPY.pickDateTimeError,
 					},
 					pastTimeError: {
 						type: ControlType.String,
 						title: "Past Time",
-						defaultValue: "Please pick a future time",
+						defaultValue: DEFAULT_VALIDATION_COPY.pastTimeError,
 					},
 					customRegexError: {
 						type: ControlType.String,
 						title: "Custom Regex Mismatch",
-						defaultValue: "This value doesn't match the required format",
+						defaultValue: DEFAULT_VALIDATION_COPY.customRegexError,
 					},
 					invalidRegexError: {
 						type: ControlType.String,
 						title: "Invalid Custom Regex",
-						defaultValue: "This field's custom regex pattern is invalid",
+						defaultValue: DEFAULT_VALIDATION_COPY.invalidRegexError,
 					},
 					minLength: {
 						type: ControlType.Number,
 						title: "Min Length",
-						defaultValue: 3,
+						defaultValue: DEFAULT_VALIDATION_COPY.minLength,
 						min: 1,
 						max: 100,
 						step: 1,
@@ -12742,6 +13697,54 @@ addPropertyControls(BookingEngine, {
 		min: 3000,
 		max: 60000,
 		step: 500,
+	},
+	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
+	// deployments use the engine. Trailing slashes are stripped at use.
+	calApiBaseUrl: {
+		type: ControlType.String,
+		title: "Cal.com API Base URL",
+		defaultValue: DEFAULT_CAL_API_BASE_URL,
+	},
+	// W1-02-F27 fix: `cal-api-version` header value — adopt new Cal.com
+	// v2 minor versions without a code change.
+	calApiVersion: {
+		type: ControlType.String,
+		title: "Cal.com API Version",
+		defaultValue: DEFAULT_CAL_API_VERSION,
+	},
+	// W1-02-F30 fix: author-tunable slots cache TTL — tune down for
+	// high-velocity availability, up for low-churn bookings.
+	slotsCacheTtlMs: {
+		type: ControlType.Number,
+		title: "Slots Cache TTL (ms)",
+		defaultValue: SLOTS_CACHE_TTL_MS,
+		min: 0,
+		max: 30 * 60 * 1000,
+		step: 60 * 1000,
+	},
+	// W2-23-N1 fix: author-tunable fallback meeting duration — used for
+	// the .ics, the Google/Outlook deep links, and the success-screen
+	// time when Cal.com's slot has no end.
+	defaultMeetingDurationMs: {
+		type: ControlType.Number,
+		title: "Default Meeting Duration (ms)",
+		defaultValue: DEFAULT_MEETING_DURATION_MS,
+		min: 5 * 60 * 1000,
+		max: 8 * 60 * 60 * 1000,
+		step: 5 * 60 * 1000,
+	},
+	// W1-02-F28 fix: brandable .ics download filename prefix.
+	icsDownloadFilenamePrefix: {
+		type: ControlType.String,
+		title: "ICS Filename Prefix",
+		defaultValue: DEFAULT_ICS_FILENAME_PREFIX,
+	},
+	// W1-02-F29 fix: brandable fallback UID domain (only used when the
+	// browser lacks crypto.randomUUID).
+	icsUidDomain: {
+		type: ControlType.String,
+		title: "ICS UID Domain",
+		defaultValue: DEFAULT_ICS_UID_DOMAIN,
 	},
 	// F-12-2 / W2-31-A-31-1 fix: explicit opt-in for saving visitor
 	// progress (and the PII it contains) to sessionStorage. Default OFF for
