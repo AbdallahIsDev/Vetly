@@ -7540,8 +7540,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		[effectiveStepsConfig],
 	);
 
-	// Pipeline: only enabled steps participate, in panel/array order (drag to
-	// reorder in the Properties Panel).
+	// Pipeline: only enabled steps participate, in fixed-slot order
+	// (Step 1 → Step N, truncated by `stepCount`). Step order is not
+	// drag-reorderable in the panel — see fixed-slots rationale above
+	// and at the makeStepControl definition.
 	const activeSteps = React.useMemo(
 		() => normalizedSteps.filter((step) => step.enabled),
 		[normalizedSteps],
@@ -10096,23 +10098,34 @@ export default function BookingEngine(props: BookingEngineProps) {
 							>
 								{copy.savedAnswersLabel ?? DEFAULT_COPY_SAVED_ANSWERS_LABEL}
 							</span>
-							<button
-								type="button"
-								onClick={handleClearSavedAnswers}
-								style={{
-									border: "none",
-									background: "none",
-									padding: 0,
-									margin: 0,
-									fontSize: 11,
-									color: theme.accentColor,
-									textDecoration: "underline",
-									cursor: "pointer",
-								}}
-							>
-								{copy.clearSavedAnswersLabel ??
-									DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL}
-							</button>
+						<button
+							type="button"
+							onClick={handleClearSavedAnswers}
+							style={{
+								border: "none",
+								background: "none",
+								padding: 0,
+								margin: 0,
+								// W2-38 re-apply (lost during the
+								// StepBody/disclosure rewrite): the label
+								// alone was a ~15px-tall tap target, failing
+								// WCAG 2.5.5 (44×44) and 2.5.8 AA-minimum
+								// (24×24). Grow the hit box while keeping the
+								// small type.
+								minWidth: TOUCH_TARGET_MIN,
+								minHeight: TOUCH_TARGET_MIN,
+								display: "inline-flex",
+								alignItems: "center",
+								justifyContent: "center",
+								fontSize: 11,
+								color: theme.accentColor,
+								textDecoration: "underline",
+								cursor: "pointer",
+							}}
+						>
+							{copy.clearSavedAnswersLabel ??
+								DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL}
+						</button>
 						</div>
 					) : null}
 					{saveFailedOnce ? (
@@ -10298,6 +10311,17 @@ export default function BookingEngine(props: BookingEngineProps) {
    control (WebKit/Blink; Firefox/Edge are handled inline via
    scrollbarWidth/msOverflowStyle on the element itself). */
 .be-scrollbar-none::-webkit-scrollbar { display: none; }
+/* W2-38 re-apply (lost during the StepBody/disclosure rewrite):
+   touch-action: manipulation kills the legacy ~300ms tap delay on iOS
+   Safari for every interactive element; user-select:none stops the iOS
+   long-press text-selection callout on role="radio"/checkbox buttons and
+   anchors. Scoped to .be-motion-root so the rule never leaks to the host
+   page. Covers every interactive element group in the flow. */
+.be-motion-root :is(button, a, [role="button"], [role="radio"], [role="checkbox"], select) {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+}
 /* W2-36-N2 fix: the browser default placeholder (currentColor at ~50%
    opacity) computed to ~3.35:1 in light mode — below AA 4.5:1. Explicit
    60% pre-blend of the primary text over the surface (~4.6:1 light,
