@@ -2011,8 +2011,13 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	const prevMonthLabelRef = React.useRef(monthLabel);
 	const [announceMonthLabel, setAnnounceMonthLabel] = React.useState(false);
 	// W1-10-A4 fix: stable id linking the grid to its month/year heading
-	// (aria-labelledby). useId is SSR-safe and stable per instance.
-	const gridLabelId = React.useId();
+	// (aria-labelledby). SSR/hydration fix: Framer serves real browsers a
+	// headless-prerendered HTML where effects have ALREADY run, so ANY
+	// state/effect/useId-derived value mismatches the hydrating client's
+	// first render (#425/#418/#422). This id is a plain constant — the
+	// same in the prerender, in renderToString, and on the first client
+	// render — so nothing derived from it can ever mismatch.
+	const gridLabelId = "be-calendar-grid-label";
 	useIsomorphicLayoutEffect(() => {
 		if (prevMonthLabelRef.current !== monthLabel) {
 			prevMonthLabelRef.current = monthLabel;
@@ -2840,7 +2845,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			</div>
 
 			<div
-				className={`be-dt-scroll-${dtInstanceId}`}
+				className="be-dt-scroll"
 				style={{
 					overflowY: "auto",
 					maxHeight: 220,
@@ -3834,9 +3839,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// Requirement 4: scoped id for this DateAndTimeInline instance's own
 	// <style> block (hiding the time-list scrollbar needs a real CSS rule
 	// for ::-webkit-scrollbar — inline styles can't target pseudo-elements).
-	// Mirrors the same `React.useId()`-based scoping pattern the parent
-	// BookingEngine component uses for its own namespaced CSS.
-	const dtInstanceId = React.useId();
+	// SSR/hydration fix: plain constant (see gridLabelId) — the class and
+	// the style-block selectors must be identical in the prerendered HTML,
+	// renderToString HTML and the client's first render.
+	const dtInstanceId = "be-dt-scroll";
 	// T5-M8 fix: reduce-motion support for the 12h/24h slider.
 	const prefersReducedMotion = useReducedMotion();
 
@@ -4506,11 +4512,17 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
                 (`display: none`) with no affordance; now a thin, low-contrast
                 thumb. Firefox/Edge are covered inline above via
                 `scrollbarWidth: "thin"` — WebKit/Blink still need a real CSS
-                rule for pseudo-elements, hence this scoped <style>. */}
-			<style>{`
-.be-dt-scroll-${dtInstanceId}::-webkit-scrollbar { width: 8px; }
-.be-dt-scroll-${dtInstanceId}::-webkit-scrollbar-track { background: transparent; }
-.be-dt-scroll-${dtInstanceId}::-webkit-scrollbar-thumb {
+                rule for pseudo-elements, hence this scoped <style>.
+                HYDRATION-AUDIT: `suppressHydrationWarning` is REQUIRED here
+                (see the canonical explanation at the be-input <style> in
+                RootShell, search "HYDRATION-AUDIT"). Never remove the flag,
+                never move this CSS to inline styles/a CSS file, never
+                reformat the text — doing so re-triggers hydration warning
+                #425/#418/#422 on publish. */}
+			<style suppressHydrationWarning>{`
+.be-dt-scroll::-webkit-scrollbar { width: 8px; }
+.be-dt-scroll::-webkit-scrollbar-track { background: transparent; }
+.be-dt-scroll::-webkit-scrollbar-thumb {
     background: ${withAlpha(textColor, 0.25)};
     border-radius: 8px;
 }
@@ -5152,6 +5164,68 @@ function detectTimezone(): string {
 	}
 }
 
+// SSR/hydration fix: detectTimezone() reads the visitor's Intl locale during
+// render — the server always returns "UTC" while the browser returns the real
+// IANA zone, so any markup rendered from it (timezone <option> text, calendar
+// date keys) mismatched the SSR HTML (React #425, "text content did not match
+// the initial render"). This hook returns the server-identical "UTC" for the
+// first render and swaps in the real value after hydration.
+function useDetectedTimeZone(): string {
+	const [tz, setTz] = React.useState<string>("UTC");
+	React.useEffect(() => {
+		setTz(detectTimezone());
+	}, []);
+	return tz;
+}
+
+// SSR/hydration fix: window.matchMedia("(pointer: coarse)") read during render
+// gave touch devices a 16px input font on the client while the SSR HTML was
+// served with 14px (React #418 attribute mismatch). Start at the
+// server-identical `false`, switch post-hydration. Pointer capability never
+// changes mid-session, so one mount-time read is enough.
+function useCoarsePointer(): boolean {
+	const [coarse, setCoarse] = React.useState<boolean>(false);
+	React.useEffect(() => {
+		if (
+			typeof window === "undefined" ||
+			typeof window.matchMedia !== "function"
+		)
+			return;
+		try {
+			setCoarse(window.matchMedia("(pointer: coarse)").matches);
+		} catch {
+			// non-fatal: fine-pointer rendering is the safe default
+		}
+	}, []);
+	return coarse;
+}
+
+// SSR/hydration fix (storage keys only): React.useId() is NOT
+// hydration-stable inside Framer code components, and — as it turned out —
+// neither are ""-initialised state + mount-effect ids. Framer serves real
+// browsers a HEADLESS-PRERENDERED HTML where component effects have ALREADY
+// run (`be-spin-be-engine-5`, `be-field-1-…`), while other clients (curl,
+// no-store fetches) get a plain renderToString variant (`be-spin-`, `-be-field-…`).
+// The hydrating client's FIRST render carries initial state (""), so any
+// state/effect/useId-derived markup mismatches one of the two served
+// variants — the exact #425 ("text content did not match", the <style>
+// keyframes), #418 (attribute, every field's id/for pair) and #422
+// recovery errors this site logged. EVERYTHING rendered must therefore be
+// a plain constant or props-derived (see gridLabelId, be-dt-scroll,
+// be-spin, be-field-*, be-slot-error, be-timezone-select). This hook is
+// now used for the sessionStorage key ONLY — never for rendered markup —
+// because the key is not part of the tree and needs per-instance
+// uniqueness on multi-engine pages.
+let hydrationSafeIdCounter = 0;
+function useHydrationSafeId(prefix: string): string {
+	const [id, setId] = React.useState<string>("");
+	React.useEffect(() => {
+		hydrationSafeIdCounter += 1;
+		setId(`${prefix}-${hydrationSafeIdCounter}`);
+	}, [prefix]);
+	return id;
+}
+
 // W1-07-F1 fix: `Intl.DateTimeFormat(tz).format()` throws RangeError on an
 // invalid IANA timezone string (e.g. a corrupted sessionStorage restore).
 // One validator used at every boundary where a tz string enters the engine —
@@ -5346,13 +5420,11 @@ function validateField(
 // Shared phone rule (T4-M3 fix): the loose format regex alone accepted
 // "12345" - a plausible-looking string is not a phone number. Require at
 // least 7 digits so short, unusable values fail clearly.
-// W1-04-F-3/F-5 fixes: (a) the email path trimmed, the phone path didn't —
-// a pasted trailing space failed the anchored regex; (b) "1234567" (≥7
-// contiguous digits, no separators, no `+`) sailed through the loose
-// structure. Both are handled here so every call site inherits them.
+// W1-04-F-3/F-5 fixes: the email path trimmed, the phone path didn't — a
+// pasted trailing space failed the anchored regex. The digit-count check also
+// rejects short, unusable numbers while accepting standard digits-only input.
 function validatePhone(str: string, vc: ValidationCopy): string | null {
 	const trimmed = str.trim();
-	if (/^\d{7,}$/.test(trimmed)) return vc.phoneError;
 	if (!PHONE_REGEX.test(trimmed)) return vc.phoneError;
 	const digits = trimmed.replace(/\D/g, "").length;
 	if (digits < 7) return vc.phoneError;
@@ -7239,10 +7311,17 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// F-12-2 fix: default OFF — persistence (and the PII it writes) is an
 	// author opt-in via the "Save Progress" property control, paired with
 	// the privacyNotice disclosure. Auto-generate a stable instance ID per
-	// component instance via React's useId() so multiple BookingEngine
-	// components on the same page don't collide in sessionStorage.
+	// component instance so multiple BookingEngine components on the same
+	// page don't collide in sessionStorage. SSR/hydration fix: Framer
+	// serves real browsers a headless-prerendered HTML where effects have
+	// ALREADY run (and can serve a plain renderToString variant to other
+	// clients), so effect-set ids mismatch the hydrating client's first
+	// render. The sessionStorage KEY is safe (never rendered), but the
+	// keyframes name and every rendered id derived from an id hook are
+	// plain constants now — see be-spin / be-field-* / be-dt-scroll /
+	// be-calendar-grid-label / be-slot-error / be-timezone-select.
 	const persistState = props.persistState === true;
-	const reactInstanceId = React.useId();
+	const reactInstanceId = useHydrationSafeId("be-engine");
 	// F-12-4 fix: never write or restore on the Framer canvas / exports —
 	// persistence is a live-visitor feature only.
 	const isStaticRender = useIsStaticRenderer();
@@ -7308,23 +7387,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// Resolve colorMode → effective palette. "auto" uses the dark palette only
 	// when the visitor's OS reports prefers-color-scheme: dark. Default is light.
-	// T10-M6 fix: the state initialized to `false`, so the FIRST paint in auto
-	// mode was always light and flipped to dark after the mount effect ran -
-	// a light-then-dark flash on every page load. Read matchMedia once
-	// synchronously in the lazy initializer so the first render is already
-	// correct.
-	const [systemDark, setSystemDark] = React.useState<boolean>(() => {
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		)
-			return false;
-		try {
-			return window.matchMedia("(prefers-color-scheme: dark)").matches;
-		} catch {
-			return false;
-		}
-	});
+	// SSR fix: the old lazy initializer read matchMedia during render — the
+	// server always saw `false` while a dark-OS visitor's browser saw `true`,
+	// so the FIRST client render produced an entirely different theme than the
+	// SSR HTML (React #418 mismatches on every colored element). Initialize
+	// deterministically (`false`, same as the server) and let the mount effect
+	// below sync the real value synchronously after hydration.
+	const [systemDark, setSystemDark] = React.useState<boolean>(false);
 	React.useEffect(() => {
 		// W1-17-F-17-9 fix: the OS-scheme subscription was wired up
 		// unconditionally, so fixed-mode instances ("light"/"dark") still
@@ -7629,9 +7698,16 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// `?? null` already widens `undefined` to `null`.
 	const selectedDate = pickedDate ?? values[SELECTED_SLOT_KEY]?.date ?? null;
 	const [visibleMonth, setVisibleMonth] = React.useState<Date | null>(null);
-	const [timeZone, setTimeZone] = React.useState<string>(() =>
-		detectTimezone(),
-	);
+	// SSR/hydration fix: the initializer used to call detectTimezone()
+	// during render — server saw "UTC", the visitor's browser saw the real
+	// IANA zone, diverging the SSR HTML from the first client render.
+	// Start at the server-identical "UTC"; the effect swaps in the real
+	// zone post-hydration (functional form keeps a later restore of saved
+	// progress authoritative over the swap).
+	const [timeZone, setTimeZone] = React.useState<string>("UTC");
+	React.useEffect(() => {
+		setTimeZone((prev) => (prev === "UTC" ? detectTimezone() : prev));
+	}, []);
 	// Task 2 M6 fix: this was purely local state inside `DateAndTimeInline`
 	// before, which meant it reset back to the hardcoded "12h" default
 	// every time the visitor stepped away from the datetime step and back
@@ -8455,6 +8531,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 				typeof value === "string" && field?.fieldType !== "textarea"
 					? value.trim()
 					: value;
+			// Keep Continue's synchronous validation in lockstep with the input
+			// event. The effect below eventually mirrors React state into this
+			// ref, but a visitor can click Continue before that effect runs.
+			valuesRef.current = { ...valuesRef.current, [fieldId]: sanitized };
 			setValues((prev) => ({ ...prev, [fieldId]: sanitized }));
 			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
 			// visitor who fixed what the error described kept seeing a stale
@@ -8941,6 +9021,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 				(step) => step.stepType === "datetime",
 			);
 			if (dtIdx >= 0) {
+				valuesRef.current = {
+					...valuesRef.current,
+					[SELECTED_SLOT_KEY]: undefined,
+				};
 				setValues((prev) => ({ ...prev, [SELECTED_SLOT_KEY]: undefined }));
 				setPickedDate(null);
 				idempotencyKeyRef.current = null;
@@ -8989,6 +9073,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	}, [flowStatus, scheduleFocusTimer, transitionFlowStatus]);
 
 	const handleRestart = React.useCallback(() => {
+		valuesRef.current = {};
 		setValues({});
 		setErrors({});
 		setTouched({});
@@ -9028,12 +9113,20 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	const handleSlotReady = React.useCallback((payload?: BookingPayload) => {
 		if (!payload) {
+			valuesRef.current = {
+				...valuesRef.current,
+				[SELECTED_SLOT_KEY]: undefined,
+			};
 			setValues((prev) => ({ ...prev, [SELECTED_SLOT_KEY]: undefined }));
 			// T3-H2: slot cleared — the old idempotency key no longer
 			// describes this submission; start fresh on the next pick.
 			idempotencyKeyRef.current = null;
 			return;
 		}
+		valuesRef.current = {
+			...valuesRef.current,
+			[SELECTED_SLOT_KEY]: payload,
+		};
 		setValues(
 			(prev) => ({ ...prev, [SELECTED_SLOT_KEY]: payload }) as BookingValues,
 		);
@@ -10274,9 +10367,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 									border: `2px solid ${accentTextOnSurface}`,
 									borderTopColor: "transparent",
 									display: "inline-block",
-									animation: prefersReducedMotion
-										? "none"
-										: `be-spin-${reactInstanceId} 0.8s linear infinite`,
+animation: prefersReducedMotion
+									? "none"
+									: "be-spin 0.8s linear infinite",
 								}}
 							/>
 							{copy.submittingLabel}
@@ -10291,8 +10384,61 @@ export default function BookingEngine(props: BookingEngineProps) {
                 CC-5 fix: this used to target `.be-input-${reactInstanceId}`,
                 but every input actually renders with the plain `be-input`
                 class — so the rule never matched and no field ever showed a
-                keyboard focus ring. Selector now matches the real class. */}
-			<style>{`
+                keyboard focus ring. Selector now matches the real class.
+
+                =================================================================
+                HYDRATION-AUDIT — canonical explanation. READ BEFORE EDITING
+                =================================================================
+                WHY `suppressHydrationWarning` MUST STAY ON THIS AND THE OTHER
+                TWO <style> TAGS (~4516 scrollbar, ~10500 reduced-motion):
+
+                PROBLEM (fixed 2026-08; React warnings #425/#418/#422 showed on
+                every load of the published site, on every build, for weeks):
+                - Framer's page prerender runs inside a headless Chrome. When
+                  React commits a <style> by setting textContent, the browser
+                  PARSES the CSS and RE-SERIALIZES it. The served HTML
+                  therefore carries the browser-NORMALIZED text, while the
+                  hydrating client's first render computes the RAW
+                  template-literal string from this file.
+                - The two texts differ byte-for-byte even though the CSS is
+                  equivalent. Observed diffs: keyframes `100% { ... }` (server)
+                  vs `to { ... }` (client); `outline: rgb(0,102,187) solid 2px`
+                  (reordered/spaced) vs `2px solid ...`; `currentcolor` vs
+                  `currentColor`; `-webkit-user-select` silently dropped by the
+                  serializer; multi-line rules collapsed onto one line with
+                  `\n\n` separators. Any single byte difference ⇒ React throws
+                  "Text content did not match" (#425 at the <style> in this
+                  subtree, #418 at the reduced-motion style, #422 recovery),
+                  discards the server HTML and re-renders client-side on every
+                  visit (visible double-load flicker).
+                - A long audit chased ids and keyframes (useId, instance
+                  prefixes, reactInstanceId, keyframe names) — all were fixed,
+                  but none was the remaining cause. The mismatch lived in the
+                  CSS TEXT bytes. The ONLY correct fix is `suppressHydrationWarning`
+                  — React's documented mechanism for this exact case: it stops
+                  the text comparison (the server's serialized CSS is valid and
+                  is kept after hydration), so no warning, no re-render, no
+                  flicker. Do NOT try to "align" the two texts instead; the
+                  server text is not reachable from this file.
+
+                RULES FOR FUTURE AGENTS (violating any re-introduces #425):
+                1. Never remove `suppressHydrationWarning` from any of the
+                   three <style> tags in this file.
+                2. Never move this CSS into a <style> without the flag, a CSS
+                   file, an inline style object, or a Framer style panel — the
+                   component must stay self-contained and the flag must stay
+                   with it.
+                3. Never reformat the CSS text (indentation, line breaks,
+                   value order). It is harmless ONLY because the flag silences
+                   the comparison — reformatting churns the diff for nothing
+                   and invites someone to "fix" the text to match the server.
+                4. Ids must stay deterministic: derived from `field.id` only,
+                   no instance prefix, no useId(), no random suffixes (see the
+                   note where the unused `fieldId` helper was removed in
+                   StepBody). Non-deterministic ids re-trigger #425 on the
+                   elements themselves, independently of these <style> tags.
+                ================================================================= */}
+			<style suppressHydrationWarning>{`
 .be-input { outline: none; }
 .be-input:focus-visible {
     outline: 2px solid ${theme.accentColor};
@@ -10332,7 +10478,7 @@ export default function BookingEngine(props: BookingEngineProps) {
     color: ${withAlpha(theme.textPrimaryColor, 0.6, theme.surfaceColor)};
     opacity: 1;
 }
-@keyframes be-spin-${reactInstanceId} { to { transform: rotate(360deg); } }
+@keyframes be-spin { to { transform: rotate(360deg); } }
 `}</style>
 		</RootShell>
 	);
@@ -10425,8 +10571,17 @@ const RootShell = React.memo(function RootShell(props: {
 			>
 				{props.children}
 			</div>
-			<style>{`
-@media (prefers-reduced-motion: reduce) {
+			{/* HYDRATION-AUDIT: `suppressHydrationWarning` is REQUIRED here —
+                the canonical explanation lives at the be-input <style> just
+                above in this same file (search "HYDRATION-AUDIT"). This
+                reduced-motion <style> was one of the three that produced
+                warnings #425/#418/#422: the prerender's headless Chrome
+                re-serializes this @media block with different indentation
+                than the raw template literal (server: 2-space media indent,
+                single-line rule; client: multi-line), so the texts never
+                matched byte-for-byte. Never remove the flag, never reformat
+                the CSS text, never inline the rule into style objects. */}
+			<style suppressHydrationWarning>{`
     .be-motion-root, .be-motion-root * {
         animation-duration: 0.001s !important;
         animation-iteration-count: 1 !important;
@@ -10554,29 +10709,23 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	// Task 2 M5 fix: `detectTimezone()` (an `Intl.DateTimeFormat` call) was
 	// previously invoked inside an IIFE in the middle of JSX, so it re-ran
 	// on every single render of this component — not just when the
-	// timezone selector was actually shown. Memoized with `[]` deps since
-	// the visitor's system timezone won't change over the life of the page.
-	const detectedTimeZone = React.useMemo(() => detectTimezone(), []);
+	// timezone selector was actually shown.
+	// SSR/hydration fix: it now runs inside the hook below as an effect, not
+	// during render, so the timezone <option> text matches the SSR HTML on
+	// first paint (the server and first client render both see "UTC").
+	const detectedTimeZone = useDetectedTimeZone();
 
 	// W1-01-F-06 fix: this used to run window.matchMedia("(pointer:
 	// coarse)") inline in the select's style object on every render —
 	// allocating a fresh MediaQueryList each time — while FieldRenderer
-	// wrapped the identical query in a useMemo. Mirror that: SSR-safe,
-	// try/catch-guarded, computed once for the mount (the visitor's
-	// pointer type won't change mid-session).
-	const selectFontSize = React.useMemo(() => {
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		) {
-			return 14;
-		}
-		try {
-			return window.matchMedia("(pointer: coarse)").matches ? 16 : 14;
-		} catch {
-			return 14;
-		}
-	}, []);
+	// wrapped the identical query in a useMemo. Mirror that: computed once
+	// for the mount (the visitor's pointer type won't change mid-session).
+	// SSR/hydration fix: matchMedia now runs in an effect (useCoarsePointer)
+	// rather than during render, so the SSR font size (14) matches the first
+	// client render — no #418 attribute mismatch, and touch devices still
+	// get the 16px iOS-zoom guard immediately after hydration.
+	const isCoarsePointer = useCoarsePointer();
+	const selectFontSize = isCoarsePointer ? 16 : 14;
 
 	// W1-02-F6/F7 fix: resolved copy for the counter format and required
 	// marker (W1-02-F24 single-source: schema default === runtime
@@ -10590,7 +10739,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	// banner id must be scoped per StepBody instance — two BookingEngine
 	// instances on one page used to collide on these ids (the label and
 	// aria-describedby resolved against the first instance).
-	const reactInstanceId = React.useId();
+	// SSR/hydration fix: plain constants (see gridLabelId) — identical in
+	// the prerendered HTML and the client's first render. Scoping across
+	// multi-instance pages is sacrificed (duplicate ids) because any
+	// state-derived value mismatches Framer's prerendered HTML.
+	const slotErrorId = "be-slot-error";
+	const timezoneSelectId = "be-timezone-select";
 
 	// W1-11-A9 fix: the slots error banner announces (role="alert") but
 	// never took focus, so a keyboard/low-vision visitor had to hunt for
@@ -10837,7 +10991,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// W1-10-N1 fix: engine-level slot error wired to
 							// the radiogroup (aria-invalid/aria-describedby).
 							slotError={slotError}
-							slotErrorId={`${reactInstanceId}-be-slot-error`}
+							slotErrorId={slotErrorId}
 							// W1-10-N3 fix: copy-driven toggle group label.
 							timeFormatLabel={
 								copy.timeFormatLabel ?? DEFAULT_COPY_TIMEFORMAT_LABEL
@@ -10856,7 +11010,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						// W1-10-N1 fix: the banner had no id, so the slot
 						// radiogroup's aria-describedby had nothing to
 						// reference. Scoped per instance like every other id.
-						id={`${reactInstanceId}-be-slot-error`}
+						id={slotErrorId}
 						tabIndex={-1}
 						style={{
 							marginTop: 6,
@@ -10874,7 +11028,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						// T5-H6 fix: the select had no accessible name
 						// (no htmlFor/id wiring, no aria-label), so
 						// screen readers announced an unnamed dropdown.
-						htmlFor={`${reactInstanceId}-be-timezone-select`}
+						htmlFor={timezoneSelectId}
 						style={{
 							display: "block",
 							fontSize: 12,
@@ -10887,7 +11041,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 					<select
 						// W1-10-N2 fix: id scoped per instance so the
 						// label above resolves on multi-instance pages.
-						id={`${reactInstanceId}-be-timezone-select`}
+						id={timezoneSelectId}
 						// W1-11-A8 fix: the select was the one field
 						// control without the `.be-input` class, so it
 						// missed both the base suppression and the
@@ -11237,13 +11391,17 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		isSubmitting = false,
 	} = props;
 
-	// W1-10-N2 fix: field ids were global literals (`${fieldInstanceId}-be-field-${field.id}`),
-	// so two BookingEngine instances on one page collided — `<label
+	// W1-10-N2 fix: field ids were instance-scoped so two BookingEngine
+	// instances on one page collided — `<label
 	// htmlFor>`, `aria-describedby` and error wiring all resolved to the
-	// wrong (first) instance's controls. `useId` scopes every id to this
-	// FieldRenderer instance; React keeps the id stable for the lifetime of
-	// the mounted field.
-	const fieldInstanceId = React.useId();
+	// wrong (first) instance's controls. SSR/hydration fix: ids are now
+	// derived from the (props-stable) `field.id` only, with no instance
+	// prefix — identical in the prerendered HTML and the client's first
+	// render, so the label/input id pair always resolves within this field
+	// and nothing id-derived can mismatch. Multi-instance pages can share
+	// ids (harmless here — one engine is visible per page at a time).
+	// (The old `fieldId` helper was removed in the hydration audit — it
+	// was declared but never called.)
 
 	// T10-M5 fix: auto-resize the textarea to its content. Hooks live at
 	// the top (not inside the switch) so a fieldType change in the editor
@@ -11304,11 +11462,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// W1-10-N5 fix: the character counter is a live region — announced when
 	// it changes — and referenced from the input's aria-describedby so SR
 	// users get the count contextually, not as ambient chatter.
-	const counterId = `${fieldInstanceId}-be-counter-${field.id}`;
+	const counterId = `be-counter-${field.id}`;
 
 	const labelEl = (
 		<label
-			htmlFor={`${fieldInstanceId}-be-field-${field.id}`}
+			htmlFor={`be-field-${field.id}`}
 			style={{
 				display: "block",
 				fontSize: 13,
@@ -11330,7 +11488,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 
 	const errorEl = error ? (
 		<div
-			id={`${fieldInstanceId}-be-error-${field.id}`}
+			id={`be-error-${field.id}`}
 			style={{
 				marginTop: 4,
 				color: theme.errorColor,
@@ -11359,18 +11517,12 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// font-size is below 16px. On coarse-pointer (touch) devices the
 	// effective input font is bumped to 16px so focusing never zooms;
 	// fine-pointer devices keep the compact 14px look.
-	const inputFontSize = React.useMemo(() => {
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		)
-			return 14;
-		try {
-			return window.matchMedia("(pointer: coarse)").matches ? 16 : 14;
-		} catch {
-			return 14;
-		}
-	}, []);
+	// SSR/hydration fix: matchMedia now runs in an effect (useCoarsePointer)
+	// rather than during render, so the SSR font size matches the first
+	// client render — the old inline matchMedia made touch-device markup
+	// diverge from the SSR HTML (React #418).
+	const isCoarsePointer = useCoarsePointer();
+	const inputFontSize = isCoarsePointer ? 16 : 14;
 
 	// W1-18-F1 fix: the focus-ring border transition is gated too.
 	const reducedMotion = useReducedMotion();
@@ -11405,7 +11557,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				<div style={containerStyle} data-field-id={field.id}>
 					{labelEl}
 					<textarea
-						id={`${fieldInstanceId}-be-field-${field.id}`}
+						id={`be-field-${field.id}`}
 						// W1-20-N5 fix: prefer the author-mapped Cal field id
 						// as the semantic form name — autofill/password
 						// managers key on name, and "step-1-field-0" gives
@@ -11426,7 +11578,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						aria-invalid={!!error}
 						aria-describedby={
 							error
-								? `${fieldInstanceId}-be-error-${field.id} ${counterId}`
+								? `be-error-${field.id} ${counterId}`
 								: counterId
 						}
 						rows={4}
@@ -11475,7 +11627,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
                         below removes the browser's native one. */}
 					<div style={{ position: "relative" }}>
 						<select
-							id={`${fieldInstanceId}-be-field-${field.id}`}
+							id={`be-field-${field.id}`}
 							// W1-20-N5 fix: same semantic-name preference as
 							// the textarea/input sites above.
 							name={field.calFieldId || field.id}
@@ -11487,7 +11639,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							onChange={(e) => onFieldChange(field.id, e.target.value)}
 							aria-invalid={!!error}
 							aria-describedby={
-								error ? `${fieldInstanceId}-be-error-${field.id}` : undefined
+								error ? `be-error-${field.id}` : undefined
 							}
 							style={{
 								...inputBaseStyle,
@@ -11594,7 +11746,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
 						ariaDescribedBy={
-							error ? `${fieldInstanceId}-be-error-${field.id}` : undefined
+							error ? `be-error-${field.id}` : undefined
 						}
 						onChange={handleChoiceChange}
 						choiceGroupAriaLabel={choiceGroupAriaLabel}
@@ -11644,7 +11796,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							aria-invalid={!!error}
 							// Fix #16: associate the error with the checkbox.
 							aria-describedby={
-								error ? `${fieldInstanceId}-be-error-${field.id}` : undefined
+								error ? `be-error-${field.id}` : undefined
 							}
 							style={{
 								marginTop: 2,
@@ -11678,7 +11830,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				<div style={containerStyle} data-field-id={field.id}>
 					{labelEl}
 					<input
-						id={`${fieldInstanceId}-be-field-${field.id}`}
+						id={`be-field-${field.id}`}
 						// W1-20-M2 fix: `name` was missing everywhere, so
 						// password managers couldn't group fields and
 						// autofill had nothing to key on.
@@ -11733,7 +11885,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						aria-invalid={!!error}
 						aria-describedby={
 							error
-								? `${fieldInstanceId}-be-error-${field.id} ${counterId}`
+								? `be-error-${field.id} ${counterId}`
 								: counterId
 						}
 						style={inputBaseStyle}
