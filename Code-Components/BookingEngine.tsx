@@ -10026,6 +10026,17 @@ export default function BookingEngine(props: BookingEngineProps) {
 				// T5-L6 fix: give the form an accessible name so screen
 				// readers can distinguish it from other forms on a page.
 				aria-label={ariaLabels.bookingForm}
+				// ADVANCE-FIX: the sticky footer nav (and its Continue
+				// submit button) lives OUTSIDE this <form> element, so a
+				// descendant type="submit" button could never submit it.
+				// This stable id lets the Continue button associate with
+				// the form via the `form` HTML attribute (form-owner
+				// resolution) — restoring both click-to-submit and
+				// Enter-to-submit without moving the sticky footer. Plain
+				// constant (like gridLabelId) so SSR/first-client-render
+				// always agree; multi-instance pages may share the id
+				// (harmless — one engine is visible per page at a time).
+				id="be-booking-form"
 				// W1-04-F-8 fix: without noValidate the browser's native
 				// validation fired before onSubmit for required/email
 				// fields — browser tooltip UX vs the engine's inline
@@ -10325,6 +10336,16 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// W1-04-F-7 cleanup: onClick={handleContinue} was
 					// redundant (the form's onSubmit already fires for a
 					// submit click AND Enter) — one code path now.
+					//
+					// ADVANCE-FIX: this button lives in the sticky footer
+					// nav, OUTSIDE the <form> element. A type="submit"
+					// button with no form owner does nothing when clicked,
+					// so handleContinue() (fired only via the form's
+					// onSubmit) never ran and the step never advanced. The
+					// `form` attribute explicitly links it to the
+					// booking form by its stable id, making it that form's
+					// submit control again.
+					form="be-booking-form"
 					type="submit"
 					disabled={isSubmitting}
 					// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
