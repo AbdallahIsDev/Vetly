@@ -42,7 +42,7 @@ const useIsomorphicLayoutEffect =
 // Shared color/time utilities (merged from the two inlined sources, deduped)
 // =============================================================================
 
-// W1-17-F-17-2 fix: parseColorToRgb used to accept only 3/6-char hex and
+// W1-17-F-17-2 fix: the colour parser used to accept only 3/6-char hex and
 // rgb()/rgba() — 8-char hex, 4-char hex, named colours, and hsl()/hsla()
 // all fell through to null (and callers then silently assumed white or
 // fell back to color-mix). The full parser below handles every CSS colour
@@ -215,9 +215,8 @@ function parseColorToRgba(
 	const trimmed = (color || "").trim().toLowerCase();
 	if (!trimmed) return null;
 	// W1-17-N1-new fix: "transparent" is a spec-valid CSS colour the old
-	// fall-through returned null for, so the canvas themeVerdicts loop
-	// flagged authors' valid "transparent" inputs as invalid. Map it to
-	// fully-opaque-black-with-zero-alpha.
+	// fall-through returned null for (callers treated null as "invalid").
+	// Map it to fully-opaque-black-with-zero-alpha.
 	if (trimmed === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
 	// W1-17-N2-new fix: currentColor resolves against context and is
 	// never known statically; it now has its own early return so callers
@@ -356,71 +355,12 @@ function parseColorToRgba(
 	return { r, g, b, a };
 }
 
-// F-17-2 fix: parseColorToRgb is now the alpha-dropping projection of the
-// full parser — every named/hex8/4/hsl colour the Framer control can emit
-// resolves here instead of nulling out.
-function parseColorToRgb(
-	color: string,
-): { r: number; g: number; b: number } | null {
-	const parsed = parseColorToRgba(color);
-	if (!parsed) return null;
-	return { r: parsed.r, g: parsed.g, b: parsed.b };
-}
-
-// ---- WCAG 2.1 relative luminance + contrast (F-17-1) ----
-
-function srgbToLinear(channel: number): number {
-	const s = channel / 255;
-	return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-}
-
-function relativeLuminance(r: number, g: number, b: number): number {
-	return (
-		0.2126 * srgbToLinear(r) +
-		0.7152 * srgbToLinear(g) +
-		0.0722 * srgbToLinear(b)
-	);
-}
-
-function wcagContrastRatio(l1: number, l2: number): number {
-	const hi = Math.max(l1, l2);
-	const lo = Math.min(l1, l2);
-	return (hi + 0.05) / (lo + 0.05);
-}
-
-// W1-17-F-17-1 fix: the old picker used Rec.601 luminance with a 0.6
-// threshold — NOT the WCAG formula — so mid greys like #808080 got white
-// text (~3.9:1, under the 4.5:1 AA target) when WCAG says black.
-// Threshold where black and white tie: (L + 0.05) / 0.05 = 1.05 / (L +
-// 0.05) → L ≈ 0.1791; pick the side with the higher contrast.
-const WCAG_TEXT_PICK_THRESHOLD = 0.1791;
-function getReadableTextColor(
-	background: string,
-	// W1-17-F17-N2 fix: translucent backgrounds were always composited
-	// over hardcoded WHITE — in dark mode the real backdrop is
-	// #0F1115/#1A1D23, so a translucent light accent mis-judged as
-	// opaque-white, picked black text, and that black text failed AA on
-	// the dark surface it actually rendered on. Callers that know the
-	// real backdrop (themeVerdicts) pass it; the default stays white for
-	// the picker's other (light-first) uses.
-	backdrop?: string,
-): string {
-	const rgba = parseColorToRgba(background);
-	if (!rgba) return "#FFFFFF";
-	const bg = backdrop ? parseColorToRgba(backdrop) : null;
-	const bgR = bg ? bg.r : 255;
-	const bgG = bg ? bg.g : 255;
-	const bgB = bg ? bg.b : 255;
-	// F-17-7 fix: a translucent background visibly sits on something —
-	// composite over the backdrop before judging luminance, so rgba()/
-	// hsla()/8-digit-hex backgrounds get an honest verdict instead of
-	// being judged as their opaque channel values.
-	const r = rgba.a < 1 ? rgba.r * rgba.a + bgR * (1 - rgba.a) : rgba.r;
-	const g = rgba.a < 1 ? rgba.g * rgba.a + bgG * (1 - rgba.a) : rgba.g;
-	const b = rgba.a < 1 ? rgba.b * rgba.a + bgB * (1 - rgba.a) : rgba.b;
-	const L = relativeLuminance(r, g, b);
-	return L >= WCAG_TEXT_PICK_THRESHOLD ? "#000000" : "#FFFFFF";
-}
+// Fixed foreground used on accent/success-filled surfaces (selected choice
+// options, the submit button, the success checkmark, and the restart/retry
+// buttons). Deliberately a constant: the component never derives a text
+// colour from the configured background — it renders exactly the colours
+// the author configures, nothing more.
+const TEXT_ON_ACCENT = "#FFFFFF";
 
 // W1-17-F-17-7 fix: old withAlpha replaced the alpha channel outright and
 // DROPPED any alpha already carried by the input colour (an 8-digit hex or
@@ -1157,12 +1097,9 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	// the per-component inline boxShadow focus rings (this one keyed on
 	// isKeyboardModality) were removed. The selection ring below stays:
 	// it marks SELECTED state, not focus.
-	const selectedTextColor = React.useMemo(
-		// W1-17-N7-new fix: pass the real backdrop so a translucent accent
-		// composites honestly instead of over hardcoded white.
-		() => getReadableTextColor(accentColor, backgroundColor),
-		[accentColor, backgroundColor],
-	);
+	// Fixed foreground for the selected option (rendered on the accent
+	// background). A constant — never derived from the configured colours.
+	const selectedTextColor = TEXT_ON_ACCENT;
 	const compact = measuredWidth < COMPACT_BREAKPOINT;
 	const effectiveFontSize = Math.max(14, fontSize);
 	const columns = React.useMemo(() => {
@@ -3994,12 +3931,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	}, [initialDate]);
 
 	const isNarrow = measuredWidth < COMPACT_BREAKPOINT;
-	const selectedAccentText = React.useMemo(
-		// W1-17-N7-new fix: pass the real backdrop so a translucent accent
-		// composites honestly instead of over hardcoded white.
-		() => getReadableTextColor(accentColor, backgroundColor),
-		[accentColor, backgroundColor],
-	);
+	// Fixed foreground for the selected date/slot (rendered on the accent
+	// background). A constant — never derived from the configured colours.
+	const selectedAccentText = TEXT_ON_ACCENT;
 	const mutedText = React.useMemo(() => withAlpha(textColor, 0.6), [textColor]);
 	const mutedSoftText = React.useMemo(
 		() => withAlpha(textColor, 0.42),
@@ -4998,30 +4932,15 @@ const DEFAULT_ICS_FILENAME_PREFIX = "booking-";
 const DEFAULT_ICS_UID_DOMAIN = "@booking-engine";
 
 const DEFAULT_DARK_THEME = {
-	// T5-H11 fix: the "#0099FF" accent has poor contrast against both
-	// light surfaces (white labels/copy on it compute to ~2.75:1) and the
-	// dark theme. "#0066BB" keeps the same blue family at ~5.7:1 with the
-	// always-white selected text (getReadableTextColor stays white).
-	// W2-36-N1 fix: that same "#0066BB" FAILS as accent-AS-TEXT on the dark
-	// surfaces — 3.26:1 on #0F1115, 2.91:1 on #1A1D23 (below AA 4.5:1).
-	// "#3B82F6" (blue-500) passes the accent-on-dark pairs (~5.1:1 on
-	// #0F1115, ~4.5:1 on #1A1D23) and flips the auto text picker to black
-	// on the accent (~5.7:1) — consistent with the F-17-1 picker.
-	// W1-17-N6-new fix: #3B82F6 on #1A1D23 sat only +0.09 above AA 4.5:1
-	// (4.5901:1). #4F8EF7 is the same blue family with a slight luminance
-	// bump — ~5.16:1 on the dark surface (margin +0.66) without materially
-	// changing the look.
+	// Default dark-mode palette. Pure defaults — the author can override
+	// every colour here, and the component renders exactly what is
+	// configured. No colour is derived from or judged against another.
 	accentColor: "#4F8EF7",
 	backgroundColor: "#0F1115",
 	surfaceColor: "#1A1D23",
 	textPrimaryColor: "#FFFFFF",
 	textSecondaryColor: "#9CA3AF",
 	borderColor: "#2A2D34",
-	// F-17-8 fix: these fields were dead — the dark-mode override memo only
-	// ever consulted five of the nine. W2-36-N1: #F87171 / #16A34A sit at
-	// 3.03:1 / 3.20:1 against the old WHITE pick; the WCAG picker (F-17-1)
-	// now returns black for both (~7.6:1 / ~6.4:1) and these stay as the
-	// dark defaults.
 	errorColor: "#F87171",
 	successColor: "#16A34A",
 	borderRadius: "12px",
@@ -7476,7 +7395,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// who deliberately sets "#FFFFFF" on purpose keeps it in both modes).
 	// F-17-8 fix: every field now has a dark counterpart — accent/error/
 	// success/borderRadius previously had NO fallback (the dark theme's
-	// declared values were dead), leaving T5-H11/T5-H10/T5-M7 contrast
+	// declared values were dead).
 	// fixes light-only.
 	const theme = React.useMemo(() => {
 		const useDarkLocal =
@@ -8186,10 +8105,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// T9-M7 fix: the render target is static for a component's lifetime;
 	// compute once instead of reading it on every render.
-	// W1-13-F-13-10 fix: hoisted above the author-verdict memos below — on
-	// the published site those banners never render, so their verdicts must
-	// never be computed either (regex compilation runs + 10-pair WCAG math
-	// were paying mount cost on every visitor page).
+	// W1-13-F-13-10 fix: hoisted above the author-verdict memo below — on
+	// the published site that banner never renders, so its verdict must
+	// never be computed either (regex compilation runs were paying mount
+	// cost on every visitor page).
 	const isCanvas = React.useMemo(
 		() => RenderTarget.current() === RenderTarget.canvas,
 		[],
@@ -8255,153 +8174,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 		return verdicts;
 	}, [isCanvas, normalizedSteps]);
-
-	// F-17-5 fix: canvas-only accessibility verdicts for the resolved
-	// (dark-aware) theme — AA 4.5:1 contrast checks on the text colour
-	// pairs actually used by the flow, plus the auto text picker vs the
-	// accent colour. F-17-6 fix: flags unparseable author-supplied colour
-	// tokens so the author sees exactly why a field falls back to the
-	// browser default. Never rendered outside the canvas.
-	const themeVerdicts = React.useMemo(() => {
-		// W1-13-F-13-10 fix: like regexPreviewVerdicts above, this only
-		// renders on the canvas — skip all parse + contrast math on the
-		// published site and preview.
-		if (!isCanvas) return [];
-		const verdicts: Array<{
-			label: string;
-			ratio: number;
-			kind: "ok" | "warn" | "invalid";
-			message: string;
-		}> = [];
-		const pairs: Array<[string, string, string]> = [
-			["primary text on page", theme.textPrimaryColor, theme.backgroundColor],
-			[
-				"secondary text on page",
-				theme.textSecondaryColor,
-				theme.backgroundColor,
-			],
-			["error colour on page", theme.errorColor, theme.backgroundColor],
-			["success colour on page", theme.successColor, theme.backgroundColor],
-			["primary text on surface", theme.textPrimaryColor, theme.surfaceColor],
-			[
-				"secondary text on surface",
-				theme.textSecondaryColor,
-				theme.surfaceColor,
-			],
-			// W1-17-F17-N5 fix: the four pairs the audit found missing —
-			// error/success also render on surfaces, and accent renders as
-			// text/links on both page and surface (that's exactly the pair
-			// W2-36-N1 caught failing for the old dark default).
-			["error colour on surface", theme.errorColor, theme.surfaceColor],
-			["success colour on surface", theme.successColor, theme.surfaceColor],
-			["accent on page", theme.accentColor, theme.backgroundColor],
-			["accent on surface", theme.accentColor, theme.surfaceColor],
-		];
-		for (const [label, fg, bg] of pairs) {
-			const fgParts = parseColorToRgb(fg);
-			const bgParts = parseColorToRgb(bg);
-			if (!fgParts || !bgParts) continue;
-			const ratio = wcagContrastRatio(
-				relativeLuminance(fgParts.r, fgParts.g, fgParts.b),
-				relativeLuminance(bgParts.r, bgParts.g, bgParts.b),
-			);
-			verdicts.push({
-				label,
-				ratio,
-				kind: ratio >= 4.5 ? "ok" : "warn",
-				message: `contrast ${ratio.toFixed(2)}:1 — ${
-					ratio >= 4.5
-						? "WCAG AA normal text passes"
-						: "below AA 4.5:1, consider a darker colour"
-				}`,
-			});
-		}
-		// W2-36-N1/N3 fix: the border colour is UI chrome, judged against
-		// WCAG 1.4.11's 3:1 non-text threshold (not text's 4.5:1). The
-		// 10-pair list above skipped it, so authors got no canvas warning
-		// for a failing custom border; it now gets both pairs.
-		const borderPairs: Array<[string, string, string]> = [
-			["border on page", theme.borderColor, theme.backgroundColor],
-			["border on surface", theme.borderColor, theme.surfaceColor],
-		];
-		for (const [label, fg, bg] of borderPairs) {
-			const fgParts = parseColorToRgb(fg);
-			const bgParts = parseColorToRgb(bg);
-			if (!fgParts || !bgParts) continue;
-			const ratio = wcagContrastRatio(
-				relativeLuminance(fgParts.r, fgParts.g, fgParts.b),
-				relativeLuminance(bgParts.r, bgParts.g, bgParts.b),
-			);
-			verdicts.push({
-				label,
-				ratio,
-				kind: ratio >= 3 ? "ok" : "warn",
-				message: `contrast ${ratio.toFixed(2)}:1 — ${
-					ratio >= 3
-						? "WCAG 1.4.11 non-text contrast passes"
-						: "below the 1.4.11 3:1 non-text threshold (defaults are a documented aesthetic compromise; only custom borders need attention)"
-				}`,
-			});
-		}
-		const picked = getReadableTextColor(
-			theme.accentColor,
-			theme.backgroundColor,
-		);
-		const accentParts = parseColorToRgb(theme.accentColor);
-		const pickedParts = parseColorToRgb(picked);
-		if (accentParts && pickedParts) {
-			const accentRatio = wcagContrastRatio(
-				relativeLuminance(accentParts.r, accentParts.g, accentParts.b),
-				relativeLuminance(pickedParts.r, pickedParts.g, pickedParts.b),
-			);
-			verdicts.push({
-				label: "auto text picker on accent",
-				ratio: accentRatio,
-				kind: accentRatio >= 4.5 ? "ok" : "warn",
-				message: `auto pick is ${picked}, ${accentRatio.toFixed(2)}:1 — ${
-					accentRatio >= 4.5
-						? "WCAG AA normal text passes"
-						: "below AA 4.5:1, consider a darker accent"
-				}`,
-			});
-		}
-		const rawColors: Array<[string, string]> = [
-			["accent", accentColor],
-			["background", backgroundColor],
-			["surface", surfaceColor],
-			["primary text", textPrimaryColor],
-			["secondary text", textSecondaryColor],
-			["border", borderColor],
-			["error", errorColor],
-			["success", successColor],
-		];
-		for (const [label, value] of rawColors) {
-			// W1-17-N2-new fix: currentColor is context-dependent and valid
-			// CSS but can't be judged statically; skip it instead of letting
-			// it look "invalid".
-			if ((value || "").trim().toLowerCase() === "currentcolor") continue;
-			if (!parseColorToRgba(value)) {
-				verdicts.push({
-					label: `theme ${label}`,
-					ratio: 0,
-					kind: "invalid",
-					message: `“${value}” is not a parseable colour — the field renders with its browser default.`,
-				});
-			}
-		}
-		return verdicts;
-	}, [
-		isCanvas,
-		theme,
-		accentColor,
-		backgroundColor,
-		surfaceColor,
-		textPrimaryColor,
-		textSecondaryColor,
-		borderColor,
-		errorColor,
-		successColor,
-	]);
 
 	// T10-L1 fix: is there at least one required field anywhere in the flow?
 	// When yes, a hint line explains what the asterisk means.
@@ -9353,7 +9125,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		textSecondaryColor,
 		theme,
 		themeSetting,
-		themeVerdicts,
 		timeFormat,
 		timeZone,
 		timezoneOptions,
@@ -9454,7 +9225,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		style,
 		submitError,
 		theme,
-		themeVerdicts,
 		timeFormat,
 		timeZone,
 		timezoneOptions,
@@ -9482,16 +9252,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const cancelSubmitLabel =
 		buttonLabels?.cancelSubmitLabel ?? DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL;
 
-	// W1-16-P-14 fix: `getReadableTextColor(accentColor)` was computed
-	// inline per render for the submit-button text and the in-flight
-	// spinner border — same pattern the file memoizes everywhere else
-	// (see L861, L3375).
-	const accentTextOnSurface = React.useMemo(
-		// W1-17-N7-new fix: pass the real backdrop (the surface the accent
-		// button lives on) so a translucent accent composites honestly.
-		() => getReadableTextColor(theme.accentColor, theme.surfaceColor),
-		[theme.accentColor, theme.surfaceColor],
-	);
+	// Fixed foreground for the accent-filled submit button and its spinner.
+	// A constant — never derived from the configured colours.
+	const accentTextOnSurface = TEXT_ON_ACCENT;
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
 	// rule — embeds in narrow desktop sidebars stayed 2-col (cramped,
@@ -9815,55 +9578,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 							>
 								{verdict.pattern}
 							</div>
-						</div>
-					))
-				: null}
-
-			{/* F-17-5/F-17-6 fix: canvas-only theme accessibility verdicts
-                (AA contrast on the resolved theme + unparseable colour
-                tokens). Never rendered in preview or on the published
-                site. */}
-			{isCanvas && themeVerdicts.length > 0
-				? themeVerdicts.map((verdict, verdictIdx) => (
-						/* biome-ignore lint/a11y/useSemanticElements: intentional
-                          polite status region (W1-13-F-13-9) for author-facing
-                          verdicts. */
-						<div
-							key={`${verdict.label}-${verdictIdx}`}
-							// W1-13-F-13-9 fix: silent div → polite status
-							// region for author-facing verdicts.
-							role="status"
-							aria-live="polite"
-							aria-atomic="true"
-							style={{
-								padding: "10px 14px",
-								marginBottom: 8,
-								borderRadius: theme.borderRadius,
-								background: withAlpha(
-									verdict.kind === "ok"
-										? theme.successColor
-										: verdict.kind === "warn"
-											? theme.errorColor
-											: theme.accentColor,
-									0.1,
-								),
-								border: `1px solid ${withAlpha(
-									verdict.kind === "ok"
-										? theme.successColor
-										: verdict.kind === "warn"
-											? theme.errorColor
-											: theme.accentColor,
-									0.3,
-								)}`,
-								color: theme.textPrimaryColor,
-								fontSize: 12,
-								lineHeight: 1.4,
-							}}
-						>
-							<strong style={{ color: theme.textPrimaryColor }}>
-								{verdict.label}
-							</strong>
-							<span style={{ opacity: 0.75 }}> — {verdict.message}</span>
 						</div>
 					))
 				: null}
@@ -10489,11 +10203,9 @@ animation: prefersReducedMotion
     user-select: none;
     -webkit-user-select: none;
 }
-/* W2-36-N2 fix: the browser default placeholder (currentColor at ~50%
-   opacity) computed to ~3.35:1 in light mode — below AA 4.5:1. Explicit
-   60% pre-blend of the primary text over the surface (~4.6:1 light,
-   ~6.7:1 dark) restores AA in both modes; opacity:1 stops the browser
-   from double-dimming the pre-blended colour. */
+/* Placeholder colour: a fixed 60% pre-blend of the primary text over the
+   surface, applied as a solid colour with opacity:1 (a constant choice —
+   never derived from the configured colours). */
 .be-motion-root input::placeholder,
 .be-motion-root textarea::placeholder {
     color: ${withAlpha(theme.textPrimaryColor, 0.6, theme.surfaceColor)};
@@ -12214,15 +11926,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						height: CHECKMARK_ICON_SIZE,
 						borderRadius: "50%",
 						background: successColor,
-						// T5-M7 fix: the checkmark used a hardcoded
-						// white stroke - on a light success green
-						// (e.g. #22C55E) that's a ~2.3:1 contrast,
-						// invisible for low-vision users. Pick the
-						// readable ink per the ACTUAL success color
-						// so custom colors stay legible too.
-						// W1-17-N7-new fix: pass the real backdrop
-						// (the surface this icon sits on).
-						color: getReadableTextColor(successColor, surfaceColor),
+						// Fixed foreground for the checkmark stroke. A
+						// constant — never derived from the configured
+						// colours.
+						color: TEXT_ON_ACCENT,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
@@ -12455,9 +12162,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						// W1-17-N7-new fix: pass the real backdrop
-						// (the surface this button sits on).
-						color: getReadableTextColor(accentColor, surfaceColor),
+						// Fixed foreground for the accent-filled button.
+						// A constant — never derived from the configured
+						// colours.
+						color: TEXT_ON_ACCENT,
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -12649,9 +12357,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						// W1-17-N7-new fix: pass the real backdrop
-						// (the surface this button sits on).
-						color: getReadableTextColor(accentColor, surfaceColor),
+						// Fixed foreground for the accent-filled button.
+						// A constant — never derived from the configured
+						// colours.
+						color: TEXT_ON_ACCENT,
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -13196,12 +12905,9 @@ addPropertyControls(BookingEngine, {
 			accentColor: {
 				type: ControlType.Color,
 				title: "Accent",
-				// T5-H11 fix: "#0099FF" fails contrast (~2.75:1 with the
-				// white text it always pairs with); "#0066BB" keeps the
-				// hue at ~5.7:1. Existing instances keep their values.
-				// W2-36-N1 fix: in dark mode the pick() override swaps
-				// this light default for DEFAULT_DARK_THEME.accentColor
-				// (#3B82F6, AA on the dark surfaces).
+				// Default accent. Existing instances keep their own values;
+				// in dark mode the pick() override swaps this light default
+				// for DEFAULT_DARK_THEME.accentColor.
 				defaultValue: "#0066BB",
 			},
 			backgroundColor: {
@@ -13232,18 +12938,11 @@ addPropertyControls(BookingEngine, {
 			errorColor: {
 				type: ControlType.Color,
 				title: "Error",
-				// T5-H10 fix: "#EF4444" is a 4.03:1 contrast against
-				// white - under the 4.5:1 target for the small error
-				// text it renders. "#DC2626" reaches 4.5:1+ while
-				// staying the same red family.
 				defaultValue: "#DC2626",
 			},
 			successColor: {
 				type: ControlType.Color,
 				title: "Success",
-				// T5-M7 fix: "#22C55E" with the white checkmark was a ~2.3:1
-				// contrast. "#15803D" (green-700) reaches 4.79:1 - the
-				// checkmark itself also adapts via getReadableTextColor.
 				defaultValue: "#15803D",
 			},
 			borderRadius: {
