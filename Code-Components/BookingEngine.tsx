@@ -7071,21 +7071,30 @@ function AnimatedStepContent(props: {
 	// triggering layout measurement + spring runs.
 	const isStatic = useIsStaticRenderer();
 	if (isStatic) {
-		return <div style={{ position: "relative" }}>{props.children}</div>;
+		return (
+			<div style={{ position: "relative", opacity: 1, pointerEvents: "auto" }}>
+				{props.children}
+			</div>
+		);
 	}
-	// Active step stays in document flow and sizes the form. An exiting
-	// step must leave flow immediately — AnimatePresence popLayout is
-	// overridden if we pin `position: relative` on the motion node, which
-	// left opacity-0 steps occupying height and intercepting hits.
+	// Layout (position / pointer-events) and visual opacity are both
+	// derived from presence — never from a leftover enter `initial`.
+	// `initial={{ opacity: 0 }}` left a remounted destination step (Back)
+	// stuck at 0 when the enter animation did not commit. `initial={false}`
+	// plus an explicit opacity on `style`/`animate` keeps the active step
+	// at 1 in both directions. `layout` is off: it fought this model.
 	return (
 		<motion.div
-			layout={!reducedMotion}
-			initial={{ opacity: 0, y: 12 }}
-			animate={{ opacity: 1, y: 0 }}
+			initial={false}
+			animate={{
+				opacity: isPresent ? 1 : 0,
+				y: isPresent ? 0 : -12,
+			}}
 			exit={{ opacity: 0, y: -12 }}
-			transition={props.transition}
+			transition={reducedMotion ? { duration: 0 } : props.transition}
 			style={{
 				position: isPresent ? "relative" : "absolute",
+				opacity: isPresent ? 1 : 0,
 				left: isPresent ? undefined : 0,
 				right: isPresent ? undefined : 0,
 				width: "100%",
@@ -7640,11 +7649,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// F-12-3 fix: payloads carry a schema version so a future shape change
 	// can migrate or purge instead of silently mis-restoring.
 	const PERSIST_SCHEMA_VERSION = 1;
-	const sessionKey = React.useMemo(
-		() => `booking-engine:${reactInstanceId}`,
-		[reactInstanceId],
-	);
-	React.useEffect(() => {
+	// Stable key: `reactInstanceId` is "" on the first client commit and
+	// only fills in after a *paint* effect. Restoring from that key in
+	// useEffect painted step 0, then jumped to the saved step. A constant
+	// key lets the layout-effect restore below run before first paint.
+	const sessionKey = "booking-engine:session";
+	useIsomorphicLayoutEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: no restore on the canvas / in exports.
@@ -10151,6 +10161,7 @@ const RootShell = React.memo(function RootShell(props: {
                 matched byte-for-byte. Never remove the flag, never reformat
                 the CSS text, never inline the rule into style objects. */}
 			<style suppressHydrationWarning>{`
+@media (prefers-reduced-motion: reduce) {
     .be-motion-root, .be-motion-root * {
         animation-duration: 0.001s !important;
         animation-iteration-count: 1 !important;
@@ -13285,6 +13296,24 @@ addPropertyControls(BookingEngine, {
 	icsDownloadFilenamePrefix: {
 		type: ControlType.String,
 		title: "ICS Filename Prefix",
+		defaultValue: DEFAULT_ICS_FILENAME_PREFIX,
+	},
+	// W1-02-F29 fix: brandable fallback UID domain (only used when the
+	// browser lacks crypto.randomUUID).
+	icsUidDomain: {
+		type: ControlType.String,
+		title: "ICS UID Domain",
+		defaultValue: DEFAULT_ICS_UID_DOMAIN,
+	},
+	// T10-L6 fix: destination of the success-screen "Done" link. Empty hides it.
+	returnHomeUrl: {
+		type: ControlType.String,
+		title: "Return Home URL",
+		defaultValue: "",
+		placeholder: "https://your-site.com",
+	},
+});
+ilename Prefix",
 		defaultValue: DEFAULT_ICS_FILENAME_PREFIX,
 	},
 	// W1-02-F29 fix: brandable fallback UID domain (only used when the
