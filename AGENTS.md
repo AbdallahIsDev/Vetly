@@ -186,3 +186,9 @@ misinterprets an intentional absence or choice as an oversight.
 **Form state must persist across step navigation. Navigating Back, Continue, or between steps must never clear or reset previously entered values. Step UI lifecycle/remounting must not determine the lifetime of form data.**
 
 This is a **non-configurable core behavior**. It must not be removed or weakened by future optimization, refactoring, animation changes, or review passes. The form data must be kept in stable parent-level state that survives step unmounts/remounts. Never rely on the step component lifecycle for state preservation, and never reset the state upon entering a step.
+
+### 14. Only the active step may participate in normal layout flow
+
+**Only the active step may participate in normal layout flow. The active step must be `position: relative` and visible; inactive rendered steps must be removed from normal flow using `position: absolute`, hidden appropriately, and must not intercept interaction. Step navigation must update this state correctly in both directions.**
+
+This is a **permanent architectural rule**. Do not hide inactive steps with opacity alone while leaving them `position: relative`. Do not use `display: none` as the primary transition mechanism. Do not add arbitrary spacers, min-heights, or fixed-height workarounds so the form can ignore leftover inactive content. The form's height must follow the active step. Inactive steps must use `pointer-events: none` (or equivalent) so they cannot capture clicks or focus. Form state and step layout are separate concerns — do not use extra persistence layers to compensate for a layout bug.

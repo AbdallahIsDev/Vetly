@@ -7073,6 +7073,10 @@ function AnimatedStepContent(props: {
 	if (isStatic) {
 		return <div style={{ position: "relative" }}>{props.children}</div>;
 	}
+	// Active step stays in document flow and sizes the form. An exiting
+	// step must leave flow immediately — AnimatePresence popLayout is
+	// overridden if we pin `position: relative` on the motion node, which
+	// left opacity-0 steps occupying height and intercepting hits.
 	return (
 		<motion.div
 			layout={!reducedMotion}
@@ -7080,7 +7084,13 @@ function AnimatedStepContent(props: {
 			animate={{ opacity: 1, y: 0 }}
 			exit={{ opacity: 0, y: -12 }}
 			transition={props.transition}
-			style={{ position: "relative" }}
+			style={{
+				position: isPresent ? "relative" : "absolute",
+				left: isPresent ? undefined : 0,
+				right: isPresent ? undefined : 0,
+				width: "100%",
+				pointerEvents: isPresent ? "auto" : "none",
+			}}
 			// W1-11-NEW-FIND-5 fix: aria-hidden only hides the exiting step
 			// from screen readers — Tab still reached its focusable elements
 			// during the ~16ms AnimatePresence exit window, and when the old
@@ -7210,6 +7220,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// constants now — see be-spin / be-field-* / be-dt-scroll /
 	// be-calendar-grid-label / be-slot-error / be-timezone-select.
 	const persistState = true;
+	// Form-state lifetime is independent of step UI remounts AND of the
+	// hydration-safe instance id (that id increments every mount and must
+	// never be the sessionStorage key — a remount would miss the saved
+	// answers). One engine is visible per page; the key is stable.
 	const reactInstanceId = useHydrationSafeId("be-engine");
 	// F-12-4 fix: never write or restore on the Framer canvas / exports —
 	// persistence is a live-visitor feature only.
@@ -8255,9 +8269,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 				typeof value === "string" && field?.fieldType !== "textarea"
 					? value.trim()
 					: value;
-			// Keep Continue's synchronous validation in lockstep with the input
-			// event. The effect below eventually mirrors React state into this
-			// ref, but a visitor can click Continue before that effect runs.
 			valuesRef.current = { ...valuesRef.current, [fieldId]: sanitized };
 			setValues((prev) => ({ ...prev, [fieldId]: sanitized }));
 			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
@@ -10230,7 +10241,7 @@ interface StepBodyProps {
 	isSubmitting?: boolean;
 }
 
-const StepBody = React.memo(function StepBody(props: StepBodyProps) { console.log("StepBody rendering, values:", props.values);
+const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	const {
 		step,
 		steps,
@@ -13286,6 +13297,12 @@ addPropertyControls(BookingEngine, {
 	// T10-L6 fix: destination of the success-screen "Done" link. Empty hides it.
 	returnHomeUrl: {
 		type: ControlType.String,
+		title: "Return Home URL",
+		defaultValue: "",
+		placeholder: "https://your-site.com",
+	},
+});
+g,
 		title: "Return Home URL",
 		defaultValue: "",
 		placeholder: "https://your-site.com",
