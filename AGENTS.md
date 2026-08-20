@@ -71,6 +71,33 @@ previously existing contrast-warning system and auto-text-picker were **removed
 on purpose** to honor it. If you find contrast-related code, comments that
 re-introduce it, or are about to write some, stop and consult this rule.
 
+### 4. No "fields marked * are required" helper text or required-asterisks
+
+Do not render a "Fields marked * are required" (or equivalent) helper line.
+Do not render a required asterisk (`*`) — or any other required marker — next
+to field labels. Per-field validation messages ("This field is required")
+alone communicate required status.
+
+### 5. No always-visible character counters
+
+Do not display a running character count (e.g. "0/250") under or near inputs.
+Max-length is an internal constraint only. Enforce it in validation and surface
+an over-limit message in the same style/location as other field-level errors,
+shown only on violation.
+
+### 6. Field / error-message spacing must use flex `gap`
+
+Space a field and its error message with flex `gap` on the field column. Do
+not use margin or padding to separate the error from the input.
+
+### 7. Autosave-to-browser is permanent and always-on
+
+Autosave of answers to `sessionStorage` is a core, non-negotiable product
+feature: hardcoded on, never optional. Do not add a Framer property control,
+visitor toggle, or disclosure/helper text for it ("saved answers", "clear my
+saved answers", privacy-notice-about-autosave, etc.). Keep the save/restore
+logic; never expose a way to turn it off.
+
 ---
 
 ## Ongoing Documentation Habit

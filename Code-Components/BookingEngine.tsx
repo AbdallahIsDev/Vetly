@@ -4838,11 +4838,6 @@ interface BookingEngineConfigProps {
 	// visitor-facing label to a canonical IANA timezone value. Absent (old
 	// canvases) or empty arrays fall back to the built-in COMMON_TIMEZONES.
 	timezones?: Array<{ label: string; value: string }>;
-	// F-12-2 / W2-31-A-31-1 fix: progress persistence is now an explicit
-	// author opt-in (was hardcoded `true`). PII (name, email, phone) is only
-	// written to sessionStorage when an author enables this AND shows the
-	// `privacyNotice` disclosure rendered at the bottom of the flow.
-	persistState?: boolean;
 	// T10-L6 fix: destination for the success screen's "Done" link. Empty
 	// value hides the link entirely.
 	returnHomeUrl: string;
@@ -5235,6 +5230,7 @@ type ValidationCopy = {
 	emailError: string;
 	phoneError: string;
 	minLengthError: string;
+	maxLengthError: string;
 	pickDateTimeError: string;
 	pastTimeError: string;
 	customRegexError: string;
@@ -5247,6 +5243,7 @@ const DEFAULT_VALIDATION_COPY: ValidationCopy = {
 	emailError: "Enter a valid email address",
 	phoneError: "Enter a valid phone number",
 	minLengthError: "Must be at least 3 characters",
+	maxLengthError: "Must be at most {max} characters",
 	pickDateTimeError: "Please pick a date and time",
 	pastTimeError: "Please pick a future time",
 	customRegexError: "This value doesn't match the required format",
@@ -5283,6 +5280,20 @@ function validateField(
 	}
 	if (isEmpty) return null;
 	const str = String(value);
+	// Max-length is an internal constraint only — no always-visible
+	// counter. Surface the same field-level error style as required
+	// when the value is over the cap (restore / paste / no HTML cap).
+	if (
+		field.fieldType === "text" ||
+		field.fieldType === "email" ||
+		field.fieldType === "phone" ||
+		field.fieldType === "textarea"
+	) {
+		const maxLen = effectiveMaxLength(field);
+		if (str.length > maxLen) {
+			return vc.maxLengthError.replace("{max}", String(maxLen));
+		}
+	}
 	// T4-M4 fix: per-field rules (validationRule / minLength / customRegex)
 	// override the type-derived checks below.
 	const explicitRule =
@@ -7177,10 +7188,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 				validationMessages?.emailError ?? DEFAULT_VALIDATION_COPY.emailError,
 			phoneError:
 				validationMessages?.phoneError ?? DEFAULT_VALIDATION_COPY.phoneError,
-			minLengthError:
-				validationMessages?.minLengthError ??
-				DEFAULT_VALIDATION_COPY.minLengthError,
-			pickDateTimeError:
+		minLengthError:
+			validationMessages?.minLengthError ??
+			DEFAULT_VALIDATION_COPY.minLengthError,
+		maxLengthError:
+			validationMessages?.maxLengthError ??
+			DEFAULT_VALIDATION_COPY.maxLengthError,
+		pickDateTimeError:
 				validationMessages?.pickDateTimeError ??
 				DEFAULT_VALIDATION_COPY.pickDateTimeError,
 			pastTimeError:
@@ -7227,19 +7241,19 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// Destructure copy from the grouped Buttons object (Requirement 5).
 	const { continueLabel, backLabel, finalActionLabel } = buttonLabels;
 
-	// F-12-2 fix: default OFF — persistence (and the PII it writes) is an
-	// author opt-in via the "Save Progress" property control, paired with
-	// the privacyNotice disclosure. Auto-generate a stable instance ID per
-	// component instance so multiple BookingEngine components on the same
-	// page don't collide in sessionStorage. SSR/hydration fix: Framer
-	// serves real browsers a headless-prerendered HTML where effects have
-	// ALREADY run (and can serve a plain renderToString variant to other
-	// clients), so effect-set ids mismatch the hydrating client's first
-	// render. The sessionStorage KEY is safe (never rendered), but the
-	// keyframes name and every rendered id derived from an id hook are
-	// plain constants now — see be-spin / be-field-* / be-dt-scroll /
+	// Autosave-to-browser is a permanent, always-on product feature —
+	// never an author toggle and never paired with disclosure UI.
+	// Auto-generate a stable instance ID per component instance so
+	// multiple BookingEngine components on the same page don't collide
+	// in sessionStorage. SSR/hydration fix: Framer serves real browsers
+	// a headless-prerendered HTML where effects have ALREADY run (and
+	// can serve a plain renderToString variant to other clients), so
+	// effect-set ids mismatch the hydrating client's first render. The
+	// sessionStorage KEY is safe (never rendered), but the keyframes
+	// name and every rendered id derived from an id hook are plain
+	// constants now — see be-spin / be-field-* / be-dt-scroll /
 	// be-calendar-grid-label / be-slot-error / be-timezone-select.
-	const persistState = props.persistState === true;
+	const persistState = true;
 	const reactInstanceId = useHydrationSafeId("be-engine");
 	// F-12-4 fix: never write or restore on the Framer canvas / exports —
 	// persistence is a live-visitor feature only.
@@ -7817,13 +7831,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 					}
 					setCurrentIndex(restoredIndex);
 				}
-				// W1-12-F-12-11 fix: `hasSavedProgress` was only ever set by
-				// the next persist write, so after a refresh with saved data
-				// the "Answers are saved in this browser" note and "Clear my
-				// saved answers" affordance were hidden until the visitor
-				// typed something new — undermining the GDPR self-service
-				// intent. A successful restore means storage is in use.
-				setHasSavedProgress(true);
 			}
 		} catch (err: unknown) {
 			// T6-L6 fix: previously silent - a corrupt/oversized saved session
@@ -7858,13 +7865,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 		focusTimerRef.current = window.setTimeout(fn, 0);
 	}, []);
-	// F-12-2 / W2-31-A-31-3 fix: tracks whether anything is actually saved, so
-	// the flow can offer the "Clear my saved answers" affordance (GDPR data
-	// self-service) and stop showing it once storage is empty.
-	const [hasSavedProgress, setHasSavedProgress] = React.useState(false);
-	// F-12-10 fix: quota-exceeded writes surface a one-time notice instead of
-	// failing silently (the old behavior — progress silently not saved).
-	const [saveFailedOnce, setSaveFailedOnce] = React.useState(false);
 	React.useEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
@@ -7877,7 +7877,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 			}
 			try {
 				window.sessionStorage.removeItem(sessionKey);
-				setHasSavedProgress(false);
 			} catch (err: unknown) {
 				console.warn("BookingEngine: failed to clear saved progress.", err);
 			}
@@ -7915,21 +7914,19 @@ function useBookingEngineState(props: BookingEngineProps) {
 						// refresh mid-flow silently dropped the visitor back to
 						// step 0 (the layout effect below re-clamps the restored
 						// value if the author changed the step count meanwhile).
-						currentIndex: safeCurrentIndex,
-					}),
-				);
-				setHasSavedProgress(true);
-			} catch (err: unknown) {
-				// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
-				// silently swallowed - the visitor believed progress was being
-				// saved while nothing was. Log it, and (F-12-10 fix) surface a
-				// one-time notice in the flow instead of failing silently.
-				console.warn(
-					"BookingEngine: failed to save progress (storage full?).",
-					err,
-				);
-				setSaveFailedOnce(true);
-			}
+					currentIndex: safeCurrentIndex,
+				}),
+			);
+		} catch (err: unknown) {
+			// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
+			// silently swallowed - the visitor believed progress was being
+			// saved while nothing was. Log it; there is no visitor-facing
+			// disclosure for autosave.
+			console.warn(
+				"BookingEngine: failed to save progress (storage full?).",
+				err,
+			);
+		}
 		}, 300);
 		return () => {
 			if (persistTimerRef.current !== null) {
@@ -8174,18 +8171,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 		return verdicts;
 	}, [isCanvas, normalizedSteps]);
-
-	// T10-L1 fix: is there at least one required field anywhere in the flow?
-	// When yes, a hint line explains what the asterisk means.
-	const hasRequiredFields = React.useMemo(
-		() =>
-			activeSteps.some(
-				(step) =>
-					(step.stepType === "form" || step.stepType === "datetime") &&
-					step.fields.some((field) => field.required),
-			),
-		[activeSteps],
-	);
 
 	// T10-M1 fix: analytics emitter. A throwing author callback must never
 	// break the booking flow, so everything is try/caught.
@@ -8856,7 +8841,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		setCurrentIndex(0);
 		transitionFlowStatus("in-progress");
 		submittingRef.current = false;
-		setHasSavedProgress(false);
 		if (typeof window !== "undefined" && persistState) {
 			try {
 				window.sessionStorage.removeItem(sessionKey);
@@ -8868,20 +8852,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 			}
 		}
 	}, [persistState, sessionKey, transitionFlowStatus]);
-
-	// W2-31-A-31-3 fix: GDPR data self-service — lets the visitor wipe their
-	// saved answers (and the sessionStorage entry) without abandoning the
-	// current form state.
-	const handleClearSavedAnswers = React.useCallback(() => {
-		setHasSavedProgress(false);
-		if (typeof window !== "undefined") {
-			try {
-				window.sessionStorage.removeItem(sessionKey);
-			} catch (err: unknown) {
-				console.warn("BookingEngine: failed to clear saved progress.", err);
-			}
-		}
-	}, [sessionKey]);
 
 	const handleSlotReady = React.useCallback((payload?: BookingPayload) => {
 		if (!payload) {
@@ -9067,7 +9037,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		needsCalSetup,
 		needsNameEmailGuardrail,
 		normalizedSteps,
-		persistState,
 		persistTimerRef,
 		pickedDate,
 		prefersReducedMotion,
@@ -9137,10 +9106,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		valuesRef,
 		visibleMonth,
 		returnHomeUrl,
-		hasRequiredFields,
-		hasSavedProgress,
-		saveFailedOnce,
-		handleClearSavedAnswers,
 		regexPreviewVerdicts,
 		errorCopy,
 		fetchTimeoutMs,
@@ -9203,7 +9168,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		isSubmitting,
 		needsCalSetup,
 		needsNameEmailGuardrail,
-		persistState,
 		prefersReducedMotion,
 		primaryLabel,
 		progressAnimate,
@@ -9233,10 +9197,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		values,
 		visibleMonth,
 		returnHomeUrl,
-		hasRequiredFields,
-		hasSavedProgress,
-		saveFailedOnce,
-		handleClearSavedAnswers,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W1-02-F28/F29 + W2-23-N1 fixes: resolved author-tunable ICS
@@ -9764,15 +9724,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 				}}
 				style={{
 					position: "relative",
-					minHeight: 200,
-					// T10-H2 fix: the footer nav is sticky, so the
-					// step content needs room so the last fields
-					// never hide behind it while scrolling.
-					// W1-19-F-11 fix: 84px alone is not enough on
-					// notched iPhones — add the home-indicator
-					// safe area so the last field (and the sticky
-					// footer) clear the notch.
-					paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
 				}}
 			>
 				<AnimatePresence mode="popLayout" initial={false}>
@@ -9854,120 +9805,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					</AnimatedStepContent>
 				</AnimatePresence>
 			</form>
-
-			{/* T10-M2/T10-L1 fix: a one-line explanation of the required
-                marker plus the author-configured privacy notice (if any),
-                sitting under the fields where the visitor looks for
-                reassurance before submitting. Both render only when they
-                have something to say. */}
-		{/* W1-12-NEW-4 fix: a blank-authored notice no longer hides the
-        whole disclosure block when persistState is ON — the fallback
-        constant must render instead (consent gap). */}
-		{hasRequiredFields ||
-		(copy.privacyNotice || "").trim() ||
-		persistState ? (
-			<div
-				style={{
-					marginTop: 12,
-					fontSize: 12,
-					color: theme.textSecondaryColor,
-					lineHeight: 1.5,
-				}}
-			>
-				{hasRequiredFields ? <div>{copy.requiredFieldsHint}</div> : null}
-				{(copy.privacyNotice || "").trim() || persistState ? (
-					<div style={{ marginTop: hasRequiredFields ? 4 : 0 }}>
-						{/* W1-12-NEW-4 fix: blank-authored notice on a
-                            persistState-ON flow is a consent gap; the
-                            shared fallback constant keeps the disclosure
-                            when persistence is active. */}
-						{copy.privacyNotice ||
-							(persistState ? DEFAULT_COPY_PRIVACY_NOTICE : "")}
-					</div>
-				) : null}
-					{/* W2-31-A-31-2/A-31-3 fix: when persistence is enabled,
-                        expose the disclosure (privacyNotice) and the data
-                        self-service affordance; when a save failed (quota),
-                        say so instead of failing silently. */}
-					{persistState && hasSavedProgress ? (
-						/* biome-ignore lint/a11y/useSemanticElements: intentional
-                            polite status region (W1-10-N7). */
-						<div
-							// W1-10-N7 fix: the "answers are saved" notice
-							// appears/disappears dynamically (restore,
-							// clear) — a plain div left SR users silent.
-							// Polite status region announces the change
-							// without stealing focus.
-							role="status"
-							aria-live="polite"
-							aria-atomic="true"
-							style={{
-								marginTop: 4,
-								display: "flex",
-								alignItems: "center",
-								gap: 8,
-							}}
-						>
-							<span
-								style={{
-									fontSize: 11,
-									color: theme.textSecondaryColor,
-								}}
-							>
-								{copy.savedAnswersLabel ?? DEFAULT_COPY_SAVED_ANSWERS_LABEL}
-							</span>
-						<button
-							type="button"
-							onClick={handleClearSavedAnswers}
-							style={{
-								border: "none",
-								background: "none",
-								padding: 0,
-								margin: 0,
-								// W2-38 re-apply (lost during the
-								// StepBody/disclosure rewrite): the label
-								// alone was a ~15px-tall tap target, failing
-								// WCAG 2.5.5 (44×44) and 2.5.8 AA-minimum
-								// (24×24). Grow the hit box while keeping the
-								// small type.
-								minWidth: TOUCH_TARGET_MIN,
-								minHeight: TOUCH_TARGET_MIN,
-								display: "inline-flex",
-								alignItems: "center",
-								justifyContent: "center",
-								fontSize: 11,
-								color: theme.accentColor,
-								textDecoration: "underline",
-								cursor: "pointer",
-							}}
-						>
-							{copy.clearSavedAnswersLabel ??
-								DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL}
-						</button>
-						</div>
-					) : null}
-					{saveFailedOnce ? (
-						/* biome-ignore lint/a11y/useSemanticElements: intentional
-                            polite status region (W1-10-N6). */
-						<div
-							// W1-10-N6 fix: the save-failure notice appears
-							// only after a quota/JSON error — a silent div
-							// meant SR users never learned their answers
-							// were NOT being saved.
-							role="status"
-							aria-live="polite"
-							aria-atomic="true"
-							style={{
-								marginTop: 4,
-								fontSize: 11,
-								color: theme.errorColor,
-							}}
-						>
-							{copy.saveFailedMessage ?? DEFAULT_COPY_SAVE_FAILED_MESSAGE}
-						</div>
-					) : null}
-				</div>
-			) : null}
 
 			{/* Footer nav */}
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
@@ -10460,15 +10297,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	const isCoarsePointer = useCoarsePointer();
 	const selectFontSize = isCoarsePointer ? 16 : 14;
 
-	// W1-02-F6/F7 fix: resolved copy for the counter format and required
-	// marker (W1-02-F24 single-source: schema default === runtime
-	// fallback).
-	const characterCountTemplate =
-		copy.characterCountTemplate ?? DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE;
-	const requiredFieldMarker =
-		copy.requiredFieldMarker ?? DEFAULT_COPY_REQUIRED_FIELD_MARKER;
-
-	// W1-10-N2 fix: the timezone select id/labelFor and the slot-error
+	// W1-10-N2 fix: the timezone select id/labelFor and the slot-error,
 	// banner id must be scoped per StepBody instance — two BookingEngine
 	// instances on one page used to collide on these ids (the label and
 	// aria-describedby resolved against the first instance).
@@ -10523,12 +10352,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						borderRadius={borderRadius}
 						isTwoCol={isTwoCol}
 						onFieldChange={onFieldChange}
-						choiceGroupAriaLabel={ariaLabels.choiceGroup}
-						selectOptionLabel={copy.selectOptionLabel}
-						characterCountTemplate={characterCountTemplate}
-						requiredFieldMarker={requiredFieldMarker}
-						// W1-20-N1 fix: freeze authored fields during the POST.
-						isSubmitting={isSubmitting}
+					choiceGroupAriaLabel={ariaLabels.choiceGroup}
+					selectOptionLabel={copy.selectOptionLabel}
+					// W1-20-N1 fix: freeze authored fields during the POST.
+					isSubmitting={isSubmitting}
 					/>
 				))}
 			</div>
@@ -10849,8 +10676,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							onFieldChange={onFieldChange}
 							choiceGroupAriaLabel={ariaLabels.choiceGroup}
 							selectOptionLabel={copy.selectOptionLabel}
-							characterCountTemplate={characterCountTemplate}
-							requiredFieldMarker={requiredFieldMarker}
 							// W1-20-N1 fix: freeze authored fields during the POST.
 							isSubmitting={isSubmitting}
 						/>
@@ -11097,10 +10922,6 @@ interface FieldRendererProps {
 	// placeholder are copy-driven.
 	choiceGroupAriaLabel: string;
 	selectOptionLabel: string;
-	// W1-02-F6/F7 fix: counter format + required marker are copy-driven
-	// (engine resolves the copy fallbacks so this stays a plain string).
-	characterCountTemplate: string;
-	requiredFieldMarker: string;
 	// W1-20-N1 fix: freezes every input/choice/checkbox during the POST
 	// (threaded from StepBodyProps.isSubmitting).
 	isSubmitting?: boolean;
@@ -11119,8 +10940,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		onFieldChange,
 		choiceGroupAriaLabel,
 		selectOptionLabel,
-		characterCountTemplate,
-		requiredFieldMarker,
 		isSubmitting = false,
 	} = props;
 
@@ -11190,13 +11009,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		[field.id, onFieldChange],
 	);
 
-	const maxLen = effectiveMaxLength(field);
-	const currentLen = String(value ?? "").length;
-	// W1-10-N5 fix: the character counter is a live region — announced when
-	// it changes — and referenced from the input's aria-describedby so SR
-	// users get the count contextually, not as ambient chatter.
-	const counterId = `be-counter-${field.id}`;
-
 	const labelEl = (
 		<label
 			htmlFor={`be-field-${field.id}`}
@@ -11205,17 +11017,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				fontSize: 13,
 				fontWeight: 500,
 				color: theme.textPrimaryColor,
-				marginBottom: 6,
 			}}
 		>
 			{field.label}
-			{field.required ? (
-				<span style={{ color: theme.errorColor, marginLeft: 2 }}>
-					{/* W1-02-F7 fix: marker is copy-driven ("*" or
-                        "(required)"). */}
-					{requiredFieldMarker}
-				</span>
-			) : null}
 		</label>
 	);
 
@@ -11223,7 +11027,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		<div
 			id={`be-error-${field.id}`}
 			style={{
-				marginTop: 4,
 				color: theme.errorColor,
 				fontSize: 12,
 			}}
@@ -11237,6 +11040,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		gridColumn: field.width === "half" && isTwoCol ? "span 1" : "span 2",
 		display: "flex",
 		flexDirection: "column",
+		gap: 6,
 		minWidth: 0,
 	};
 
@@ -11303,52 +11107,22 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// W1-20-N1 fix: freeze during the POST — an edit after
 						// the payload snapshot would only land in state and
 						// vanish on success.
-						disabled={isSubmitting}
-						// T10-M4/T10-M5 fix: cap input length; also lets the
-						// counter below show a real ceiling.
-						maxLength={maxLen}
-						onChange={(e) => onFieldChange(field.id, e.target.value)}
-						aria-invalid={!!error}
-						aria-describedby={
-							error
-								? `be-error-${field.id} ${counterId}`
-								: counterId
-						}
-						rows={4}
-						ref={textareaRef}
-						style={{
-							...inputBaseStyle,
-							minHeight: 96,
-							resize: "vertical",
-							fontFamily: "inherit",
-						}}
-					/>
-					{/* T10-M5 fix: live character count so visitors know how
-                        much room is left before the cap bites. */}
-					{/* biome-ignore lint/a11y/useSemanticElements: intentional live
-                        counter region (W1-10-N5) referenced by the textarea's
-                        aria-describedby; <output> would imply form calc semantics. */}
-					<div
-						// W1-10-N5 fix: live region + referenced from the
-						// textarea's aria-describedby.
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-						id={counterId}
-						style={{
-							marginTop: 4,
-							textAlign: "right",
-							fontSize: 11,
-							color: theme.textSecondaryColor,
-						}}
-					>
-						{/* W1-02-F6 fix: format is copy-driven
-                            ({current}/{max} by default). */}
-						{characterCountTemplate
-							.replace("{current}", String(currentLen))
-							.replace("{max}", String(maxLen))}
-					</div>
-					{errorEl}
+					disabled={isSubmitting}
+					onChange={(e) => onFieldChange(field.id, e.target.value)}
+					aria-invalid={!!error}
+					aria-describedby={
+						error ? `be-error-${field.id}` : undefined
+					}
+					rows={4}
+					ref={textareaRef}
+					style={{
+						...inputBaseStyle,
+						minHeight: 96,
+						resize: "vertical",
+						fontFamily: "inherit",
+					}}
+				/>
+				{errorEl}
 				</div>
 			);
 		case "select":
@@ -11539,20 +11313,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 								cursor: "pointer",
 							}}
 						/>
-						<span>
-							{field.label}
-							{field.required ? (
-								<span
-									style={{
-										color: theme.errorColor,
-										marginLeft: 2,
-									}}
-								>
-									{/* W1-02-F7 fix: copy-driven marker. */}
-									{requiredFieldMarker}
-								</span>
-							) : null}
-						</span>
+						<span>{field.label}</span>
 					</label>
 					{errorEl}
 				</div>
@@ -11608,48 +11369,17 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// T5-H2 fix: no autocomplete hints at all - the
 						// browser's address bar remembers the visitor's
 						// details, but the form never asked for them.
-						autoComplete={autocompleteToken(field)}
-						// T10-M4 fix: unbounded input — cap by the per-field
-						// setting or the type's built-in default.
-						maxLength={maxLen}
-						// W1-20-N1 fix: freeze during the POST (see textarea).
-						disabled={isSubmitting}
-						onChange={(e) => onFieldChange(field.id, e.target.value)}
-						aria-invalid={!!error}
-						aria-describedby={
-							error
-								? `be-error-${field.id} ${counterId}`
-								: counterId
-						}
-						style={inputBaseStyle}
-					/>
-					{/* W1-20-M3 fix: the silently-capped text/email/phone
-                        inputs now show the same live counter the textarea
-                        already had, so visitors see input being truncated
-                        instead of wondering where their keystrokes went. */}
-					{/* biome-ignore lint/a11y/useSemanticElements: intentional live
-                        counter region (W1-10-N5) referenced by the input's
-                        aria-describedby; <output> would imply form calc semantics. */}
-					<div
-						// W1-10-N5 fix: live region + referenced from the
-						// input's aria-describedby.
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-						id={counterId}
-						style={{
-							marginTop: 4,
-							textAlign: "right",
-							fontSize: 11,
-							color: theme.textSecondaryColor,
-						}}
-					>
-						{/* W1-02-F6 fix: copy-driven format. */}
-						{characterCountTemplate
-							.replace("{current}", String(currentLen))
-							.replace("{max}", String(maxLen))}
-					</div>
-					{errorEl}
+					autoComplete={autocompleteToken(field)}
+					// W1-20-N1 fix: freeze during the POST (see textarea).
+					disabled={isSubmitting}
+					onChange={(e) => onFieldChange(field.id, e.target.value)}
+					aria-invalid={!!error}
+					aria-describedby={
+						error ? `be-error-${field.id}` : undefined
+					}
+					style={inputBaseStyle}
+				/>
+				{errorEl}
 				</div>
 			);
 	}
@@ -13507,6 +13237,11 @@ addPropertyControls(BookingEngine, {
 						title: "Too Short",
 						defaultValue: DEFAULT_VALIDATION_COPY.minLengthError,
 					},
+					maxLengthError: {
+						type: ControlType.String,
+						title: "Too Long",
+						defaultValue: DEFAULT_VALIDATION_COPY.maxLengthError,
+					},
 					pickDateTimeError: {
 						type: ControlType.String,
 						title: "No Time Picked",
@@ -13641,16 +13376,6 @@ addPropertyControls(BookingEngine, {
 		type: ControlType.String,
 		title: "ICS UID Domain",
 		defaultValue: DEFAULT_ICS_UID_DOMAIN,
-	},
-	// F-12-2 / W2-31-A-31-1 fix: explicit opt-in for saving visitor
-	// progress (and the PII it contains) to sessionStorage. Default OFF for
-	// GDPR/CCPA; when enabled, pair with the Privacy Notice copy control.
-	persistState: {
-		type: ControlType.Boolean,
-		title: "Save Progress in Browser",
-		defaultValue: false,
-		enabledTitle: "On — progress saved locally, cleared on finish",
-		disabledTitle: "Off — no visitor data stored",
 	},
 	// T10-L6 fix: destination of the success-screen "Done" link. Empty hides it.
 	returnHomeUrl: {
