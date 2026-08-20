@@ -7096,6 +7096,43 @@ function AnimatedStepContent(props: {
 	);
 }
 
+// In-session form snapshot. Step UI remounts (AnimatePresence keys,
+// Framer canvas remounts) must not wipe answers — this lives outside
+// any component instance. sessionStorage remains the reload path.
+type InSessionFormSnapshot = {
+	values: BookingValues;
+	currentIndex: number;
+	timeFormat: "12h" | "24h";
+};
+let inSessionFormSnapshot: InSessionFormSnapshot | null = null;
+
+function readSessionStorageSnapshot(key: string): InSessionFormSnapshot | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const raw = window.sessionStorage.getItem(key);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as {
+			v?: unknown;
+			values?: Record<string, unknown>;
+			timeFormat?: unknown;
+			currentIndex?: unknown;
+		};
+		if (!parsed || parsed.v !== 1 || typeof parsed !== "object") return null;
+		const restoredValues = (parsed.values || {}) as BookingValues;
+		const currentIndex =
+			typeof parsed.currentIndex === "number" && Number.isFinite(parsed.currentIndex)
+				? Math.max(0, parsed.currentIndex)
+				: 0;
+		const timeFormat =
+			parsed.timeFormat === "24h" || parsed.timeFormat === "12h"
+				? parsed.timeFormat
+				: "12h";
+		return { values: restoredValues, currentIndex, timeFormat };
+	} catch {
+		return null;
+	}
+}
+
 function useBookingEngineState(props: BookingEngineProps) {
 	const {
 		style,
@@ -7210,6 +7247,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// constants now — see be-spin / be-field-* / be-dt-scroll /
 	// be-calendar-grid-label / be-slot-error / be-timezone-select.
 	const persistState = true;
+	// Form-state lifetime is independent of step UI remounts AND of the
+	// hydration-safe instance id (that id increments every mount and must
+	// never be the sessionStorage key — a remount would miss the saved
+	// answers). One engine is visible per page; the key is stable.
 	const reactInstanceId = useHydrationSafeId("be-engine");
 	// F-12-4 fix: never write or restore on the Framer canvas / exports —
 	// persistence is a live-visitor feature only.
@@ -7508,7 +7549,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 	);
 	const totalActive = activeSteps.length;
 
-	const [currentIndex, setCurrentIndex] = useStateGuarded(0, totalActive);
+	const [currentIndex, setCurrentIndex] = useStateGuarded(
+		inSessionFormSnapshot?.currentIndex ??
+			readSessionStorageSnapshot("booking-engine:session")?.currentIndex ??
+			0,
+		totalActive,
+	);
 	// CC-8 fix: `useStateGuarded` only re-clamps when its setter is called —
 	// it does not retroactively clamp the already-committed state when
 	// `totalActive` shrinks on its own (e.g. an author disables a step
@@ -7564,8 +7610,15 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 	}
 
-	// Form state.
-	const [values, setValues] = React.useState<BookingValues>({});
+	// Form state. Seed from the in-session snapshot (survives step
+	// remounts) then sessionStorage (survives reloads). Never start empty
+	// when the visitor already typed answers this session.
+	const [values, setValues] = React.useState<BookingValues>(() => {
+		const snap =
+			inSessionFormSnapshot ??
+			readSessionStorageSnapshot("booking-engine:session");
+		return snap?.values ? { ...snap.values } : {};
+	});
 	const [errors, setErrors] = React.useState<Record<string, string | null>>({});
 	const [touched, setTouched] = React.useState<Record<string, boolean>>({});
 	const [flowStatus, setFlowStatus] = React.useState<FlowStatus>("in-progress");
@@ -7620,16 +7673,28 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// already got this treatment, so both choices persist the same way.
 	// (The visitor's own format choice is still persisted to sessionStorage
 	// below — that is a per-viewer preference, not an author preset.)
-	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">("12h");
+	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">(
+		() =>
+			inSessionFormSnapshot?.timeFormat ??
+			readSessionStorageSnapshot("booking-engine:session")?.timeFormat ??
+			"12h",
+	);
+
+	// Keep the module-level snapshot in lockstep so a remount (animation
+	// unmount, Framer canvas) rehydrates from memory, not empty useState.
+	React.useEffect(() => {
+		inSessionFormSnapshot = {
+			values,
+			currentIndex: safeCurrentIndex,
+			timeFormat,
+		};
+	}, [values, safeCurrentIndex, timeFormat]);
 
 	// Persisted-state restore. Opt-in (F-12-2); auto-generated instance ID.
 	// F-12-3 fix: payloads carry a schema version so a future shape change
 	// can migrate or purge instead of silently mis-restoring.
 	const PERSIST_SCHEMA_VERSION = 1;
-	const sessionKey = React.useMemo(
-		() => `booking-engine:${reactInstanceId}`,
-		[reactInstanceId],
-	);
+	const sessionKey = "booking-engine:session";
 	React.useEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
@@ -8251,21 +8316,24 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// Storing the trimmed value keeps validation, the POST payload and
 			// sessionStorage restore all in agreement. Textareas are exempted —
 			// multi-line content can legitimately carry leading indentation.
-			const sanitized =
-				typeof value === "string" && field?.fieldType !== "textarea"
-					? value.trim()
-					: value;
-			// Keep Continue's synchronous validation in lockstep with the input
-			// event. The effect below eventually mirrors React state into this
-			// ref, but a visitor can click Continue before that effect runs.
-			valuesRef.current = { ...valuesRef.current, [fieldId]: sanitized };
-			setValues((prev) => ({ ...prev, [fieldId]: sanitized }));
+			// Store the live input as typed. Trimming on every keystroke
+			// rewrote controlled values (eating spaces, fighting IME) and
+			// made fields look empty after remount if the last keystroke
+			// had been collapsed. Validation/submit still trim internally.
+			const nextValue = value;
+			valuesRef.current = { ...valuesRef.current, [fieldId]: nextValue };
+			inSessionFormSnapshot = {
+				values: valuesRef.current,
+				currentIndex: inSessionFormSnapshot?.currentIndex ?? 0,
+				timeFormat: inSessionFormSnapshot?.timeFormat ?? "12h",
+			};
+			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
 			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
 			// visitor who fixed what the error described kept seeing a stale
 			// error until the next submit attempt. Re-validate the single
 			// touched field immediately so errors clear (or appear) live.
 			if (!field) return;
-			const err = validateField(field, sanitized, validationCopy);
+			const err = validateField(field, nextValue, validationCopy);
 			setErrors((prev) => ({ ...prev, [fieldId]: err }));
 		},
 		[activeSteps, validationCopy],
@@ -10230,7 +10298,7 @@ interface StepBodyProps {
 	isSubmitting?: boolean;
 }
 
-const StepBody = React.memo(function StepBody(props: StepBodyProps) { console.log("StepBody rendering, values:", props.values);
+const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	const {
 		step,
 		steps,

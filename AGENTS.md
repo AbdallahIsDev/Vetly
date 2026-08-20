@@ -186,3 +186,5 @@ misinterprets an intentional absence or choice as an oversight.
 **Form state must persist across step navigation. Navigating Back, Continue, or between steps must never clear or reset previously entered values. Step UI lifecycle/remounting must not determine the lifetime of form data.**
 
 This is a **non-configurable core behavior**. It must not be removed or weakened by future optimization, refactoring, animation changes, or review passes. The form data must be kept in stable parent-level state that survives step unmounts/remounts. Never rely on the step component lifecycle for state preservation, and never reset the state upon entering a step.
+
+Do not key browser autosave with a per-mount incrementing instance id. Keep a stable sessionStorage key plus an in-session memory snapshot so remounts restore the same answers immediately. Do not trim or reinitialize field values on every keystroke or on step change.
