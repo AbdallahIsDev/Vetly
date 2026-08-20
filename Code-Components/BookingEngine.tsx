@@ -7073,6 +7073,10 @@ function AnimatedStepContent(props: {
 	if (isStatic) {
 		return <div style={{ position: "relative" }}>{props.children}</div>;
 	}
+	// Active step stays in document flow and sizes the form. An exiting
+	// step must leave flow immediately — AnimatePresence popLayout is
+	// overridden if we pin `position: relative` on the motion node, which
+	// left opacity-0 steps occupying height and intercepting hits.
 	return (
 		<motion.div
 			layout={!reducedMotion}
@@ -7080,7 +7084,13 @@ function AnimatedStepContent(props: {
 			animate={{ opacity: 1, y: 0 }}
 			exit={{ opacity: 0, y: -12 }}
 			transition={props.transition}
-			style={{ position: "relative" }}
+			style={{
+				position: isPresent ? "relative" : "absolute",
+				left: isPresent ? undefined : 0,
+				right: isPresent ? undefined : 0,
+				width: "100%",
+				pointerEvents: isPresent ? "auto" : "none",
+			}}
 			// W1-11-NEW-FIND-5 fix: aria-hidden only hides the exiting step
 			// from screen readers — Tab still reached its focusable elements
 			// during the ~16ms AnimatePresence exit window, and when the old
