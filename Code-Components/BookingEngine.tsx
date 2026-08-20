@@ -13302,9 +13302,3 @@ addPropertyControls(BookingEngine, {
 		placeholder: "https://your-site.com",
 	},
 });
-g,
-		title: "Return Home URL",
-		defaultValue: "",
-		placeholder: "https://your-site.com",
-	},
-});
