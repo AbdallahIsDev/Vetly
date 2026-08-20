@@ -98,6 +98,74 @@ visitor toggle, or disclosure/helper text for it ("saved answers", "clear my
 saved answers", privacy-notice-about-autosave, etc.). Keep the save/restore
 logic; never expose a way to turn it off.
 
+### 8. Time zone is always auto-detected from the end user's browser — never exposed as a control
+
+The booking engine's time zone is a **runtime, per-visitor concern** and must
+always be auto-detected from the end user's browser/locale via
+`detectTimezone()` (the `timeZone` state starts at `"UTC"` for SSR/hydration
+and swaps in the real IANA zone after mount). It must **never**:
+
+- Render a visible/manual Time Zone `<select>` for the visitor (in either the
+  working calendar view or the unavailable fallback).
+- Expose a "Time Zones" list control, or any manual/curated time-zone list,
+  in Framer Properties Controls.
+- Restore a previously saved/persisted time zone that could override
+  auto-detection (e.g. a stale `sessionStorage` zone from a different
+  location).
+
+The single auto-detected zone is what's sent to Cal.com's slots API (the
+`timeZone` query param) and what every formatting helper uses, so slots are
+always shown in the visitor's own local time regardless of the clinic/event's
+configured zone. Do not reintroduce `COMMON_TIMEZONES`, a `timezones`
+Properties-Controls array, a `timezoneOptions` list, or a time-zone change
+handler.
+
+### 9. Time format (12h/24h) stays an end-user-facing feature only — no "initial time format" preset
+
+The 12h/24h time-format toggle is a legitimate per-viewer preference and must
+remain available to the **end user** on the live widget. It must **never** be
+presettable or restricted from Framer Properties Controls: there is no
+"Initial Time Format" control, and the engine always defaults to 12h (the
+`timeFormat` state starts at `"12h"`). The visitor's own chosen format may be
+persisted to `sessionStorage` and restored — that is a per-viewer preference,
+not an author preset. Do not reintroduce a `defaultTimeFormat` prop or its
+property control.
+
+### 10. Back / Book Now buttons default to far-left / far-right; grouping is opt-in
+
+The footer navigation defaults to a **split layout**: the "Back" button sits
+far left and the step's primary action ("Continue"/"Book Now") sits far right
+— they are never adjacent by default. Grouping them side-by-side is **opt-in**
+via the `groupNavButtons` ("Group navigation buttons together") property
+control, which defaults to `false`. Do not change the default to grouped, and
+do not place the two buttons adjacent in the default layout.
+
+### 11. Step form state must persist on Back/Continue navigation within a session
+
+Entered form values live in engine-level state (`values`/`valuesRef`) and must
+be restored exactly when the visitor navigates Back or forward between steps
+**within the same session** — not just via autosave-to-browser on reload. Back
+navigation must never clear a previous step's entered data. This coexists with
+(and is independent of) the autosave-to-browser feature: autosave persists
+across page reloads, while in-session Back/forward restores from in-memory
+state even before a debounced autosave has fired. Do not reset `values` on
+step changes.
+
+### 12. The "unavailable booking" fallback is a normal state, not an error
+
+When the datetime step has no valid Cal.com API key + event ID on the
+published site, the component shows an "unavailable" notice. This is an
+**expected, normal state** (missing config), not an error. It must:
+
+- Use neutral/informational styling — never error/red tones and never
+  `role="alert"` (it is a `role="status"` informational message).
+- Keep the step heading ("Pick a Time") and description in the exact same
+  position/spacing as the working calendar state (directly under the progress
+  bar) — no extra gap above them.
+
+Do not restyle this fallback as alarming, do not color it with the error
+palette, and do not push the heading down to make room for it.
+
 ---
 
 ## Ongoing Documentation Habit
