@@ -911,7 +911,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 
 	const [measuredWidth, setMeasuredWidth] = React.useState<number>(320);
 	const [internalSelected, setInternalSelected] = React.useState<string>(() =>
-		getInitialSelection(parsedOptions, defaultValue),
+		controlledValue !== undefined ? getInitialSelection(parsedOptions, controlledValue) : getInitialSelection(parsedOptions, defaultValue),
 	);
 	const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
@@ -950,7 +950,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	React.useEffect(() => {
 		// Only re-seed internal state when uncontrolled.
 		if (controlledValue !== undefined) return;
-		const next = getInitialSelection(parsedOptions, defaultValue);
+		const next = controlledValue !== undefined ? getInitialSelection(parsedOptions, controlledValue) : getInitialSelection(parsedOptions, defaultValue);
 		React.startTransition(() => setInternalSelected(next));
 	}, [defaultValue, parsedOptions, controlledValue]);
 
@@ -1057,7 +1057,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		// the PREVIOUS options' value on every options edit (author
 		// tweaks options in Framer), re-stamping the parent's stored
 		// value with a stale label.
-		onChange?.(getInitialSelection(parsedOptions, defaultValue));
+		onChange?.(controlledValue !== undefined ? getInitialSelection(parsedOptions, controlledValue) : getInitialSelection(parsedOptions, defaultValue));
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [parsedOptions, controlledValue, defaultValue]);
 
@@ -5159,7 +5159,7 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 		(steps || [])
 			.map((step, stepIdx) => ({
 				...step,
-				id: step.id || `step-${stepIdx}`,
+				id: `step-${stepIdx}`,
 				enabled: step.enabled !== false,
 				stepType: step.stepType || "form",
 				title: step.title || `Step ${stepIdx + 1}`,
@@ -5167,7 +5167,7 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 				layout: step.layout || "single-column",
 				fields: (step.fields || []).map((field, fieldIdx) => ({
 					...field,
-					id: field.id || `step-${stepIdx}-field-${fieldIdx}`,
+					id: `step-${stepIdx}-field-${fieldIdx}`,
 					required: field.required !== false,
 					fieldType: field.fieldType || "text",
 					width: field.width || "full",
@@ -10230,7 +10230,7 @@ interface StepBodyProps {
 	isSubmitting?: boolean;
 }
 
-const StepBody = React.memo(function StepBody(props: StepBodyProps) {
+const StepBody = React.memo(function StepBody(props: StepBodyProps) { console.log("StepBody rendering, values:", props.values);
 	const {
 		step,
 		steps,

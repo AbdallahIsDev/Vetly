@@ -180,3 +180,9 @@ future agents to follow, not just a changelog entry.
 The purpose is to prevent regressions when a different AI agent (without the
 original conversation's context) later reviews or "improves" the code and
 misinterprets an intentional absence or choice as an oversight.
+
+### 13. Form state must persist across step navigation
+
+**Form state must persist across step navigation. Navigating Back, Continue, or between steps must never clear or reset previously entered values. Step UI lifecycle/remounting must not determine the lifetime of form data.**
+
+This is a **non-configurable core behavior**. It must not be removed or weakened by future optimization, refactoring, animation changes, or review passes. The form data must be kept in stable parent-level state that survives step unmounts/remounts. Never rely on the step component lifecycle for state preservation, and never reset the state upon entering a step.
