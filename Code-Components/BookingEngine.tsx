@@ -4809,7 +4809,16 @@ interface BookingEngineConfigProps {
 	// type), and be prepared to rotate it.
 	calApiKey: string;
 	calEventTypeId: string;
-	defaultTimeFormat: "12h" | "24h";
+	// TZ-TIME-HARD-RULE: the 12h/24h time format is a per-visitor runtime
+	// concern only. It must never be presettable from Properties Controls —
+	// the engine always defaults to 12h and lets the END USER toggle it on
+	// the live widget (see `timeFormat` state below). `defaultTimeFormat`
+	// was deliberately removed (see AGENTS.md hard rules).
+	//
+	// TZ-TIME-HARD-RULE: the visitor's time zone is ALWAYS auto-detected
+	// from the browser via `detectTimezone()`. There is no time-zone list,
+	// no manual time-zone selector, and no Properties-Controls time-zone
+	// control — `timezones` was deliberately removed (see AGENTS.md).
 	// W1-02-F1 fix (bundle 17): author-tunable Cal.com request timeout
 	// (both the availability GET and the booking POST use it). Defaults to
 	// 18000ms when the control hasn't been saved on an old instance.
@@ -4834,13 +4843,13 @@ interface BookingEngineConfigProps {
 	// W1-02-F29 fix: fallback UID domain used ONLY when crypto.randomUUID
 	// is unavailable (older browsers) — branding for the non-UUID UID path.
 	icsUidDomain?: string;
-	// W1-02-F3 fix: author-curated timezone picker list. Each entry maps a
-	// visitor-facing label to a canonical IANA timezone value. Absent (old
-	// canvases) or empty arrays fall back to the built-in COMMON_TIMEZONES.
-	timezones?: Array<{ label: string; value: string }>;
 	// T10-L6 fix: destination for the success screen's "Done" link. Empty
 	// value hides the link entirely.
 	returnHomeUrl: string;
+	// NAV-GROUP-TOGGLE: opt-in to placing the Back and primary (Continue /
+	// Book Now) buttons side-by-side. Default is FALSE, so Back sits far
+	// left and the primary action far right (see AGENTS.md hard rules).
+	groupNavButtons?: boolean;
 	// T10-M1 fix: analytics hook. The component fires a small set of events
 	// with serializable payloads - `step_complete`, `booking_submitted`,
 	// `booking_success`, `booking_error` - through this callback. No
@@ -4941,24 +4950,9 @@ const DEFAULT_DARK_THEME = {
 	borderRadius: "12px",
 };
 
-const COMMON_TIMEZONES = [
-	"America/New_York",
-	"America/Chicago",
-	"America/Denver",
-	"America/Los_Angeles",
-	"America/Sao_Paulo",
-	"Europe/London",
-	"Europe/Paris",
-	"Europe/Berlin",
-	"Europe/Madrid",
-	"Africa/Cairo",
-	"Asia/Dubai",
-	"Asia/Kolkata",
-	"Asia/Shanghai",
-	"Asia/Tokyo",
-	"Australia/Sydney",
-	"UTC",
-];
+// NOTE (TZ-TIME-HARD-RULE): the old `COMMON_TIMEZONES` list was removed
+// along with the "Time Zones" Properties-Controls array — the visitor's time
+// zone is now always auto-detected from the browser in code (see AGENTS.md).
 
 // Fixed-slot defaults. Each `stepN` / `stepNType` property control below
 // declares its `defaultValue` directly, inline, using these factories — kept
@@ -5076,20 +5070,6 @@ function detectTimezone(): string {
 	} catch {
 		return "UTC";
 	}
-}
-
-// SSR/hydration fix: detectTimezone() reads the visitor's Intl locale during
-// render — the server always returns "UTC" while the browser returns the real
-// IANA zone, so any markup rendered from it (timezone <option> text, calendar
-// date keys) mismatched the SSR HTML (React #425, "text content did not match
-// the initial render"). This hook returns the server-identical "UTC" for the
-// first render and swaps in the real value after hydration.
-function useDetectedTimeZone(): string {
-	const [tz, setTz] = React.useState<string>("UTC");
-	React.useEffect(() => {
-		setTz(detectTimezone());
-	}, []);
-	return tz;
 }
 
 // SSR/hydration fix: window.matchMedia("(pointer: coarse)") read during render
@@ -7138,9 +7118,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 		copy,
 		calApiKey,
 		calEventTypeId,
-		defaultTimeFormat,
-		timezones,
 		returnHomeUrl,
+		groupNavButtons,
 		onAnalytics,
 	} = props;
 
@@ -7150,29 +7129,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// path first; fall back to the legacy top-level prop for instances
 	// saved before the group was nested inside `copy`.
 	const validation = copy?.validation ?? props.validation;
-
-	// W1-02-F3 fix: author-curated timezone list for the datetime step's
-	// selector. Falls back to the built-in 16-entry list for canvases that
-	// never saved the control; individual malformed entries are dropped, and
-	// the detected-timezone option is still prepended at render time.
-	const timezoneOptions = React.useMemo(() => {
-		if (Array.isArray(timezones) && timezones.length > 0) {
-			const sanitized: Array<{ label: string; value: string }> = [];
-			for (const entry of timezones) {
-				if (entry && typeof entry.value === "string" && entry.value.trim()) {
-					sanitized.push({
-						label:
-							typeof entry.label === "string" && entry.label.trim()
-								? entry.label
-								: entry.value,
-						value: entry.value.trim(),
-					});
-				}
-			}
-			if (sanitized.length > 0) return sanitized;
-		}
-		return COMMON_TIMEZONES.map((tz) => ({ label: tz, value: tz }));
-	}, [timezones]);
 
 	// T4-H3 fix: author-configurable validation messages (Copy panel →
 	// Validation), threaded into validateField/validateStep. Defaults mirror
@@ -7631,25 +7587,40 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// `?? null` already widens `undefined` to `null`.
 	const selectedDate = pickedDate ?? values[SELECTED_SLOT_KEY]?.date ?? null;
 	const [visibleMonth, setVisibleMonth] = React.useState<Date | null>(null);
+	// TZ-TIME-HARD-RULE: the visitor's time zone is ALWAYS auto-detected
+	// from the browser (`detectTimezone()`). It is never user-selectable and
+	// never author-configurable — the visible Time Zone <select> and the
+	// Properties-Controls "Time Zones" list were removed (see AGENTS.md).
+	// This single source of truth flows into the Cal.com slots fetch (the
+	// `timeZone` query param) and every formatting helper, so a visitor in
+	// Cairo always sees slots in Africa/Cairo even when the clinic's Cal.com
+	// event is configured in America/New_York.
+	//
 	// SSR/hydration fix: the initializer used to call detectTimezone()
 	// during render — server saw "UTC", the visitor's browser saw the real
 	// IANA zone, diverging the SSR HTML from the first client render.
 	// Start at the server-identical "UTC"; the effect swaps in the real
-	// zone post-hydration (functional form keeps a later restore of saved
-	// progress authoritative over the swap).
+	// zone post-hydration. There is no saved-progress override anymore, so
+	// the functional-form guard just skips the swap if it already ran.
 	const [timeZone, setTimeZone] = React.useState<string>("UTC");
 	React.useEffect(() => {
 		setTimeZone((prev) => (prev === "UTC" ? detectTimezone() : prev));
 	}, []);
+	// TZ-TIME-HARD-RULE: the 12h/24h time format is a per-visitor runtime
+	// preference. It ALWAYS defaults to 12h and is controlled ONLY by the
+	// end user via the on-widget toggle in the time-slot picker. The
+	// Properties-Controls "Initial Time Format" preset was removed (see
+	// AGENTS.md); `defaultTimeFormat` no longer exists.
+	//
 	// Task 2 M6 fix: this was purely local state inside `DateAndTimeInline`
 	// before, which meant it reset back to the hardcoded "12h" default
 	// every time the visitor stepped away from the datetime step and back
 	// (each step's content unmounts on navigation), and obviously never
 	// survived a page refresh either. Lifted up alongside `timeZone`, which
 	// already got this treatment, so both choices persist the same way.
-	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">(() =>
-		defaultTimeFormat === "24h" ? "24h" : "12h",
-	);
+	// (The visitor's own format choice is still persisted to sessionStorage
+	// below — that is a per-viewer preference, not an author preset.)
+	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">("12h");
 
 	// Persisted-state restore. Opt-in (F-12-2); auto-generated instance ID.
 	// F-12-3 fix: payloads carry a schema version so a future shape change
@@ -7778,24 +7749,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 						);
 					}
 				}
-				// Task 2 M6 fix: restore the visitor's chosen timezone and
-				// 12h/24h format alongside their other in-progress answers,
-				// rather than silently reverting to the detected timezone
-				// and the "12h" default on refresh.
-				if (typeof parsed.timeZone === "string" && parsed.timeZone) {
-					// W1-07-F1 fix: a corrupted restore (invalid IANA tz
-					// string) used to sail into state and then 400 the
-					// slots fetch while the formatting helpers silently
-					// fell back — the visitor was stuck with no recovery.
-					// Validate at the boundary; an invalid string becomes
-					// the detected timezone, and the bad value never
-					// reaches the fetch URL.
-					setTimeZone(
-						isValidTimeZone(parsed.timeZone)
-							? parsed.timeZone
-							: detectTimezone(),
-					);
-				}
+				// TZ-TIME-HARD-RULE: time zone is never restored from saved
+				// progress — it is always freshly auto-detected from the
+				// browser on every load (the auto-detect effect above).
+				// Restoring a previously stored zone would re-introduce a
+				// manual override. Only the visitor's own 12h/24h format
+				// choice is restored (a per-viewer preference, not an
+				// author preset).
 				if (parsed.timeFormat === "12h" || parsed.timeFormat === "24h") {
 					setTimeFormat(parsed.timeFormat);
 				}
@@ -7908,7 +7868,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 						// separate top-level copy was ~76 bytes of dead weight
 						// per write.
 						values,
-						timeZone,
+						// TZ-TIME-HARD-RULE: time zone is deliberately NOT
+						// persisted — it is always re-detected from the
+						// browser on load. Persisting a zone (or restoring
+						// one) would re-introduce a manual override that
+						// could show the wrong wall-clock to a visitor who
+						// moved locations between sessions. Only the
+						// visitor's own time-format preference is saved.
 						timeFormat,
 						// T6-H2 fix: currentIndex was never persisted, so a
 						// refresh mid-flow silently dropped the visitor back to
@@ -7939,7 +7905,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 		sessionKey,
 		values,
 		flowStatus,
-		timeZone,
+		// TZ-TIME-HARD-RULE: `timeZone` is intentionally absent — it is no
+		// longer persisted, so it must not trigger persistence writes.
 		timeFormat,
 		safeCurrentIndex,
 		isStaticRender,
@@ -8892,10 +8859,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		(m: Date) => setVisibleMonth(m),
 		[],
 	);
-	const handleInlineTimeZoneChange = React.useCallback(
-		(tz: string) => setTimeZone(tz),
-		[],
-	);
+	// TZ-TIME-HARD-RULE: there is no time-zone change handler anymore —
+	// the zone is auto-detected from the browser and cannot be changed by
+	// the visitor or the author. `handleInlineTimeZoneChange` (and the
+	// `onTimeZoneChange` StepBody prop it fed) was removed.
 
 	// ===== render =====
 
@@ -8970,6 +8937,11 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const primaryLabel =
 		totalActive === 1 || isLast ? finalActionLabel : continueLabel;
 	const isSubmitting = flowStatus === "submitting";
+	// NAV-GROUP-TOGGLE: Back and the primary action default to a split layout
+	// (Back far-left, Continue/Book Now far-right). Grouping them side-by-side
+	// is an OPT-IN author choice via the `groupNavButtons` property control —
+	// never the default (see AGENTS.md hard rules).
+	const navGrouped = groupNavButtons === true;
 	// T9-M11 fix: the animate target was an inline object literal - a new
 	// reference every render forced framer-motion to re-evaluate the
 	// animation target on each keystroke. Memoized on the only thing
@@ -9002,7 +8974,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		counterText,
 		currentIndex,
 		currentStep,
-		defaultTimeFormat,
 		effectiveStepsConfig,
 		emptyStepWarnings,
 		errorColor,
@@ -9019,7 +8990,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		handleFieldChange,
 		handleInlineDateChange,
 		handleInlineMonthChange,
-		handleInlineTimeZoneChange,
 		handleJumpToStep,
 		handleRestart,
 		handleRetry,
@@ -9041,6 +9011,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		pickedDate,
 		prefersReducedMotion,
 		primaryLabel,
+		navGrouped,
 		progressAnimate,
 		progressBar,
 		progressBarStyle,
@@ -9096,7 +9067,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		themeSetting,
 		timeFormat,
 		timeZone,
-		timezoneOptions,
 		totalActive,
 		touched,
 		transition,
@@ -9156,7 +9126,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		handleFieldChange,
 		handleInlineDateChange,
 		handleInlineMonthChange,
-		handleInlineTimeZoneChange,
 		handleJumpToStep,
 		handleRestart,
 		handleRetry,
@@ -9170,6 +9139,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		needsNameEmailGuardrail,
 		prefersReducedMotion,
 		primaryLabel,
+		navGrouped,
 		progressAnimate,
 		progressBarStyle,
 		progressPct,
@@ -9191,7 +9161,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		theme,
 		timeFormat,
 		timeZone,
-		timezoneOptions,
 		totalActive,
 		touched,
 		values,
@@ -9779,18 +9748,18 @@ export default function BookingEngine(props: BookingEngineProps) {
 							availableDates={availableDates}
 							selectedDate={selectedDate}
 							visibleMonth={visibleMonth}
-							timeZone={timeZone}
-							timeFormat={timeFormat}
-							timezoneOptions={timezoneOptions}
-							copy={copy}
+						timeZone={timeZone}
+						timeFormat={timeFormat}
+						copy={copy}
 							ariaLabels={ariaLabels}
 							errorCopy={errorCopy}
 							onFieldChange={handleFieldChange}
 							onSlotReady={handleSlotReady}
-							onDateChange={handleInlineDateChange}
-							onMonthChange={handleInlineMonthChange}
-							onTimeZoneChange={handleInlineTimeZoneChange}
-							// W1-14-F3 fix: was an inline arrow — now the
+						onDateChange={handleInlineDateChange}
+						onMonthChange={handleInlineMonthChange}
+						// TZ-TIME-HARD-RULE: no `onTimeZoneChange` — the zone
+						// is auto-detected and cannot be changed by visitors.
+						// W1-14-F3 fix: was an inline arrow — now the
 							// stable handleTimeFormatChange so StepBody's
 							// React.memo holds between unrelated re-renders.
 							onTimeFormatChange={handleTimeFormatChange}
@@ -9810,13 +9779,17 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
                 steps instead of scrolling out of view; background matches
                 the root so content never shows through. */}
+			{/* NAV-GROUP-TOGGLE: default = split layout. Back sits far left and
+                the primary action far right (`justifyContent: space-between`
+                with a right-aligned action group). Only when the author opts
+                into `groupNavButtons` do they become adjacent (flex-end). */}
 			<div
 				style={{
 					display: "flex",
 					gap: 8,
 					marginTop: 24,
 					alignItems: "center",
-					justifyContent: "flex-end",
+					justifyContent: navGrouped || isFirst ? "flex-end" : "space-between",
 					position: "sticky",
 					bottom: 0,
 					zIndex: 10,
@@ -9853,6 +9826,20 @@ export default function BookingEngine(props: BookingEngineProps) {
 						{backLabel}
 					</button>
 				) : null}
+				{/* NAV-GROUP-TOGGLE: the primary action (plus the in-flight
+                    Cancel) live in a right-aligned group. In the default
+                    split layout the outer `space-between` pushes this group
+                    to the far right while Back stays far left; when the
+                    author opts into `groupNavButtons`, the whole row becomes
+                    `flex-end` so Back and this group sit side-by-side. */}
+				<div
+					style={{
+						display: "flex",
+						gap: 8,
+						alignItems: "center",
+						justifyContent: "flex-end",
+					}}
+				>
 				{/* W2-25-F11 fix: Cancel during an in-flight submission —
                     aborts the POST (abortControllerRef) and returns to the
                     review form instead of forcing the visitor to wait out
@@ -9950,6 +9937,7 @@ animation: prefersReducedMotion
 						primaryLabel
 					)}
 				</button>
+				</div>
 			</div>
 
 			{/* Fix #7: focus-visible ring for form inputs + namespaced spinner keyframes.
@@ -10217,13 +10205,14 @@ interface StepBodyProps {
 	/** W1-02-F4–F8 fix (bundle 17): merged error copy for the
 	 *  unconfigured-date-time notice (title + body). */
 	errorCopy: ErrorCopy;
-	/** W1-02-F3 fix: author-curated timezone list (label + IANA value). */
-	timezoneOptions: Array<{ label: string; value: string }>;
 	onFieldChange: (fieldId: string, value: string | boolean | undefined) => void;
 	onSlotReady: (payload?: BookingPayload) => void;
 	onDateChange: (d: Date) => void;
 	onMonthChange: (m: Date) => void;
-	onTimeZoneChange: (tz: string) => void;
+	// TZ-TIME-HARD-RULE: there is intentionally no `onTimeZoneChange` prop —
+	// the time zone is auto-detected from the browser and is not editable by
+	// visitors or authors (see AGENTS.md). `timezoneOptions` was removed for
+	// the same reason.
 	onTimeFormatChange: (fmt: "12h" | "24h") => void;
 	/** T10-H1 fix: review-step Edit links jump back to a given step. */
 	onJumpToStep: (stepIndex: number) => void;
@@ -10265,48 +10254,20 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		onSlotReady,
 		onDateChange,
 		onMonthChange,
-		onTimeZoneChange,
 		onTimeFormatChange,
 		onJumpToStep,
 		onRetrySlots,
 		hideDemoWhenUnconfigured,
 		errorCopy,
-		timezoneOptions,
 		engineWidth,
 		isSubmitting = false,
 	} = props;
 
-	// Task 2 M5 fix: `detectTimezone()` (an `Intl.DateTimeFormat` call) was
-	// previously invoked inside an IIFE in the middle of JSX, so it re-ran
-	// on every single render of this component — not just when the
-	// timezone selector was actually shown.
-	// SSR/hydration fix: it now runs inside the hook below as an effect, not
-	// during render, so the timezone <option> text matches the SSR HTML on
-	// first paint (the server and first client render both see "UTC").
-	const detectedTimeZone = useDetectedTimeZone();
-
-	// W1-01-F-06 fix: this used to run window.matchMedia("(pointer:
-	// coarse)") inline in the select's style object on every render —
-	// allocating a fresh MediaQueryList each time — while FieldRenderer
-	// wrapped the identical query in a useMemo. Mirror that: computed once
-	// for the mount (the visitor's pointer type won't change mid-session).
-	// SSR/hydration fix: matchMedia now runs in an effect (useCoarsePointer)
-	// rather than during render, so the SSR font size (14) matches the first
-	// client render — no #418 attribute mismatch, and touch devices still
-	// get the 16px iOS-zoom guard immediately after hydration.
-	const isCoarsePointer = useCoarsePointer();
-	const selectFontSize = isCoarsePointer ? 16 : 14;
-
-	// W1-10-N2 fix: the timezone select id/labelFor and the slot-error,
-	// banner id must be scoped per StepBody instance — two BookingEngine
-	// instances on one page used to collide on these ids (the label and
-	// aria-describedby resolved against the first instance).
-	// SSR/hydration fix: plain constants (see gridLabelId) — identical in
-	// the prerendered HTML and the client's first render. Scoping across
-	// multi-instance pages is sacrificed (duplicate ids) because any
-	// state-derived value mismatches Framer's prerendered HTML.
+	// W1-10-N2 fix: the slot-error banner id must be scoped per StepBody
+	// instance — two BookingEngine instances on one page used to collide on
+	// these ids (the label and aria-describedby resolved against the first
+	// instance). SSR/hydration fix: plain constant (see gridLabelId).
 	const slotErrorId = "be-slot-error";
-	const timezoneSelectId = "be-timezone-select";
 
 	// W1-11-A9 fix: the slots error banner announces (role="alert") but
 	// never took focus, so a keyboard/low-vision visitor had to hunt for
@@ -10486,26 +10447,39 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         already hard-errors; replace the interactive widget
                         with a dead-ended notice so visitors can't even pick
                         a fake slot. The demo grid stays for canvas editing. */}
-					{hideDemoWhenUnconfigured ? (
-						<div
-							role="alert"
-							style={{
-								padding: "14px 16px",
-								margin: "4px 0",
-								borderRadius: borderRadius,
-								background: withAlpha(theme.errorColor, 0.08),
-								border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
-								color: theme.textPrimaryColor,
-								fontSize: 14,
-								lineHeight: 1.5,
-							}}
-						>
-							<strong style={{ color: theme.errorColor }}>
-								{errorCopy.unavailableTitle}
-							</strong>
-							<div style={{ marginTop: 4 }}>{errorCopy.unavailableBody}</div>
+				{hideDemoWhenUnconfigured ? (
+					/* TZ-TIME-UNAVAILABLE-FIX: this "unavailable" state is a
+                       NORMAL, EXPECTED fallback (no Cal.com API config), NOT
+                       an error. It is deliberately styled as a neutral,
+                       informational status message — no error/red tones, no
+                       role="alert" alarm. It simply occupies the same slot
+                       the calendar widget would, so the step heading stays
+                       in its usual position directly under the progress bar.
+                       The heading is rendered by the parent above the form
+                       regardless of which branch shows here. */
+					<div
+						role="status"
+						aria-live="polite"
+						aria-atomic="true"
+						style={{
+							padding: "14px 16px",
+							margin: "4px 0",
+							borderRadius: borderRadius,
+							background: withAlpha(theme.textSecondaryColor, 0.08),
+							border: `1px solid ${withAlpha(theme.borderColor, 0.6)}`,
+							color: theme.textPrimaryColor,
+							fontSize: 14,
+							lineHeight: 1.5,
+						}}
+					>
+						<strong>{errorCopy.unavailableTitle}</strong>
+						<div style={{ marginTop: 4 }}>
+							<span style={{ color: theme.textSecondaryColor }}>
+								{errorCopy.unavailableBody}
+							</span>
 						</div>
-					) : (
+					</div>
+				) : (
 						<DateAndTimeInline
 							accentColor={theme.accentColor}
 							backgroundColor={theme.backgroundColor}
@@ -10582,69 +10556,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						{slotError}
 					</div>
 				) : null}
-				{/* Timezone selector */}
-				<div style={{ marginTop: 12 }}>
-					<label
-						// T5-H6 fix: the select had no accessible name
-						// (no htmlFor/id wiring, no aria-label), so
-						// screen readers announced an unnamed dropdown.
-						htmlFor={timezoneSelectId}
-						style={{
-							display: "block",
-							fontSize: 12,
-							color: theme.textSecondaryColor,
-							marginBottom: 4,
-						}}
-					>
-						{copy.timeZoneSelectLabel}
-					</label>
-					<select
-						// W1-10-N2 fix: id scoped per instance so the
-						// label above resolves on multi-instance pages.
-						id={timezoneSelectId}
-						// W1-11-A8 fix: the select was the one field
-						// control without the `.be-input` class, so it
-						// missed both the base suppression and the
-						// `.be-input:focus-visible` keyboard ring the
-						// CC-5/W1-11-A1 fix restored for every input.
-						className="be-input"
-						value={timeZone}
-						// W1-10-A11 fix: the datetime step is always
-						// required (the slot time only means something
-						// in this timezone), so the select now says so.
-						aria-required="true"
-						onChange={(e) => onTimeZoneChange(e.target.value)}
-						style={{
-							width: "100%",
-							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 12px",
-							borderRadius: borderRadius,
-							border: `1px solid ${theme.borderColor}`,
-							background: theme.surfaceColor,
-							color: theme.textPrimaryColor,
-							fontFamily: "inherit",
-							// W1-19-F-02 fix: same iOS zoom guard as the
-							// flow's field inputs (16px on coarse pointers).
-							// W1-01-F-06 fix: value is the memoized
-							// selectFontSize above — no per-render
-							// MediaQueryList allocation.
-							fontSize: selectFontSize,
-							cursor: "pointer",
-						}}
-					>
-						<option value={detectedTimeZone}>
-							{copy.detectedTimeZonePrefix}
-							{detectedTimeZone}
-						</option>
-						{timezoneOptions
-							.filter((opt) => opt.value !== detectedTimeZone)
-							.map((opt) => (
-								<option key={opt.value} value={opt.value}>
-									{opt.label}
-								</option>
-							))}
-					</select>
-				</div>
+				{/* TZ-TIME-HARD-RULE: the visible Time Zone selector was
+                    removed entirely. The time zone is auto-detected from the
+                    visitor's browser and applied to the calendar/slots in
+                    code — there is no manual <select> in either the working
+                    calendar view or the unavailable fallback, and no author
+                    list in Properties Controls (see AGENTS.md). */}
 			</div>
 		);
 
@@ -13287,37 +13204,26 @@ addPropertyControls(BookingEngine, {
 		title: "Cal.com Event ID",
 		defaultValue: "",
 	},
-	defaultTimeFormat: {
-		type: ControlType.Enum,
-		title: "Initial Time Format",
-		options: ["12h", "24h"],
-		optionTitles: ["12-hour", "24-hour"],
-		defaultValue: "12h",
-		displaySegmentedControl: true,
-	},
-	// W1-02-F3 fix: the datetime step's timezone dropdown used a fixed
-	// module-level list. Authors can now curate it per deployment — label is
-	// what visitors see, value is the IANA timezone sent to Cal.com. Old
-	// canvases without the control fall back to the built-in list at runtime.
-	timezones: {
-		type: ControlType.Array,
-		title: "Time Zones",
-		control: {
-			type: ControlType.Object,
-			controls: {
-				label: {
-					type: ControlType.String,
-					title: "Label",
-					defaultValue: "New York",
-				},
-				value: {
-					type: ControlType.String,
-					title: "IANA Value",
-					defaultValue: "America/New_York",
-				},
-			},
-		},
-		defaultValue: COMMON_TIMEZONES.map((tz) => ({ label: tz, value: tz })),
+	// TZ-TIME-HARD-RULE: the "Initial Time Format" control was removed — the
+	// 12h/24h format always defaults to 12h and is toggled by the END USER on
+	// the live widget (see AGENTS.md).
+	//
+	// TZ-TIME-HARD-RULE: the "Time Zones" list control was removed — the time
+	// zone is always auto-detected from the visitor's browser in code. No
+	// author list, no manual time-zone picker, no Framer user exposure (see
+	// AGENTS.md).
+	//
+	// NAV-GROUP-TOGGLE: opt into placing the Back and primary (Continue /
+	// Book Now) buttons side-by-side. Defaults to OFF, so Back sits far left
+	// and the primary action far right.
+	groupNavButtons: {
+		type: ControlType.Boolean,
+		title: "Group navigation buttons together",
+		defaultValue: false,
+		enabledTitle: "Grouped",
+		disabledTitle: "Split",
+		description:
+			"Default: Back on the far left, Continue/Book Now on the far right. Turn on to place them side-by-side.",
 	},
 	// W1-02-F1 fix (bundle 17): author-tunable Cal.com request timeout —
 	// applies to both the availability GET and the booking POST.
