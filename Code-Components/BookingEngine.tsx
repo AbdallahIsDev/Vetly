@@ -4607,8 +4607,16 @@ interface BookingEngineStyleProps {
 		borderRadius: string | number;
 	};
 	font: FramerFont;
-	// Animation
+	// Animation — variant (style) + duration (speed). Variant is the single
+	// source of truth for which of the 6 production concepts is used.
 	transition: Transition;
+	transitionVariant?:
+		| "fadeRise"
+		| "blurScale"
+		| "slide"
+		| "zoom"
+		| "verticalSlide"
+		| "blurSlide";
 }
 
 // ===== Copy =====
@@ -7061,14 +7069,18 @@ function buildCalendarDeepLink(
 // end states; initial={false} guarantees the first paint (including a restored
 // saved step) is already at the correct final opacity without flashing.
 //
-// Three genuinely different transition concepts (temporary selector):
-// 1 — Fade Rise (soft opacity + y, premium minimal)
-// 2 — Scale Depth (scale + opacity, subtle depth)
-// 3 — Slide Flow (horizontal x + opacity, direction-aware)
+// Six genuinely different production transition concepts.
 // All share the same deterministic isActive → position/opacity/pointerEvents
 // contract; only the interpolated values differ. `initial={false}` keeps first
-// paint correct, and `custom` carries navigation direction for slide.
-type TransitionVariantId = 1 | 2 | 3;
+// paint correct, and `custom` carries navigation direction for slide variants.
+// Variant names reflect what they actually do.
+type TransitionVariantId =
+	| "fadeRise"
+	| "blurScale"
+	| "slide"
+	| "zoom"
+	| "verticalSlide"
+	| "blurSlide";
 
 const TRANSITION_VARIANT_DEFS: Record<
 	TransitionVariantId,
@@ -7078,24 +7090,24 @@ const TRANSITION_VARIANT_DEFS: Record<
 		useDirection?: boolean;
 	}
 > = {
-	1: {
+	fadeRise: {
+		// Fade Rise — soft opacity + y, premium minimal
 		variants: {
 			active: { opacity: 1, y: 0 },
 			inactive: { opacity: 0, y: 8 },
 		},
 		transition: { duration: 0.32, ease: [0.25, 0.1, 0.25, 1] } as Transition,
 	},
-	2: {
+	blurScale: {
+		// Blur Scale — scale + blur + opacity, subtle depth (improved: 95% / 4px)
 		variants: {
 			active: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" },
-			inactive: { opacity: 0, scale: 0.97, y: 0, filter: "blur(2px)" },
+			inactive: { opacity: 0, scale: 0.95, y: 0, filter: "blur(4px)" },
 		},
 		transition: { type: "spring", stiffness: 320, damping: 28, mass: 0.9 } as Transition,
 	},
-	3: {
-		// Slide: direction-aware via `custom`. Active is always x:0; inactive
-		// slides left (-18) when navigating forward (custom>0) and right (+18)
-		// when navigating back, so the motion feels directional both ways.
+	slide: {
+		// Slide Flow — horizontal x + opacity, direction-aware
 		variants: {
 			active: { opacity: 1, x: 0, y: 0 },
 			inactive: (custom: number) => ({
@@ -7107,11 +7119,44 @@ const TRANSITION_VARIANT_DEFS: Record<
 		transition: { type: "spring", stiffness: 380, damping: 30 } as Transition,
 		useDirection: true,
 	},
+	zoom: {
+		// Zoom — scale only, no y/x, subtle pop
+		variants: {
+			active: { opacity: 1, scale: 1 },
+			inactive: { opacity: 0, scale: 0.92 },
+		},
+		transition: { type: "spring", stiffness: 360, damping: 26 } as Transition,
+	},
+	verticalSlide: {
+		// Vertical Slide — larger y distance than Fade Rise, spring
+		variants: {
+			active: { opacity: 1, y: 0 },
+			inactive: (custom: number) => ({
+				opacity: 0,
+				y: custom > 0 ? -24 : 24,
+			}),
+		} as unknown as Record<string, unknown>,
+		transition: { type: "spring", stiffness: 340, damping: 30 } as Transition,
+		useDirection: true,
+	},
+	blurSlide: {
+		// Blur Slide — x + blur + opacity, premium combination
+		variants: {
+			active: { opacity: 1, x: 0, filter: "blur(0px)" },
+			inactive: (custom: number) => ({
+				opacity: 0,
+				x: custom > 0 ? -20 : 20,
+				filter: "blur(4px)",
+			}),
+		} as unknown as Record<string, unknown>,
+		transition: { type: "spring", stiffness: 360, damping: 30 } as Transition,
+		useDirection: true,
+	},
 };
 
 function StepVisibilityWrapper(props: {
 	isActive: boolean;
-	transition: Transition;
+	baseTransition: Transition;
 	children: React.ReactNode;
 	// Diagnostic: step index for logging, not for identity (key is step.id).
 	stepIndex: number;
@@ -7126,8 +7171,8 @@ function StepVisibilityWrapper(props: {
 			<div
 				style={{
 					position: props.isActive ? "relative" : "absolute",
-					left: props.isActive ? undefined : 0,
-					right: props.isActive ? undefined : 0,
+					top: props.isActive ? undefined : 0,
+					left: 0,
 					width: "100%",
 					pointerEvents: props.isActive ? "auto" : "none",
 					opacity: props.isActive ? 1 : 0,
@@ -7140,17 +7185,25 @@ function StepVisibilityWrapper(props: {
 		);
 	}
 	const def = TRANSITION_VARIANT_DEFS[props.variant];
+	// Duration from the existing Step Transition control must affect every variant
+	const resolvedTransition = React.useMemo(() => {
+		if (reducedMotion) return INSTANT_TRANSITION;
+		const base = props.baseTransition as unknown as { duration?: number };
+		const d = typeof base?.duration === "number" && Number.isFinite(base.duration) ? base.duration : undefined;
+		if (d !== undefined) return { ...def.transition, duration: d } as Transition;
+		return def.transition;
+	}, [def.transition, props.baseTransition, reducedMotion]);
 	return (
 		<motion.div
 			variants={def.variants as never}
 			custom={def.useDirection ? props.direction : undefined}
 			initial={false}
 			animate={props.isActive ? "active" : "inactive"}
-			transition={reducedMotion ? INSTANT_TRANSITION : def.transition}
+			transition={resolvedTransition}
 			style={{
 				position: props.isActive ? "relative" : "absolute",
-				left: props.isActive ? undefined : 0,
-				right: props.isActive ? undefined : 0,
+				top: props.isActive ? undefined : 0,
+				left: 0,
 				width: "100%",
 				pointerEvents: props.isActive ? "auto" : "none",
 			}}
@@ -7241,6 +7294,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		styles,
 		font,
 		transition,
+		transitionVariant,
 		copy,
 		calApiKey,
 		calEventTypeId,
@@ -7403,6 +7457,21 @@ function useBookingEngineState(props: BookingEngineProps) {
 		? ({ type: "tween", duration: 0 } as const)
 		: transition ||
 			({ type: "tween", ease: "easeInOut", duration: 0.3 } as const);
+
+	const allowedTransitionVariants: TransitionVariantId[] = [
+		"fadeRise",
+		"blurScale",
+		"slide",
+		"zoom",
+		"verticalSlide",
+		"blurSlide",
+	];
+	const rawVariant = (transitionVariant ?? "fadeRise") as string;
+	const resolvedTransitionVariant: TransitionVariantId = (
+		allowedTransitionVariants as string[]
+	).includes(rawVariant)
+		? (rawVariant as TransitionVariantId)
+		: "fadeRise";
 
 	// Resolve colorMode → effective palette. "auto" uses the dark palette only
 	// when the visitor's OS reports prefers-color-scheme: dark. Default is light.
@@ -9223,6 +9292,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		stepAnnouncement,
 		stepTitleRef,
 		stepTransition,
+		resolvedTransitionVariant,
 		style,
 		styles,
 		submitError,
@@ -9239,6 +9309,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		totalActive,
 		touched,
 		transition,
+		transitionVariant,
 		transitionFlowStatus,
 		validationCopy,
 		values,
@@ -9325,6 +9396,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		stepAnnouncement,
 		stepTitleRef,
 		stepTransition,
+		resolvedTransitionVariant,
 		style,
 		submitError,
 		theme,
@@ -9454,11 +9526,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		});
 	}, [safeCurrentIndex, activeSteps, totalActive]);
 
-	// Temporary transition selector — three genuinely different concepts
-	// for evaluation. Not a permanent Framer control; remove after choice.
-	// Variant 1: Fade Rise (soft y), Variant 2: Scale Depth, Variant 3: Slide Flow (direction-aware x).
-	const [transitionVariant, setTransitionVariant] =
-		React.useState<TransitionVariantId>(1);
 	const prevNavDirectionRef = React.useRef<number>(safeCurrentIndex);
 	const navDirection =
 		safeCurrentIndex > prevNavDirectionRef.current
@@ -9953,6 +10020,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// for every step — not fixed height, grows naturally when
 					// content exceeds the minimum.
 					minHeight: 320,
+					overflow: "hidden",
 				}}
 			>
 				{activeSteps.map((step, idx) => {
@@ -9963,8 +10031,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 							isActive={isActive}
 							stepIndex={idx}
 							activeIndex={safeCurrentIndex}
-							transition={stepTransition}
-							variant={transitionVariant}
+							baseTransition={stepTransition}
+							variant={resolvedTransitionVariant}
 							direction={navDirection}
 						>
 							<h2
@@ -10042,71 +10110,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					);
 				})}
 			</form>
-
-			{/* Temporary transition selector — three genuinely different concepts for evaluation.
-			     Variant 1: Fade Rise (soft y), Variant 2: Scale Depth, Variant 3: Slide Flow (direction-aware).
-			     Clearly labeled, floating, not a permanent Framer control. Remove after production choice. */}
-			<div
-				style={{
-					position: "absolute",
-					top: 8,
-					right: 8,
-					zIndex: 50,
-					display: "flex",
-					alignItems: "center",
-					gap: 6,
-					padding: "6px 8px",
-					background: "rgba(255,255,255,0.97)",
-					border: "1px solid #e5e7eb",
-					borderRadius: 999,
-					boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
-					backdropFilter: "blur(8px)",
-				}}
-				aria-label="Transition selector (temporary debug)"
-			>
-				<span
-					style={{
-						fontSize: 10,
-						fontWeight: 700,
-						color: "#6b7280",
-						letterSpacing: 0.4,
-						marginRight: 2,
-					}}
-				>
-					TRANSITION
-				</span>
-				{[1, 2, 3].map((n) => (
-					<button
-						key={n}
-						type="button"
-						onClick={() => setTransitionVariant(n as TransitionVariantId)}
-						aria-pressed={transitionVariant === n}
-						aria-label={`Transition variant ${n}`}
-						style={{
-							width: 28,
-							height: 28,
-							borderRadius: 999,
-							border: "none",
-							background:
-								transitionVariant === n ? theme.accentColor : "#f3f4f6",
-							color: transitionVariant === n ? "#fff" : "#374151",
-							fontWeight: 700,
-							fontSize: 12,
-							cursor: "pointer",
-							boxShadow:
-								transitionVariant === n
-									? "0 2px 8px rgba(0,0,0,0.15)"
-									: "none",
-							transition: "all 0.18s ease",
-						}}
-					>
-						{n}
-					</button>
-				))}
-				<span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 2 }}>
-					(debug)
-				</span>
-			</div>
 
 			{/* Footer nav */}
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
@@ -12948,9 +12951,17 @@ addPropertyControls(BookingEngine, {
 	},
 
 	// ----- Animation -----
+	transitionVariant: {
+		type: ControlType.Enum,
+		title: "Step Transition",
+		options: ["fadeRise", "blurScale", "slide", "zoom", "verticalSlide", "blurSlide"],
+		optionTitles: ["Fade Rise", "Blur Scale", "Slide", "Zoom", "Vertical Slide", "Blur Slide"],
+		defaultValue: "fadeRise",
+		displaySegmentedControl: true,
+	},
 	transition: {
 		type: ControlType.Transition,
-		title: "Step Transition",
+		title: "Transition Duration",
 		defaultValue: { type: "tween", ease: "easeInOut", duration: 0.3 },
 	},
 

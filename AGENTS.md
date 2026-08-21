@@ -227,3 +227,11 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 ### 21. Animation architecture remains deterministic
 
 **Future animation work must preserve the deterministic active-step visibility architecture.** The active step is the single source of truth; every transition variant must resolve to `relative/1/auto` for active and `absolute/0/none` for inactive, regardless of direction or number of steps. Do not reintroduce `AnimatePresence`/`usePresence`/enter-flag state that can desynchronize, and do not use opacity/position recovery hacks. The temporary three-option transition selector is for evaluation only and must not be documented as a permanent feature.
+
+### 22. Step Transition control is the single source of truth for transition type
+
+**The `Step Transition` Property Control is the single source of truth for which of the six production transition concepts is used.** The six options are `Fade Rise`, `Blur Scale`, `Slide`, `Zoom`, `Vertical Slide`, and `Blur Slide` — each must be meaningfully distinct, not minor variations. Do not add a second control to select transition type, and do not reintroduce the temporary floating selector/debug UI. The existing `Transition Duration` ( `transition` ) Property Control's duration must control **every** variant visibly — increasing the configured duration must lengthen all six variants.
+
+### 23. Back and Forward transitions must be symmetric
+
+**Back navigation must be the proper reverse of Forward for every transition variant and every configured step.** Do not switch the outgoing step to `position: absolute` with hard-coded `left:0/right:0` (or equivalent) in a way that causes an immediate layout jump; the position/layout transition architecture must keep the outgoing step visually stable during the animation. Do not patch Back with timing hacks, direction-specific timeouts, or navigation-count fixes.
