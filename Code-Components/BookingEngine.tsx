@@ -456,6 +456,14 @@ const DEFAULT_COPY_REQUIRED_FIELD_MARKER = "*";
 // W1-02-F5 fix: the success-screen "Done" link and the font-stack fallback
 // were inline literals; now shared constants the schema and runtime share.
 const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
+// CONFIRM-ACTIONS: confirmation-state button labels moved into the Buttons
+// group. These constants are the control defaults AND the runtime fallbacks
+// for instances saved before the controls existed.
+const DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL = "Book another";
+const DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL = "Add to calendar";
+// CONFIRM-HOME-URL: default destination of the "Done" action — website root.
+// The success screen never auto-redirects (see AGENTS.md).
+const DEFAULT_CONFIRM_HOME_URL = "/";
 const DEFAULT_FONT_FAMILY = "Inter, system-ui, sans-serif";
 // SYN-03 fix: the in-flight POST cancel button used a hardcoded literal —
 // the only footer button not driven by buttonLabels.
@@ -4634,13 +4642,20 @@ interface BookingEngineCopyProps {
 		// undefined) keeps the Split layout — Back far left, primary action
 		// far right (see AGENTS.md hard rules).
 		groupNavButtons?: boolean;
+		// CONFIRM-ACTIONS: confirmation-state labels live in the Buttons
+		// group because they configure confirmation buttons. Defaults keep
+		// the pre-existing copy ("Done" / "Book another" / "Add to calendar").
+		doneLabel: string;
+		bookAnotherLabel: string;
+		addToCalendarLabel: string;
+		// CONFIRM-HOME-URL: destination of the explicit "Done" action.
+		// Default "/" (website root). The success screen never auto-redirects.
+		homeUrl: string;
 	};
 	// Copy (fix #20: configurable terminal-state strings)
 	copy: {
 		successTitle: string;
 		successSubtitle: string;
-		addToCalendarLabel: string;
-		restartLabel: string;
 		errorTitle: string;
 		errorSubtitle: string;
 		retryLabel: string;
@@ -4682,9 +4697,6 @@ interface BookingEngineCopyProps {
 		// T10-L1 fix: explanation of the required-field marker. Rendered
 		// whenever at least one field in the flow is required.
 		requiredFieldsHint: string;
-		// T10-L6 fix: label of the "return to home" link shown on the success
-		// screen. Rendered only when `returnHomeUrl` is configured.
-		returnHomeLabel: string;
 		// SYN-02 fix: GDPR/CCPA persistence disclosures — previously inline
 		// JSX literals, so they could not be localized. Rendered whenever
 		// persistState is ON / a save failed.
@@ -4836,11 +4848,6 @@ interface BookingEngineConfigProps {
 	// Google/Outlook deep links, and the success screen when the Cal.com
 	// slot carries no end.
 	defaultMeetingDurationMs?: number;
-	// T10-L6 fix: destination for the success screen's "Return Home" link.
-	// Defaults to the website root ("/") so returning home works out of the
-	// box. The success screen never auto-redirects — it stays visible until
-	// the visitor chooses an action.
-	returnHomeUrl: string;
 	// T10-M1 fix: analytics hook. The component fires a small set of events
 	// with serializable payloads - `step_complete`, `booking_submitted`,
 	// `booking_success`, `booking_error` - through this callback. No
@@ -7257,7 +7264,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		copy,
 		calApiKey,
 		calEventTypeId,
-		returnHomeUrl,
 		onAnalytics,
 	} = props;
 
@@ -7337,6 +7343,18 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// (moved out of the top-level props). `=== true` keeps the default
 	// Split layout for old instances that never set it.
 	const { continueLabel, backLabel, finalActionLabel, groupNavButtons } = buttonLabels;
+	// CONFIRM-ACTIONS: confirmation-state labels + home destination now live
+	// in the Buttons group. The `??` fallbacks cover instances saved before
+	// these controls existed — they mirror the Property-Control defaults so
+	// old canvases keep their exact previous copy.
+	const doneLabel = buttonLabels?.doneLabel ?? DEFAULT_COPY_RETURN_HOME_LABEL;
+	const bookAnotherLabel =
+		buttonLabels?.bookAnotherLabel ?? DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL;
+	const addToCalendarButtonLabel =
+		buttonLabels?.addToCalendarLabel ?? DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL;
+	// CONFIRM-HOME-URL: explicit "Done" destination. Empty string hides the
+	// Done button; default "/" keeps it working out of the box.
+	const homeUrl = buttonLabels?.homeUrl ?? DEFAULT_CONFIRM_HOME_URL;
 
 	// Autosave-to-browser is a permanent, always-on product feature —
 	// never an author toggle and never paired with disclosure UI.
@@ -9250,7 +9268,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		values,
 		valuesRef,
 		visibleMonth,
-		returnHomeUrl,
+		doneLabel,
+		bookAnotherLabel,
+		addToCalendarButtonLabel,
+		homeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
@@ -9336,7 +9357,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 		touched,
 		values,
 		visibleMonth,
-		returnHomeUrl,
+		doneLabel,
+		bookAnotherLabel,
+		addToCalendarButtonLabel,
+		homeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
@@ -9528,8 +9552,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 					onRestart={handleRestart}
 					successTitle={copy.successTitle}
 					successSubtitle={copy.successSubtitle}
-					addToCalendarLabel={copy.addToCalendarLabel}
-					restartLabel={copy.restartLabel}
+					// CONFIRM-ACTIONS: confirmation button labels come from
+					// the Buttons group now.
+					addToCalendarLabel={addToCalendarButtonLabel}
+					bookAnotherLabel={bookAnotherLabel}
+					doneLabel={doneLabel}
+					homeUrl={homeUrl}
 					timeZone={timeZone}
 					timeZoneLabel={copy.timeZoneLabel}
 					icsSummaryLabel={copy.icsSummaryLabel}
@@ -9537,8 +9565,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					timeLabel={copy.timeLabel}
 					googleCalendarLabel={copy.googleCalendarLabel}
 					outlookCalendarLabel={copy.outlookCalendarLabel}
-					returnHomeLabel={copy.returnHomeLabel}
-					returnHomeUrl={returnHomeUrl}
 					// W1-02-F9–F16 fix: confirmation reference + manage link
 					// labels and the .ics/notes copy are author-localisable.
 					confirmationNumberLabel={copy.confirmationNumberLabel}
@@ -9551,6 +9577,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// W2-23-N1 fix: author-tunable fallback meeting duration
 					// (ICS + deep links).
 					meetingDurationMs={meetingDurationMs}
+					// CONFIRM-ICON-ANIM: the confirmation circle reuses the
+					// selected Transition Type family and its timing — no
+					// second transition control.
+					transitionVariant={resolvedTransitionVariant}
+					baseTransition={stepTransition}
 				/>
 			</RootShell>
 		);
@@ -11577,8 +11608,16 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	onRestart: () => void;
 	successTitle: string;
 	successSubtitle: string;
+	// CONFIRM-ACTIONS: labels come from the Buttons group now.
 	addToCalendarLabel: string;
-	restartLabel: string;
+	bookAnotherLabel: string;
+	doneLabel: string;
+	// CONFIRM-HOME-URL: explicit "Done" destination (empty → hidden).
+	homeUrl: string;
+	// CONFIRM-ICON-ANIM: the circle's entrance reuses the selected
+	// Transition Type family + the existing Transition timing control.
+	transitionVariant: TransitionVariantId;
+	baseTransition: Transition;
 	// T3-I3 fix: the timezone the visitor booked in (selected TZ, not
 	// browser TZ) plus the label copy that marks the time as "their" time.
 	timeZone: string;
@@ -11591,9 +11630,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	// T10-H5 fix: labels of the Google Calendar / Outlook deep-link buttons.
 	googleCalendarLabel: string;
 	outlookCalendarLabel: string;
-	// T10-L6 fix: "return to home" link. `returnHomeUrl` empty → hidden.
-	returnHomeLabel: string;
-	returnHomeUrl: string;
 	// W1-02-F9–F23 fix: confirmation reference, manage link, .ics and
 	// notes-section copy are author-localisable.
 	confirmationNumberLabel: string;
@@ -11621,7 +11657,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		successTitle,
 		successSubtitle,
 		addToCalendarLabel,
-		restartLabel,
+		bookAnotherLabel,
+		doneLabel,
+		homeUrl,
+		transitionVariant,
+		baseTransition,
 		timeZone,
 		timeZoneLabel,
 		icsSummaryLabel,
@@ -11629,8 +11669,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		timeLabel,
 		googleCalendarLabel,
 		outlookCalendarLabel,
-		returnHomeLabel,
-		returnHomeUrl,
 		confirmationNumberLabel,
 		rescheduleOrCancelLabel,
 		notesSelectedTimeLabel,
@@ -11650,10 +11688,41 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		headingRef.current?.focus();
 	}, []);
 
-	// W1-18-N2 fix: the checkmark previously appeared instantly — a brief
-	// scale/fade entrance makes the confirmation feel celebratory. Gated
-	// on prefers-reduced-motion (fade-only, no transform, short duration).
+	// CONFIRM-ICON-ANIM: two-stage confirmation reveal.
+	// Stage 1 — the green circle enters using the SAME transition family the
+	// author selected via the existing "Transition Type" control (fade rise,
+	// blur scale, slide, zoom, …) timed by the existing "Transition" control.
+	// No second transition-type control exists; this is a pure consumer of
+	// TRANSITION_VARIANT_DEFS, so a blur-based step transition produces a
+	// blur-style circle reveal, etc.
+	// Stage 2 — after the circle lands, the check mark draws itself as an
+	// SVG path (pathLength 0 → 1).
+	// Static canvas/export renders and prefers-reduced-motion visitors get
+	// the final state without motion (short fade at most), as everywhere else.
+	const isStaticRender = useIsStaticRenderer();
 	const reducedMotion = useReducedMotion();
+	const variantDef = TRANSITION_VARIANT_DEFS[transitionVariant];
+	const circleHidden = React.useMemo(() => {
+		const raw: unknown = variantDef.variants.inactive;
+		const resolved =
+			typeof raw === "function" ? (raw as (c: number) => unknown)(1) : raw;
+		return resolved as never;
+	}, [variantDef]);
+	const circleShown = variantDef.variants.active as never;
+	// Same duration-override rule StepVisibilityWrapper uses: the configured
+	// Transition control's duration must drive every variant.
+	const circleTransition = React.useMemo(() => {
+		if (reducedMotion || isStaticRender) return INSTANT_TRANSITION;
+		const base = baseTransition as unknown as { duration?: number };
+		const d =
+			typeof base?.duration === "number" && Number.isFinite(base.duration)
+				? base.duration
+				: undefined;
+		if (d !== undefined)
+			return { ...variantDef.transition, duration: d } as Transition;
+		return variantDef.transition;
+	}, [baseTransition, isStaticRender, reducedMotion, variantDef]);
+	const animateCheck = !isStaticRender && !reducedMotion;
 
 	// Build a label/value summary from every form step's fields.
 	const entries: Array<{ id?: string; label: string; value: string }> = [];
@@ -11789,7 +11858,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
             live region (CC-6) announcing the success screen; <output> is not
             a screen-level alert container. */
 		<div role="status" aria-live="assertive" aria-atomic="true">
-			{/* Circle with checkmark — centered, on top */}
+			{/* CONFIRM-ICON-ANIM: Circle with checkmark — centered, on top.
+                    The container enters via the selected Transition Type
+                    family; the check then draws itself as an SVG path.
+                    Static renders paint the final state (initial={false}). */}
 			<div
 				style={{
 					display: "flex",
@@ -11798,9 +11870,17 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				}}
 			>
 				<motion.div
-					initial={reducedMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
-					animate={reducedMotion ? { opacity: 1 } : { scale: 1, opacity: 1 }}
-					transition={{ duration: reducedMotion ? 0.15 : 0.35, ease: "easeOut" }}
+					initial={
+						isStaticRender
+							? false
+							: reducedMotion
+								? { opacity: 0 }
+								: circleHidden
+					}
+					animate={
+						isStaticRender || reducedMotion ? { opacity: 1 } : circleShown
+					}
+					transition={reducedMotion ? { duration: 0.15 } : circleTransition}
 				>
 				<div
 					style={{
@@ -11831,7 +11911,22 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						aria-hidden="true"
 						role="presentation"
 					>
-						<polyline points="20 6 9 17 4 12" />
+						{animateCheck ? (
+							// Stage 2: path-drawing reveal — the stroke grows
+							// from its start point once the circle has landed.
+							<motion.path
+								d="M20 6 9 17 4 12"
+								initial={{ pathLength: 0 }}
+								animate={{ pathLength: 1 }}
+								transition={{
+									delay: 0.3,
+									duration: 0.45,
+									ease: "easeOut",
+								}}
+							/>
+						) : (
+							<path d="M20 6 9 17 4 12" />
+						)}
 					</svg>
 				</div>
 				</motion.div>
@@ -11913,12 +12008,17 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				))}
 			</div>
 
+			{/* CONFIRM-ACTIONS: confirmation actions are right-aligned to
+                match the footer nav's primary-action side. Order within the
+                group: calendar/manage secondaries, then Done, then the
+                accent-filled "Book another" as the far-right primary. */}
 			<div
 				style={{
 					display: "flex",
 					gap: 8,
 					flexWrap: "wrap",
 					alignItems: "center",
+					justifyContent: "flex-end",
 				}}
 			>
 				{icsUri ? (
@@ -12030,6 +12130,32 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						{rescheduleOrCancelLabel}
 					</a>
 				) : null}
+				{/* CONFIRM-ACTIONS: "Done" sits immediately to the left of
+                    the primary action. Explicit visitor navigation only —
+                    the success screen never auto-redirects. Hidden when the
+                    author clears Home URL. */}
+				{homeUrl ? (
+					<a
+						href={homeUrl}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							minHeight: TOUCH_TARGET_MIN,
+							padding: "10px 18px",
+							borderRadius: borderRadius,
+							border: `1px solid ${borderColor}`,
+							background: "transparent",
+							color: textSecondaryColor,
+							fontFamily: "inherit",
+							fontSize: 14,
+							fontWeight: 600,
+							textDecoration: "none",
+							cursor: "pointer",
+						}}
+					>
+						{doneLabel}
+					</a>
+				) : null}
 				<button
 					type="button"
 					onClick={onRestart}
@@ -12049,33 +12175,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						cursor: "pointer",
 					}}
 				>
-					{restartLabel}
+					{bookAnotherLabel}
 				</button>
-				{/* T10-L6 fix: optional "return to home / done" link — only
-                    rendered when the author configured a destination URL. */}
-				{returnHomeUrl ? (
-					<a
-						href={returnHomeUrl}
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${borderColor}`,
-							background: "transparent",
-							color: textSecondaryColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
-							textDecoration: "none",
-							cursor: "pointer",
-						}}
-					>
-						{/* W1-02-F5 fix: shared constant fallback (was inline "Done"). */}
-						{returnHomeLabel ?? DEFAULT_COPY_RETURN_HOME_LABEL}
-					</a>
-				) : null}
 			</div>
 		</div>
 	);
@@ -12713,9 +12814,12 @@ addPropertyControls(BookingEngine, {
 				defaultValue: "Book Now",
 			},
 			// SYN-03 fix: cancel affordance during an in-flight submission.
+			// The button only appears while the booking POST is in flight;
+			// clicking it aborts the request and returns to the review step.
+			// Short "Cancel" title so it never truncates in the panel.
 			cancelSubmitLabel: {
 				type: ControlType.String,
-				title: "Cancel Submit",
+				title: "Cancel",
 				defaultValue: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
 			},
 			// NAV-GROUP-TOGGLE: the grouping control belongs to the
@@ -12728,6 +12832,33 @@ addPropertyControls(BookingEngine, {
 				defaultValue: false,
 				enabledTitle: "Grouped",
 				disabledTitle: "Split",
+			},
+			// CONFIRM-ACTIONS: confirmation-state button labels. Same group
+			// as every other button label — no standalone group.
+			doneLabel: {
+				type: ControlType.String,
+				title: "Done",
+				defaultValue: DEFAULT_COPY_RETURN_HOME_LABEL,
+			},
+			bookAnotherLabel: {
+				type: ControlType.String,
+				title: "Book Another",
+				defaultValue: DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL,
+			},
+			addToCalendarLabel: {
+				type: ControlType.String,
+				title: "Add to Calendar",
+				defaultValue: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+			},
+			// CONFIRM-HOME-URL: destination of the explicit "Done" action on
+			// the confirmation screen. Default "/" = website root. The
+			// success screen NEVER auto-redirects — it stays visible until
+			// the visitor chooses an action; clearing the URL hides Done.
+			homeUrl: {
+				type: ControlType.String,
+				title: "Home URL",
+				defaultValue: DEFAULT_CONFIRM_HOME_URL,
+				placeholder: "/ or https://your-site.com",
 			},
 		},
 	},
@@ -12879,33 +13010,20 @@ addPropertyControls(BookingEngine, {
 		icon: "object",
 		buttonTitle: "Copy",
 		controls: {
+			// CONFIRM-COPY: heading carries the outcome ("Successfully"),
+			// subtitle carries the next step — the two never repeat the
+			// same message (see AGENTS.md).
 			successTitle: {
 				type: ControlType.String,
 				title: "Success Title",
-				defaultValue: "Booking confirmed",
+				defaultValue: "Booking successfully confirmed",
 			},
 			successSubtitle: {
 				type: ControlType.String,
 				title: "Success Subtitle",
-				// this component never sends email itself — that
-				// was only ever true on the real Cal.com success path, and
-				// even then only because Cal.com sends it, not this
-				// component. The old default text made a promise this
-				// component can't keep on pure-form flows or when Cal.com
-				// isn't configured, silently converting a missing
-				// integration into deception.
-				defaultValue: "Your booking is confirmed.",
+				defaultValue:
+					"Your appointment details are below — add them to your calendar.",
 				displayTextArea: true,
-			},
-			addToCalendarLabel: {
-				type: ControlType.String,
-				title: "Add to Calendar",
-				defaultValue: "Add to calendar",
-			},
-			restartLabel: {
-				type: ControlType.String,
-				title: "Restart",
-				defaultValue: "Book another",
 			},
 			errorTitle: {
 				type: ControlType.String,
@@ -13066,13 +13184,8 @@ addPropertyControls(BookingEngine, {
 				defaultValue: DEFAULT_COPY_SAVE_FAILED_MESSAGE,
 				displayTextArea: true,
 			},
-			// T10-L6 fix: label of the success-screen "Done" link.
-			returnHomeLabel: {
-				type: ControlType.String,
-				title: "Return Home Label",
-				// W1-02-F5 fix: shared constant (was an inline "Done").
-				defaultValue: DEFAULT_COPY_RETURN_HOME_LABEL,
-			},
+			// CONFIRM-ACTIONS: the "Done" label moved to the Buttons group
+			// (doneLabel) together with Home URL — see the Buttons group.
 			// W1-02-F9–F23 fix (bundle 14): the remaining visitor-facing
 			// strings. Defaults share the same constants the runtime
 			// fallbacks use (see the W1-02-F24 note above the constants).
@@ -13450,11 +13563,15 @@ addPropertyControls(BookingEngine, {
 		title: "Cal.com API Key",
 		defaultValue: "",
 		obscured: true,
+		// CONFIRM-CRED-PLACEHOLDER: tells the author where the key comes
+		// from without shipping a real-looking credential.
+		placeholder: "Paste your key — Cal.com → Settings → Developer",
 	},
 	calEventTypeId: {
 		type: ControlType.String,
 		title: "Cal.com Event ID",
 		defaultValue: "",
+		placeholder: "Numeric ID from your Cal.com event type URL",
 	},
 	// TZ-TIME-HARD-RULE: the "Initial Time Format" control was removed — the
 	// 12h/24h format always defaults to 12h and is toggled by the END USER on
@@ -13486,14 +13603,8 @@ addPropertyControls(BookingEngine, {
 		max: 8 * 60 * 60 * 1000,
 		step: 5 * 60 * 1000,
 	},
-	// T10-L6 fix: destination of the success-screen "Return Home" link.
-	// Defaults to the website root ("/") so returning home works out of
-	// the box. The success screen NEVER auto-redirects — it stays visible
-	// until the visitor chooses an action.
-	returnHomeUrl: {
-		type: ControlType.String,
-		title: "Return Home URL",
-		defaultValue: "/",
-		placeholder: "/ or https://your-site.com",
-	},
+	// CONFIRM-HOME-URL: the former top-level "Return Home URL" control now
+	// lives in the Buttons group as "Home URL" (buttonLabels.homeUrl), next
+	// to the Done label it configures. Same default ("/") and same explicit
+	// visitor-action behavior — no auto-redirect (see AGENTS.md).
 });

@@ -259,3 +259,24 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 ### 29. Return Home URL is author-facing; success never auto-redirects
 
 **`Return Home URL` is an author-facing Property Control for a real visitor-facing navigation destination, and it defaults to the website root (`"/"`).** A successful booking must **show the success/result screen** (with its actions) and must **never automatically redirect** — the result screen stays visible until the visitor chooses an action, and only the "Return Home" button navigates to the configured URL. Do not reintroduce an empty default that hides the link, and do not add any auto-redirect after booking.
+
+### 30. Confirmation copy: heading and subtitle never repeat each other
+
+**The confirmation heading and subtitle must communicate different information.** The heading states the outcome and contains the word **"Successfully"** (default: "Booking successfully confirmed"); the subtitle tells the visitor what happens/what to do next (default: "Your appointment details are below — add them to your calendar."). Do not reintroduce duplicate message pairs like "Booking confirmed" + "Your booking is confirmed.", and do not promise email delivery the component cannot guarantee.
+
+### 31. Confirmation actions: right-aligned, explicit Done, no auto-redirect
+
+**Confirmation-state actions render in a right-aligned group (matching the footer's primary-action side).** Within the group, the accent-filled primary action is **"Book another"** at the far right, and **"Done" sits immediately to its left**; calendar/manage secondaries sit to Done's left. Navigating home is an **explicit visitor action only** — the confirmation screen stays visible until the visitor chooses an action. This refines (does not replace) rules 10 and 29.
+
+### 32. Confirmation button labels and Home URL live in the Buttons group
+
+**`Done` (`doneLabel`), `Book Another` (`bookAnotherLabel`), `Add to Calendar` (`addToCalendarLabel`), and `Home URL` (`homeUrl`) are controls inside the existing Buttons Property Control group (`buttonLabels`) — not a standalone group and not top-level controls.** Defaults preserve the previous copy ("Done" / "Book another" / "Add to calendar", home URL "/"). Runtime fallbacks mirror these defaults so instances saved before the move keep their behavior. Rule 29's behavior requirements are unchanged; note the control is now labeled "Home URL" inside Buttons.
+
+### 33. Confirmation-circle animation reuses Transition Type; check mark draws itself
+
+**The green confirmation circle's entrance must reuse the existing `Transition Type` selection (`TRANSITION_VARIANT_DEFS[transitionVariant]`) and the existing `Transition` timing control — including its duration override — exactly like step visibility does.** After the circle lands, the check mark animates as an SVG path draw (`pathLength` 0 → 1). Do not create a second transition-type control for the confirmation state, do not hard-code an unrelated animation family, and keep static-render/reduced-motion visitors at the final state (short fade at most).
+
+### 34. Cal.com API Base URL stays author-facing
+
+**`Cal.com API Base URL` (`calApiBaseUrl`, default `https://api.cal.com`) remains an exposed Property Control** because self-hosted Cal.com deployments point at a different origin — something only the site author knows. It feeds both Cal.com calls (slots GET and booking POST) with trailing slashes stripped at the use site. Unlike rule 26's internals, this is deployment configuration, not implementation detail; do not hard-code it.
+
