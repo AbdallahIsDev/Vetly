@@ -2081,43 +2081,46 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						</span>
 					</h3>
 				</div>
-				<div
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					// W2-40 fix: compact header — the nav controls sit close
+					// to the month title (was 24px wide, halved to 12px on
+					// narrow). Fixed 16px keeps them balanced everywhere.
+					gap: 16,
+				}}
+			>
+				<button
+					type="button"
+					aria-label={previousMonthAriaTemplate.replace(
+						"{month}",
+						prevMonthLabel,
+					)}
+					onClick={() => onPrevMonth()}
+					disabled={!canGoPrev}
+					tabIndex={0}
 					style={{
-						display: "flex",
+						appearance: "none",
+						background: "transparent",
+						color: canGoPrev ? textColor : mutedSoftText,
+						border: "none",
+						// F-17-3 fix: was 6.
+						borderRadius,
+						// W2-40 fix: compact 32px control (still ≥ the 24px
+						// WCAG 2.5.8 minimum target size) sized to the
+						// calendar header instead of the 44px floor used for
+						// primary form actions.
+						width: 32,
+						height: 32,
+						padding: 0,
+						display: "inline-flex",
 						alignItems: "center",
-						// W1-19-F-08 fix: a fixed 24px gutter wasted ~30% of
-						// the header's width on narrow viewports — halved
-						// below the compact breakpoint where the month
-						// title needs the room.
-						gap: isNarrow ? 12 : 24,
+						justifyContent: "center",
+						cursor: canGoPrev ? "pointer" : "not-allowed",
+						opacity: canGoPrev ? 1 : 0.55,
 					}}
 				>
-					<button
-						type="button"
-						aria-label={previousMonthAriaTemplate.replace(
-							"{month}",
-							prevMonthLabel,
-						)}
-						onClick={() => onPrevMonth()}
-						disabled={!canGoPrev}
-						tabIndex={0}
-						style={{
-							appearance: "none",
-							background: "transparent",
-							color: canGoPrev ? textColor : mutedSoftText,
-							border: "none",
-							// F-17-3 fix: was 6.
-							borderRadius,
-							width: TOUCH_TARGET_MIN,
-							height: TOUCH_TARGET_MIN,
-							padding: 0,
-							display: "inline-flex",
-							alignItems: "center",
-							justifyContent: "center",
-							cursor: canGoPrev ? "pointer" : "not-allowed",
-							opacity: canGoPrev ? 1 : 0.55,
-						}}
-					>
 						<svg
 							width="16"
 							height="16"
@@ -2150,8 +2153,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							border: "none",
 							// F-17-3 fix: was 6.
 							borderRadius,
-							width: TOUCH_TARGET_MIN,
-							height: TOUCH_TARGET_MIN,
+							// W2-40 fix: compact 32px — matches the prev button.
+							width: 32,
+							height: 32,
 							padding: 0,
 							display: "inline-flex",
 							alignItems: "center",
@@ -2790,18 +2794,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			<div
 				className="be-dt-scroll"
 				style={{
-					overflowY: "auto",
-					maxHeight: 220,
 					minWidth: 0,
-					// W1-19-F-04 fix: the scrollbar was hidden
-					// entirely (scrollbarWidth/msOverflowStyle +
-					// a display:none ::-webkit-scrollbar rule), so a
-					// scrollable list gave ZERO affordance that more
-					// times exist below. Thin-but-visible scrollbars
-					// on every engine now (WebKit rule in the
-					// instance <style> block below).
-					scrollbarWidth: "thin",
-					msOverflowStyle: "auto",
+					// W2-39 fix: no nested scroll area — the time panel grows
+					// with its content and ends naturally. The old
+					// `overflowY: auto + maxHeight: 220` both capped the list
+					// and left a large empty gap under the buttons.
 				}}
 			>
 				{/* Fix #18: when no date is picked (and the engine asked
@@ -2888,12 +2885,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						ref={slotGridRef}
 						style={{
 							display: "grid",
-							// M8 fix: was a single `1fr` column, so
-							// any day with more than a handful of
-							// slots turned into a long scroll inside
-							// an already-short (220px) sidebar. Two
-							// columns roughly halves that.
-							gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+							// W2-39 fix: one vertical column — each slot
+							// spans the full width and sits directly below
+							// the previous one (no nested scroll).
+							gridTemplateColumns: "minmax(0, 1fr)",
 							gap: isNarrow ? 6 : 8,
 							minWidth: 0,
 						}}
@@ -3899,6 +3894,11 @@ interface DateAndTimeInlineProps {
 	// failure — in every one of those cases the info panel simply does not
 	// render and the calendar behaves exactly as before.
 	eventMeta?: CalEventMeta | null;
+	/** CAL-EVENT-META: deterministic state machine for the panel —
+	 *  "disabled" hides it entirely; "loading" shows the skeleton; "ready"
+	 *  renders the data; "failed" shows a neutral fallback. The initial
+	 *  value is identical on server and client first render. */
+	eventMetaStatus?: CalEventMetaStatus;
 	/** CAL-EVENT-META: author Default Meeting Duration (minutes) — only used
 	 *  when Cal.com itself returns no reliable event length. */
 	eventMetaFallbackDurationMinutes?: number;
@@ -3950,6 +3950,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		// CAL-EVENT-META: optional Cal.com event/profile metadata + the
 		// author duration fallback for the info panel.
 		eventMeta,
+		eventMetaStatus = "disabled",
 		eventMetaFallbackDurationMinutes,
 	} = props;
 
@@ -4541,12 +4542,21 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			>
 				{/* CAL-EVENT-META: event information panel — first column on
                     wide layouts, stacked above the calendar when narrow
-                    (the row above already switches to `column`). Renders
-                    only when Cal.com metadata resolved; every failure mode
-                    leaves the calendar untouched. */}
-				{eventMeta ? (
+                    (the row above already switches to `column`). The panel
+                    KEEPS its structure whenever Cal.com is configured: a
+                    deterministic skeleton while loading, the real metadata
+                    when ready, and a neutral fallback on failure — so the
+                    layout never collapses or shifts, and the server/client
+                    first renders are byte-identical. Hidden entirely only
+                    when Cal.com isn't configured for a datetime step. */}
+				{eventMetaStatus !== "disabled" ? (
 					<section
-						aria-label={eventMeta.organizerName || eventMeta.title}
+						aria-label={
+							eventMetaStatus === "ready" && eventMeta
+								? eventMeta.organizerName || eventMeta.title
+								: CAL_META_LOADING_ARIA
+						}
+						aria-busy={eventMetaStatus === "loading" || undefined}
 						style={{
 							width: isNarrow ? "100%" : 232,
 							flexShrink: 0,
@@ -4558,17 +4568,96 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							borderRight: isNarrow
 								? undefined
 								: `1px solid ${withAlpha(borderColor, 0.6)}`,
+							// Fixed minimum footprint shared by every state so
+							// loading → ready → fallback never shifts layout.
+							minHeight: isNarrow ? undefined : 176,
 						}}
 					>
-						<CalEventInfoPanel
-							meta={eventMeta}
-							fallbackDurationMinutes={eventMetaFallbackDurationMinutes}
-							accentColor={accentColor}
-							textPrimaryColor={textColor}
-							textSecondaryColor={mutedText}
-							borderColor={borderColor}
-							borderRadius={radius}
-						/>
+						{eventMetaStatus === "ready" && eventMeta ? (
+							<CalEventInfoPanel
+								meta={eventMeta}
+								fallbackDurationMinutes={eventMetaFallbackDurationMinutes}
+								accentColor={accentColor}
+								textPrimaryColor={textColor}
+								textSecondaryColor={mutedText}
+								borderColor={borderColor}
+								borderRadius={radius}
+							/>
+						) : eventMetaStatus === "failed" ? (
+							/* Neutral, informational fallback — no fake data,
+                                no error tones (rule 38: metadata failure is
+                                never an alarm). */
+							<div
+								style={{
+									fontSize: 13,
+									lineHeight: 1.5,
+									color: mutedText,
+								}}
+							>
+								{CAL_META_UNAVAILABLE_COPY}
+							</div>
+						) : (
+							/* Loading skeleton — static neutral blocks, no
+                                shimmer, identical markup on server and client. */
+							<div
+								aria-hidden="true"
+								style={{
+									display: "flex",
+									flexDirection: "column",
+									gap: 10,
+								}}
+							>
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 10,
+									}}
+								>
+									<div
+										style={{
+											width: 40,
+											height: 40,
+											borderRadius: "50%",
+											background: withAlpha(borderColor, 0.5),
+											flexShrink: 0,
+										}}
+									/>
+									<div
+										style={{
+											width: "60%",
+											height: 14,
+											borderRadius: 7,
+											background: withAlpha(borderColor, 0.5),
+										}}
+									/>
+								</div>
+								<div
+									style={{
+										width: "85%",
+										height: 18,
+										borderRadius: 7,
+										background: withAlpha(borderColor, 0.5),
+									}}
+								/>
+								<div
+									style={{
+										width: "45%",
+										height: 13,
+										borderRadius: 7,
+										background: withAlpha(borderColor, 0.5),
+									}}
+								/>
+								<div
+									style={{
+										width: "70%",
+										height: 13,
+										borderRadius: 7,
+										background: withAlpha(borderColor, 0.5),
+									}}
+								/>
+							</div>
+						)}
 					</section>
 				) : null}
 				<section
@@ -4687,26 +4776,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					{slotAnnouncement}
 				</div>
 			</div>
-
-			{/* W1-19-F-04 fix: the time-list scrollbar. Was hidden entirely
-                (`display: none`) with no affordance; now a thin, low-contrast
-                thumb. Firefox/Edge are covered inline above via
-                `scrollbarWidth: "thin"` — WebKit/Blink still need a real CSS
-                rule for pseudo-elements, hence this scoped <style>.
-                HYDRATION-AUDIT: `suppressHydrationWarning` is REQUIRED here
-                (see the canonical explanation at the be-input <style> in
-                RootShell, search "HYDRATION-AUDIT"). Never remove the flag,
-                never move this CSS to inline styles/a CSS file, never
-                reformat the text — doing so re-triggers hydration warning
-                #425/#418/#422 on publish. */}
-			<style suppressHydrationWarning>{`
-.be-dt-scroll::-webkit-scrollbar { width: 8px; }
-.be-dt-scroll::-webkit-scrollbar-track { background: transparent; }
-.be-dt-scroll::-webkit-scrollbar-thumb {
-    background: ${withAlpha(textColor, 0.25)};
-    border-radius: 8px;
-}
-`}</style>
 		</div>
 	);
 });
@@ -6388,6 +6457,11 @@ function useCalcomSlots(
 // THIS endpoint fall back to an OLDER shape, so it gets its own internal
 // constant. Internal only — never a Property Control (see AGENTS.md).
 const CAL_EVENT_TYPE_API_VERSION = "2024-06-14";
+// CAL-EVENT-META: neutral copy for the panel's non-data states. Internal
+// constants, NOT Property Controls — these are transient states, and rule 38
+// forbids duplicating Cal.com data as author-facing controls.
+const CAL_META_LOADING_ARIA = "Loading meeting details";
+const CAL_META_UNAVAILABLE_COPY = "Meeting details are temporarily unavailable.";
 // Same freshness window as the slots cache — one cached GET per
 // key/eventType/baseURL combination keeps the panel in sync with Cal.com
 // edits within minutes without hammering the API.
@@ -6596,38 +6670,60 @@ const calEventMetaCache = new Map<
 	{ meta: CalEventMeta; fetchedAt: number }
 >();
 
+/** CAL-EVENT-META: deterministic panel state machine. The initial value is a
+ *  pure function of the (server-identical) props so the first server AND
+ *  client renders agree byte-for-byte — async Cal.com resolution must never
+ *  appear in the initial markup (hydration parity, see AGENTS.md). */
+type CalEventMetaStatus = "disabled" | "loading" | "ready" | "failed";
+
 /**
  * Parallel, non-blocking metadata hook. Runs alongside the slots fetch when
- * Cal.com is configured; returns `null` while loading or on any failure so
- * the calendar renders exactly as before and the panel silently disappears.
+ * Cal.com is configured. `status` is deterministic on first render
+ * ("disabled"/"loading" from props alone) and transitions only after
+ * hydration; `meta` is `null` until a successful fetch. Any failure lands in
+ * "failed" so the panel can show a neutral fallback instead of vanishing.
  */
 function useCalcomEventMeta(params: {
 	enabled: boolean;
 	apiKey: string;
 	eventTypeId: string;
 	apiBaseUrl?: string;
-}): CalEventMeta | null {
+}): { status: CalEventMetaStatus; meta: CalEventMeta | null } {
 	const { enabled, apiKey, eventTypeId, apiBaseUrl } = params;
+	// Deterministic initializer: identical on server and client first render.
+	const [status, setStatus] = React.useState<CalEventMetaStatus>(() =>
+		enabled ? "loading" : "disabled",
+	);
 	const [meta, setMeta] = React.useState<CalEventMeta | null>(null);
 	const cacheKey = `${(apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "")}|${apiKey}|${eventTypeId}`;
 	React.useEffect(() => {
-		if (!enabled || !apiKey || !eventTypeId) return;
+		if (!enabled || !apiKey || !eventTypeId) {
+			setStatus("disabled");
+			return;
+		}
 		const cached = calEventMetaCache.get(cacheKey);
 		if (cached && Date.now() - cached.fetchedAt < EVENT_META_CACHE_TTL_MS) {
 			setMeta(cached.meta);
+			setStatus("ready");
 			return;
 		}
+		setStatus("loading");
 		let cancelled = false;
 		fetchCalEventTypeMeta({ apiKey, eventTypeId, apiBaseUrl }).then((m) => {
-			if (cancelled || !m) return;
-			calEventMetaCache.set(cacheKey, { meta: m, fetchedAt: Date.now() });
-			setMeta(m);
+			if (cancelled) return;
+			if (m) {
+				calEventMetaCache.set(cacheKey, { meta: m, fetchedAt: Date.now() });
+				setMeta(m);
+				setStatus("ready");
+			} else {
+				setStatus("failed");
+			}
 		});
 		return () => {
 			cancelled = true;
 		};
 	}, [enabled, apiKey, eventTypeId, cacheKey, apiBaseUrl]);
-	return meta;
+	return { status, meta };
 }
 
 interface SubmitBookingResult {
@@ -8670,8 +8766,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// CAL-EVENT-META: fetch event/profile metadata in PARALLEL with the
 	// slots call above (same key + Event ID + Base URL, read-only). Never
-	// gates availability: a `null` result simply hides the info panel.
-	const calEventMeta = useCalcomEventMeta({
+	// gates availability: the panel shows a deterministic loading/fallback
+	// instead of blocking or vanishing. `status` is server/client-identical
+	// on first render (hydration parity).
+	const { status: calEventMetaStatus, meta: calEventMeta } = useCalcomEventMeta({
 		enabled: hasCalConfig && hasDatetimeStep,
 		apiKey: calApiKey,
 		eventTypeId: calEventTypeId,
@@ -9789,6 +9887,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		meetingDurationMs,
 		// CAL-EVENT-META: normalized event/profile metadata (or null).
 		calEventMeta,
+		calEventMetaStatus,
 	};
 }
 
@@ -9878,6 +9977,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		// to the SuccessScreen.
 		meetingDurationMs,
 		calEventMeta,
+		calEventMetaStatus,
 	} = useBookingEngineState(props);
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
@@ -10574,8 +10674,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 								// the POST (see StepBodyProps.isSubmitting).
 								isSubmitting={isSubmitting}
 								// CAL-EVENT-META: datetime-step info panel data;
-								// null on unconfigured/failed fetches → hidden.
+								// status drives the loading/fallback states.
 								eventMeta={calEventMeta}
+								eventMetaStatus={calEventMetaStatus}
 								eventMetaFallbackDurationMinutes={Math.round(
 									meetingDurationMs / 60000,
 								)}
@@ -11035,9 +11136,11 @@ interface StepBodyProps {
 	 *  request, then vanish on success. */
 	isSubmitting?: boolean;
 	// CAL-EVENT-META: normalized Cal.com event/profile metadata for the
-	// datetime step's information panel. Null/undefined everywhere else —
-	// form/review steps never receive it.
+	// datetime step's information panel. Status is the deterministic
+	// loading/ready/failed/disabled state machine — form/review steps never
+	// receive either (disabled).
 	eventMeta?: CalEventMeta | null;
+	eventMetaStatus?: CalEventMetaStatus;
 	eventMetaFallbackDurationMinutes?: number;
 }
 
@@ -11073,6 +11176,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		engineWidth,
 		isSubmitting = false,
 		eventMeta,
+		eventMetaStatus,
 		eventMetaFallbackDurationMinutes,
 	} = props;
 
@@ -11351,6 +11455,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// CAL-EVENT-META: info panel data (datetime step
 							// only; null → panel hidden, calendar unchanged).
 							eventMeta={eventMeta}
+							eventMetaStatus={eventMetaStatus}
 							eventMetaFallbackDurationMinutes={
 								eventMetaFallbackDurationMinutes
 							}

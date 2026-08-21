@@ -300,6 +300,14 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Asynchronous Cal.com metadata and availability updates must not remount, reset, or oscillate the calendar's current month/date state, and must never cause visible month flashing on Calendar-step entry or during data loading.** The calendar's own month changes (arrows, PageUp/Down, empty-month auto-advance, cross-month focus) are child-initiated and must never be re-synced against a stale parent `visibleMonth` prop that has not yet caught up via `onMonthChange`; the parent-prop sync is reserved for genuine external changes (saved-step restoration). Do not reintroduce the parent↔child month ping-pong, and do not fix flashing with arbitrary delays, timeouts, or loading gates.
 
+### 40. Calendar metadata panel must preserve its layout with loading/fallback states
+
+**The Calendar-step event-information panel must always occupy its layout slot when Cal.com is configured — never collapse or vanish.** The state machine is deterministic: "disabled" (no Cal.com config, panel hidden), "loading" (skeleton placeholders, identical markup server + client), "ready" (real Cal.com metadata), "failed" (neutral fallback text, no error tones). The initial state is derived from props alone so hydration is byte-identical. Metadata failure must never block or delay the calendar or booking flow (rule 38).
+
+### 41. Time slots are a single column with no nested scroll; month nav is compact
+
+**The time-slot area must render as one vertical column (no two-column grid) and must not contain a nested scroll area or a hidden action button — the panel ends naturally after its content.** The calendar-header month navigation buttons use a compact 32×32px footprint with a 16px gap between them, accessible and visually balanced with the month title. Do not reintroduce the 44px touch-target floor for these in-header controls, the two-column grid, or the `maxHeight:220` scroll container.
+
 
 
 
