@@ -3623,6 +3623,165 @@ function useTimeGrid(options: UseTimeGridOptions): {
 		handleTimeSelect,
 	};
 }
+// =============================================================================
+// CAL-EVENT-META UI: compact event-information panel (Calendar step only)
+// =============================================================================
+
+// CAL-EVENT-META: renders ONLY the fields Cal.com actually returned — a
+// missing field omits its row entirely, never an empty label. Duration falls
+// back to the author's Default Meeting Duration control when the event type
+// carries no reliable length. Pure display: no state, no fetch.
+const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
+	meta: CalEventMeta;
+	fallbackDurationMinutes?: number;
+	accentColor: string;
+	textPrimaryColor: string;
+	textSecondaryColor: string;
+	borderColor: string;
+	borderRadius: number | string;
+}) {
+	const {
+		meta,
+		fallbackDurationMinutes,
+		accentColor,
+		textPrimaryColor,
+		textSecondaryColor,
+		borderColor,
+	} = props;
+	const durationMinutes =
+		typeof meta.durationMinutes === "number" && meta.durationMinutes > 0
+			? meta.durationMinutes
+			: typeof fallbackDurationMinutes === "number" &&
+				  fallbackDurationMinutes > 0
+				? fallbackDurationMinutes
+				: undefined;
+	const initial = meta.organizerName?.trim().charAt(0).toUpperCase();
+	return (
+		<div style={{ fontSize: 14, lineHeight: 1.45 }}>
+			{(meta.avatarUrl || initial) && meta.organizerName ? (
+				<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+					{meta.avatarUrl ? (
+						<img
+							src={meta.avatarUrl}
+							alt=""
+							width={40}
+							height={40}
+							style={{
+								width: 40,
+								height: 40,
+								borderRadius: "50%",
+								objectFit: "cover",
+								flexShrink: 0,
+							}}
+						/>
+					) : (
+						<div
+							aria-hidden="true"
+							style={{
+								width: 40,
+								height: 40,
+								borderRadius: "50%",
+								background: withAlpha(accentColor, 0.14),
+								color: accentColor,
+								display: "inline-flex",
+								alignItems: "center",
+								justifyContent: "center",
+								fontWeight: 700,
+								fontSize: 16,
+								flexShrink: 0,
+							}}
+						>
+							{initial}
+						</div>
+					)}
+					<div
+						style={{
+							fontWeight: 600,
+							color: textPrimaryColor,
+							minWidth: 0,
+							overflowWrap: "anywhere",
+						}}
+					>
+						{meta.organizerName}
+					</div>
+				</div>
+			) : null}
+			{meta.title ? (
+				<div
+					style={{
+						fontSize: 17,
+						fontWeight: 700,
+						color: textPrimaryColor,
+						marginTop: meta.organizerName ? 10 : 0,
+					}}
+				>
+					{meta.title}
+				</div>
+			) : null}
+			{durationMinutes ? (
+				<div
+					style={{
+						marginTop: meta.title || meta.organizerName ? 8 : 0,
+						color: textSecondaryColor,
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+					}}
+				>
+					<span aria-hidden="true" style={{ flexShrink: 0 }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+							<circle cx="12" cy="12" r="9" />
+							<path d="M12 7v5l3 2" />
+						</svg>
+					</span>
+					<span>
+						{durationMinutes % 60 === 0
+							? `${durationMinutes / 60} hr`
+							: `${durationMinutes} min`}
+					</span>
+				</div>
+			) : null}
+			{meta.locationLabel ? (
+				<div
+					style={{
+						marginTop: 4,
+						color: textSecondaryColor,
+						display: "flex",
+						alignItems: "flex-start",
+						gap: 6,
+						overflowWrap: "anywhere",
+					}}
+				>
+					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
+							<circle cx="12" cy="10" r="3" />
+						</svg>
+					</span>
+					<span>{meta.locationLabel}</span>
+				</div>
+			) : null}
+			{meta.description ? (
+				<div
+					style={{
+						marginTop: 10,
+						paddingTop: 10,
+						borderTop: `1px solid ${withAlpha(borderColor, 0.7)}`,
+						color: textSecondaryColor,
+						fontSize: 13,
+						display: "-webkit-box",
+						WebkitLineClamp: 4,
+						WebkitBoxOrient: "vertical",
+						overflow: "hidden",
+					}}
+				>
+					{meta.description}
+				</div>
+			) : null}
+		</div>
+	);
+});
+
 interface DateAndTimeInlineProps {
 	accentColor: string;
 	backgroundColor: string;
@@ -3698,6 +3857,14 @@ interface DateAndTimeInlineProps {
 	timeFormatLabel: string;
 	// W1-10-N4 fix: live-region template for slot picks.
 	timeSlotSelectedTemplate: string;
+	// CAL-EVENT-META: normalized Cal.com event/profile metadata. Absent
+	// (undefined/null) on demo grids, unconfigured instances or fetch
+	// failure — in every one of those cases the info panel simply does not
+	// render and the calendar behaves exactly as before.
+	eventMeta?: CalEventMeta | null;
+	/** CAL-EVENT-META: author Default Meeting Duration (minutes) — only used
+	 *  when Cal.com itself returns no reliable event length. */
+	eventMetaFallbackDurationMinutes?: number;
 }
 
 const DateAndTimeInline = React.memo(function DateAndTimeInline(
@@ -3743,6 +3910,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		timeFormatLabel,
 		// W1-10-N4 fix: slot-pick announcement template.
 		timeSlotSelectedTemplate,
+		// CAL-EVENT-META: optional Cal.com event/profile metadata + the
+		// author duration fallback for the info panel.
+		eventMeta,
+		eventMetaFallbackDurationMinutes,
 	} = props;
 
 	// M4 fix: `today` used to be memoized once with `[]` deps, so a booking
@@ -4331,6 +4502,38 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					flex: 1,
 				}}
 			>
+				{/* CAL-EVENT-META: event information panel — first column on
+                    wide layouts, stacked above the calendar when narrow
+                    (the row above already switches to `column`). Renders
+                    only when Cal.com metadata resolved; every failure mode
+                    leaves the calendar untouched. */}
+				{eventMeta ? (
+					<section
+						aria-label={eventMeta.organizerName || eventMeta.title}
+						style={{
+							width: isNarrow ? "100%" : 232,
+							flexShrink: 0,
+							boxSizing: "border-box",
+							padding: isNarrow ? "12px 16px 14px" : "16px 16px 16px 20px",
+							borderBottom: isNarrow
+								? `1px solid ${withAlpha(borderColor, 0.6)}`
+								: undefined,
+							borderRight: isNarrow
+								? undefined
+								: `1px solid ${withAlpha(borderColor, 0.6)}`,
+						}}
+					>
+						<CalEventInfoPanel
+							meta={eventMeta}
+							fallbackDurationMinutes={eventMetaFallbackDurationMinutes}
+							accentColor={accentColor}
+							textPrimaryColor={textColor}
+							textSecondaryColor={mutedText}
+							borderColor={borderColor}
+							borderRadius={radius}
+						/>
+					</section>
+				) : null}
 				<section
 					aria-label={datePickerAriaLabel}
 					style={{
@@ -6129,6 +6332,265 @@ function useCalcomSlots(
 	]);
 
 	return { slots, loading, error, refetch };
+}
+
+// =============================================================================
+// CAL-EVENT-META: Cal.com event/profile metadata (read-only, same key)
+// =============================================================================
+// One extra GET — /v2/event-types/{eventTypeId} — reuses the SAME browser-
+// exposed API key the slots/booking calls already use. No new Property
+// Controls: Cal.com is the source of truth for organizer/business identity,
+// avatar, event title, duration and location. Every failure mode (bad key,
+// foreign event ID, self-hosted without the route, malformed body, offline)
+// resolves to `null` and the calendar/booking flow continues untouched —
+// metadata must NEVER block availability.
+//
+// VERSION NOTE (live-OpenAPI verified): this endpoint's documented response
+// shape is pinned to `cal-api-version: 2024-06-14`. The shared
+// DEFAULT_CAL_API_VERSION (2024-09-04) used by slots/bookings would make
+// THIS endpoint fall back to an OLDER shape, so it gets its own internal
+// constant. Internal only — never a Property Control (see AGENTS.md).
+const CAL_EVENT_TYPE_API_VERSION = "2024-06-14";
+// Same freshness window as the slots cache — one cached GET per
+// key/eventType/baseURL combination keeps the panel in sync with Cal.com
+// edits within minutes without hammering the API.
+const EVENT_META_CACHE_TTL_MS = SLOTS_CACHE_TTL_MS;
+
+/** Normalized, all-optional metadata model the UI renders from. */
+interface CalEventMeta {
+	title?: string;
+	description?: string;
+	durationMinutes?: number;
+	locationLabel?: string;
+	organizerName?: string;
+	avatarUrl?: string;
+}
+
+// Friendly labels for the documented integration location enum (subset of
+// the common providers; unknown integrations omit the row entirely rather
+// than rendering a raw enum string).
+const CAL_INTEGRATION_LABELS: Record<string, string> = {
+	"cal-video": "Cal Video",
+	"google-meet": "Google Meet",
+	zoom: "Zoom",
+	"whereby-video": "Whereby",
+	"webex-video": "Webex",
+	"jitsi": "Jitsi",
+	"office365-video": "Teams",
+	"microsoft-teams-video": "Teams",
+	"discord-video": "Discord",
+	"facetime-video": "FaceTime",
+	"signal-video": "Signal",
+	"skype-video": "Skype",
+	"telegram-video": "Telegram",
+	"whatsapp-video": "WhatsApp",
+};
+
+function normalizeCalLocationLabel(raw: unknown): string | undefined {
+	if (typeof raw !== "object" || raw === null) return undefined;
+	const loc = raw as {
+		type?: unknown;
+		address?: unknown;
+		link?: unknown;
+		phone?: unknown;
+		integration?: unknown;
+	};
+	const asString = (v: unknown): string | undefined =>
+		typeof v === "string" && v.trim() ? v.trim() : undefined;
+	switch (loc.type) {
+		case "address":
+			return asString(loc.address);
+		case "link":
+			return asString(loc.link);
+		case "phone":
+			return asString(loc.phone);
+		case "integration": {
+			const key = typeof loc.integration === "string" ? loc.integration : "";
+			return CAL_INTEGRATION_LABELS[key];
+		}
+		default:
+			// organizersDefaultApp / unknown — no reliable display label.
+			return undefined;
+	}
+}
+
+/**
+ * Defensive normalizer for the /v2/event-types/{id} payload. Handles BOTH
+ * documented response variants:
+ *  - user event  → `users[]` (+ `ownerId`)
+ *  - team event  → `team{}` + `hosts[]` (roundRobin/collective/managed)
+ * Identity preference: team name/logo first (business identity), then the
+ * mandatory round-robin host, then the owner/first user. All fields stay
+ * optional — missing/null values are simply omitted by the panel.
+ */
+function normalizeCalEventMeta(data: unknown): CalEventMeta | null {
+	if (typeof data !== "object" || data === null) return null;
+	const d = data as Record<string, unknown>;
+	const meta: CalEventMeta = {};
+	const asString = (v: unknown): string | undefined =>
+		typeof v === "string" && v.trim() ? v.trim() : undefined;
+
+	meta.title = asString(d.title);
+	meta.description = asString(d.description);
+	if (
+		typeof d.lengthInMinutes === "number" &&
+		Number.isFinite(d.lengthInMinutes) &&
+		d.lengthInMinutes > 0
+	) {
+		meta.durationMinutes = d.lengthInMinutes;
+	}
+	if (Array.isArray(d.locations)) {
+		for (const loc of d.locations) {
+			const label = normalizeCalLocationLabel(loc);
+			if (label) {
+				meta.locationLabel = label;
+				break;
+			}
+		}
+	}
+
+	const team =
+		typeof d.team === "object" && d.team !== null
+			? (d.team as Record<string, unknown>)
+			: null;
+	if (team) {
+		meta.organizerName = asString(team.name);
+		meta.avatarUrl = asString(team.logoUrl);
+	}
+	if (!meta.organizerName || !meta.avatarUrl) {
+		const hosts = Array.isArray(d.hosts) ? d.hosts : null;
+		const users = Array.isArray(d.users) ? d.users : null;
+		// Round-robin "mandatory" hosts are the fixed hosts — prefer them.
+		let person: Record<string, unknown> | null = null;
+		if (hosts && hosts.length) {
+			for (const h of hosts) {
+				if (
+					typeof h === "object" &&
+					h !== null &&
+					(h as Record<string, unknown>).mandatory === true
+				) {
+					person = h as Record<string, unknown>;
+					break;
+				}
+			}
+			if (!person && typeof hosts[0] === "object" && hosts[0] !== null) {
+				person = hosts[0] as Record<string, unknown>;
+			}
+		}
+		if (!person && users && users.length) {
+			const ownerId = typeof d.ownerId === "number" ? d.ownerId : undefined;
+			for (const u of users) {
+				if (
+					typeof u === "object" &&
+					u !== null &&
+					ownerId !== undefined &&
+					(u as Record<string, unknown>).id === ownerId
+				) {
+					person = u as Record<string, unknown>;
+					break;
+				}
+			}
+			if (!person && typeof users[0] === "object" && users[0] !== null) {
+				person = users[0] as Record<string, unknown>;
+			}
+		}
+		if (person) {
+			if (!meta.organizerName) meta.organizerName = asString(person.name);
+			if (!meta.avatarUrl) meta.avatarUrl = asString(person.avatarUrl);
+		}
+	}
+
+	return Object.keys(meta).length ? meta : null;
+}
+
+/**
+ * Single read-only metadata fetch. Mirrors the slots/booking fetch posture
+ * (same base URL resolution, Bearer key, per-attempt timeout) but — unlike
+ * availability — ANY failure resolves to `null` instead of surfacing an
+ * error: the panel is additive and must never block booking.
+ */
+async function fetchCalEventTypeMeta(params: {
+	apiKey: string;
+	eventTypeId: string;
+	apiBaseUrl?: string;
+	timeoutMs?: number;
+}): Promise<CalEventMeta | null> {
+	const { apiKey, eventTypeId, apiBaseUrl, timeoutMs } = params;
+	// Same fail-fast guard philosophy as the booking POST: a non-numeric
+	// Event ID can never resolve to a real event type.
+	const parsedId = Number(eventTypeId);
+	if (!apiKey || !eventTypeId || !Number.isFinite(parsedId)) return null;
+	const apiBase = (apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "");
+	const controller = new AbortController();
+	const timeoutId = setTimeout(
+		() => controller.abort(),
+		timeoutMs ?? FETCH_TIMEOUT_MS,
+	);
+	try {
+		const res = await fetch(
+			`${apiBase}/v2/event-types/${encodeURIComponent(String(parsedId))}`,
+			{
+				method: "GET",
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"cal-api-version": CAL_EVENT_TYPE_API_VERSION,
+				},
+				signal: controller.signal,
+			},
+		);
+		if (!res.ok) return null;
+		const json = (await res.json().catch(() => null)) as unknown;
+		if (typeof json !== "object" || json === null) return null;
+		const data = (json as { data?: unknown }).data;
+		return normalizeCalEventMeta(data);
+	} catch {
+		// Timeout / abort / network / CORS — metadata is optional by design.
+		return null;
+	} finally {
+		clearTimeout(timeoutId);
+	}
+}
+
+// Success-only cache: a failed fetch is retried on the next mount instead of
+// being pinned negative, while a success is served instantly across remounts
+// (step navigation) until the TTL lapses and Cal.com edits flow through.
+const calEventMetaCache = new Map<
+	string,
+	{ meta: CalEventMeta; fetchedAt: number }
+>();
+
+/**
+ * Parallel, non-blocking metadata hook. Runs alongside the slots fetch when
+ * Cal.com is configured; returns `null` while loading or on any failure so
+ * the calendar renders exactly as before and the panel silently disappears.
+ */
+function useCalcomEventMeta(params: {
+	enabled: boolean;
+	apiKey: string;
+	eventTypeId: string;
+	apiBaseUrl?: string;
+}): CalEventMeta | null {
+	const { enabled, apiKey, eventTypeId, apiBaseUrl } = params;
+	const [meta, setMeta] = React.useState<CalEventMeta | null>(null);
+	const cacheKey = `${(apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "")}|${apiKey}|${eventTypeId}`;
+	React.useEffect(() => {
+		if (!enabled || !apiKey || !eventTypeId) return;
+		const cached = calEventMetaCache.get(cacheKey);
+		if (cached && Date.now() - cached.fetchedAt < EVENT_META_CACHE_TTL_MS) {
+			setMeta(cached.meta);
+			return;
+		}
+		let cancelled = false;
+		fetchCalEventTypeMeta({ apiKey, eventTypeId, apiBaseUrl }).then((m) => {
+			if (cancelled || !m) return;
+			calEventMetaCache.set(cacheKey, { meta: m, fetchedAt: Date.now() });
+			setMeta(m);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [enabled, apiKey, eventTypeId, cacheKey, apiBaseUrl]);
+	return meta;
 }
 
 interface SubmitBookingResult {
@@ -8169,6 +8631,16 @@ function useBookingEngineState(props: BookingEngineProps) {
 		SLOTS_CACHE_TTL_MS,
 	);
 
+	// CAL-EVENT-META: fetch event/profile metadata in PARALLEL with the
+	// slots call above (same key + Event ID + Base URL, read-only). Never
+	// gates availability: a `null` result simply hides the info panel.
+	const calEventMeta = useCalcomEventMeta({
+		enabled: hasCalConfig && hasDatetimeStep,
+		apiKey: calApiKey,
+		eventTypeId: calEventTypeId,
+		apiBaseUrl: calApiBaseUrl,
+	});
+
 	// Task 1 M6 fix (completion): `hasKnownAvailability`/`availableDates`
 	// were added to `DateAndTimeInline` and its keyboard-navigation logic,
 	// but the parent never actually computed or passed the prop down — so
@@ -9278,6 +9750,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// and the author-tunable fallback meeting duration.
 		calApiBaseUrl,
 		meetingDurationMs,
+		// CAL-EVENT-META: normalized event/profile metadata (or null).
+		calEventMeta,
 	};
 }
 
@@ -9366,6 +9840,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
 		// to the SuccessScreen.
 		meetingDurationMs,
+		calEventMeta,
 	} = useBookingEngineState(props);
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
@@ -10061,6 +10536,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 								// W1-20-N1 fix: freeze all authored fields during
 								// the POST (see StepBodyProps.isSubmitting).
 								isSubmitting={isSubmitting}
+								// CAL-EVENT-META: datetime-step info panel data;
+								// null on unconfigured/failed fetches → hidden.
+								eventMeta={calEventMeta}
+								eventMetaFallbackDurationMinutes={Math.round(
+									meetingDurationMs / 60000,
+								)}
 							/>
 						</StepVisibilityWrapper>
 					);
@@ -10516,6 +10997,11 @@ interface StepBodyProps {
 	 *  payload snapshot used to land in state but never in the in-flight
 	 *  request, then vanish on success. */
 	isSubmitting?: boolean;
+	// CAL-EVENT-META: normalized Cal.com event/profile metadata for the
+	// datetime step's information panel. Null/undefined everywhere else —
+	// form/review steps never receive it.
+	eventMeta?: CalEventMeta | null;
+	eventMetaFallbackDurationMinutes?: number;
 }
 
 const StepBody = React.memo(function StepBody(props: StepBodyProps) {
@@ -10549,6 +11035,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		errorCopy,
 		engineWidth,
 		isSubmitting = false,
+		eventMeta,
+		eventMetaFallbackDurationMinutes,
 	} = props;
 
 	// W1-10-N2 fix: the slot-error banner id must be scoped per StepBody
@@ -10822,6 +11310,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							timeSlotSelectedTemplate={
 								copy.timeSlotSelectedTemplate ??
 								DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE
+							}
+							// CAL-EVENT-META: info panel data (datetime step
+							// only; null → panel hidden, calendar unchanged).
+							eventMeta={eventMeta}
+							eventMetaFallbackDurationMinutes={
+								eventMetaFallbackDurationMinutes
 							}
 						/>
 					)}

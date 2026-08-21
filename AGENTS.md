@@ -292,4 +292,9 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **The confirmation check mark must visibly trace its SVG path from its natural starting point at the lower-left tail (`4,12`), through the bottom vertex (`9,17`), ending at the upper-right tip (`20,6`) — i.e., `d="M4 12 9 17 20 6"` with `pathLength` 0 → 1.** Never reverse the path so it draws tip-first, and never fake the draw with an opacity reveal. Rule 33's requirements (reuse Transition Type for the circle, own draw animation for the check) are unchanged.
 
+### 38. Cal.com event/profile metadata is Cal.com-sourced and must never block booking
+
+**Event/organizer metadata for the Calendar-step information panel (organizer/business name, avatar/logo, event title, duration, location/meeting type, description) must be fetched from Cal.com (`GET /v2/event-types/{eventTypeId}`, endpoint-specific `cal-api-version: 2024-06-14`, same browser-exposed read-only key, Base URL honored) — never duplicated as new Framer Property Controls.** The panel belongs to the Calendar step only (info | calendar | times; stacks at narrow widths) and renders only from normalized metadata. **Any metadata failure — auth denial, self-hosted gap, malformed body, offline, timeout — must resolve to `null` and hide the panel; it must never delay availability, surface an error state, or block the booking flow.** The author's `Default Meeting Duration` remains the duration fallback when Cal.com returns no length; the visitor auto-detected time zone (rule 8) remains the only displayed zone.
+
+
 
