@@ -7051,8 +7051,19 @@ function buildCalendarDeepLink(
 // away; reworded to point at the real location without implying adjacency.
 // T7-I3 fix: @framerDisableUnlink prevents editors from
 // accidentally unlink-detaching this code component into a divergent copy.
+// Named variants (stable identity) so opacity is a function of presence,
+// not leftover enter/exit motion from the previous step. `layout` +
+// popLayout previously projected the exiting step's opacity:0 onto the
+// destination on reverse navigation, leaving the active step invisible
+// while position/pointer-events had already flipped.
+const STEP_PRESENCE_VARIANTS = {
+	enter: { opacity: 0, y: 12 },
+	active: { opacity: 1, y: 0 },
+	inactive: { opacity: 0, y: -12 },
+} as const;
+
 // T5-M3 fix: AnimatePresence keeps the exiting step mounted during the
-// popLayout fade, and the old motion.div stayed fully present in the
+// fade, and the old motion.div stayed fully present in the
 // accessibility tree - screen-reader users could re-read, and even tab
 // into, the step that is visually gone. usePresence() flips to false the
 // moment the step starts exiting, so the wrapper is hidden from assistive
@@ -7060,11 +7071,11 @@ function buildCalendarDeepLink(
 function AnimatedStepContent(props: {
 	transition: Transition;
 	children: React.ReactNode;
+	/** False for the first visible step (including a restored saved step)
+	 *  so it never paints at opacity 0. True after the visitor navigates. */
+	playEnterAnimation: boolean;
 }) {
 	const [isPresent] = usePresence();
-	// W1-18-F3 fix: `layout` makes framer re-measure this subtree on every
-	// keystroke (layout animations are the expensive ones); under
-	// prefers-reduced-motion it's disabled entirely.
 	const reducedMotion = useReducedMotion();
 	// T8-H1 fix: on the canvas and in exports there is nothing to animate -
 	// skip framer-motion entirely so every properties-panel edit stops
@@ -7073,17 +7084,17 @@ function AnimatedStepContent(props: {
 	if (isStatic) {
 		return <div style={{ position: "relative" }}>{props.children}</div>;
 	}
-	// Active step stays in document flow and sizes the form. An exiting
-	// step must leave flow immediately — AnimatePresence popLayout is
-	// overridden if we pin `position: relative` on the motion node, which
-	// left opacity-0 steps occupying height and intercepting hits.
+	// Presence is the source of truth for layout AND opacity. Active
+	// steps always animate toward `active` (opacity 1); inactive/exiting
+	// steps toward `inactive` (opacity 0). Do not use `layout` here —
+	// layout projection fights opacity/y on reverse navigation.
 	return (
 		<motion.div
-			layout={!reducedMotion}
-			initial={{ opacity: 0, y: 12 }}
-			animate={{ opacity: 1, y: 0 }}
-			exit={{ opacity: 0, y: -12 }}
-			transition={props.transition}
+			variants={STEP_PRESENCE_VARIANTS}
+			initial={props.playEnterAnimation ? "enter" : false}
+			animate={isPresent ? "active" : "inactive"}
+			exit="inactive"
+			transition={reducedMotion ? INSTANT_TRANSITION : props.transition}
 			style={{
 				position: isPresent ? "relative" : "absolute",
 				left: isPresent ? undefined : 0,
@@ -7705,7 +7716,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// can migrate or purge instead of silently mis-restoring.
 	const PERSIST_SCHEMA_VERSION = 1;
 	const sessionKey = "booking-engine:session";
-	React.useEffect(() => {
+	// Restore before paint so a saved currentIndex never flashes Step 1.
+	useIsomorphicLayoutEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: no restore on the canvas / in exports.
@@ -8242,6 +8254,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// and double-firing analytics. This ref closes it; released when the
 	// new index actually lands (effect on safeCurrentIndex below).
 	const navigatingRef = React.useRef(false);
+	// First visible step (including a restored saved step) must paint at
+	// opacity 1. Enter animation is armed only after the visitor navigates.
+	const playStepEnterAnimationRef = React.useRef(false);
 	// T3-H2 fix: one idempotency key per selected slot, generated on first
 	// submit and REUSED across retries of the same submission — see
 	// handleSubmitBooking / handleSlotReady / makeIdempotencyKey.
@@ -8654,6 +8669,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 						.errors,
 				}));
 				setTouched((prev) => touchAllFieldsIn(invalidStep, prev));
+				playStepEnterAnimationRef.current = true;
 				setCurrentIndex(firstInvalidIdx);
 				scheduleFocusTimer(() => focusFirstInvalidField(invalidStep));
 				return;
@@ -8714,6 +8730,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// is separately guarded by submittingRef.
 		if (navigatingRef.current) return;
 		navigatingRef.current = true;
+		playStepEnterAnimationRef.current = true;
 		// T10-M1 fix: announce step completion as the visitor advances.
 		emitAnalytics("step_complete", {
 			stepIndex: safeCurrentIndex,
@@ -8722,9 +8739,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 			stepTitle: currentStep.title,
 			stepType: currentStep.stepType,
 		});
-		React.startTransition(() => {
-			setCurrentIndex((i) => Math.min(i + 1, totalActive - 1));
-		});
+		// Direct set — startTransition deferred the destination step past
+		// AnimatePresence's enter, which could leave it at opacity 0.
+		setCurrentIndex((i) => Math.min(i + 1, totalActive - 1));
 	}, [
 		currentStep,
 		flowStatus,
@@ -8761,9 +8778,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// (W1-14-F9, ~L7063) resets it after the transition.
 		if (navigatingRef.current) return;
 		navigatingRef.current = true;
-		React.startTransition(() => {
-			setCurrentIndex((i) => Math.max(0, i - 1));
-		});
+		playStepEnterAnimationRef.current = true;
+		setCurrentIndex((i) => Math.max(0, i - 1));
 	}, [isFirst]);
 
 	// T10-H1 fix: review-step Edit links jump straight to the owning step.
@@ -8784,6 +8800,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// link cannot trigger two transitions in the same commit.
 			if (navigatingRef.current) return;
 			navigatingRef.current = true;
+			playStepEnterAnimationRef.current = true;
 			if (flowStatus === "submitting") {
 				setSubmitError(null);
 				idempotencyKeyRef.current = null;
@@ -8802,7 +8819,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// bypassed the flow-status state machine (illegal-transition
 			// logging + guards). Route through it like every other handler.
 			transitionFlowStatus("in-progress");
-			React.startTransition(() => setCurrentIndex(stepIndex));
+			setCurrentIndex(stepIndex);
 		},
 		[activeSteps.length, flowStatus, transitionFlowStatus, safeCurrentIndex],
 	);
@@ -8830,6 +8847,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 				setValues((prev) => ({ ...prev, [SELECTED_SLOT_KEY]: undefined }));
 				setPickedDate(null);
 				idempotencyKeyRef.current = null;
+				playStepEnterAnimationRef.current = true;
 				React.startTransition(() => setCurrentIndex(dtIdx));
 				slotsRefetch();
 			}
@@ -8883,6 +8901,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		setVisibleMonth(null);
 		setSubmitError(null);
 		setBookingResult(null);
+		playStepEnterAnimationRef.current = false;
 		setCurrentIndex(0);
 		transitionFlowStatus("in-progress");
 		submittingRef.current = false;
@@ -9065,6 +9084,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		handleBack,
 		handleCancelSubmit,
 		handleContinue,
+		playStepEnterAnimation: playStepEnterAnimationRef.current,
 		handleFieldChange,
 		handleInlineDateChange,
 		handleInlineMonthChange,
@@ -9210,6 +9230,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		handleSlotReady,
 		handleTimeFormatChange,
 		hasCalConfig,
+		playStepEnterAnimation,
 		isCanvas,
 		isFirst,
 		isSubmitting,
@@ -9740,9 +9761,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 			) : null}
 
 			{/* Step content with smooth transition between steps.
-                AnimatePresence mode="popLayout" keeps the old step mounted
-                (absolutely positioned) while the new step enters, preventing
-                the container from collapsing to 0 height between steps (fix #14). */}
+                AnimatePresence mode="sync" runs enter/exit together. Exiting
+                steps leave document flow via position:absolute (isPresent),
+                so the form height follows the active step without popLayout
+                layout projection (which left reverse-nav destinations at
+                opacity 0). */}
 			<form
 				// T5-L6 fix: give the form an accessible name so screen
 				// readers can distinguish it from other forms on a page.
@@ -9773,10 +9796,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 					position: "relative",
 				}}
 			>
-				<AnimatePresence mode="popLayout" initial={false}>
+				<AnimatePresence mode="sync" initial={false}>
 					<AnimatedStepContent
 						key={safeCurrentIndex}
 						transition={stepTransition}
+						playEnterAnimation={playStepEnterAnimation}
 					>
 						<h2
 							ref={stepTitleRef}
@@ -10218,6 +10242,7 @@ const RootShell = React.memo(function RootShell(props: {
                 matched byte-for-byte. Never remove the flag, never reformat
                 the CSS text, never inline the rule into style objects. */}
 			<style suppressHydrationWarning>{`
+@media (prefers-reduced-motion: reduce) {
     .be-motion-root, .be-motion-root * {
         animation-duration: 0.001s !important;
         animation-iteration-count: 1 !important;
