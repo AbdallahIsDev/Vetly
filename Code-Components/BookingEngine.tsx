@@ -8848,7 +8848,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 				setPickedDate(null);
 				idempotencyKeyRef.current = null;
 				playStepEnterAnimationRef.current = true;
-				React.startTransition(() => setCurrentIndex(dtIdx));
+				setCurrentIndex(dtIdx);
 				slotsRefetch();
 			}
 		}
