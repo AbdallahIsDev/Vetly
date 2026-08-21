@@ -235,3 +235,7 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 ### 23. Back and Forward transitions must be symmetric
 
 **Back navigation must be the proper reverse of Forward for every transition variant and every configured step.** Do not switch the outgoing step to `position: absolute` with hard-coded `left:0/right:0` (or equivalent) in a way that causes an immediate layout jump; the position/layout transition architecture must keep the outgoing step visually stable during the animation. Do not patch Back with timing hacks, direction-specific timeouts, or navigation-count fixes.
+
+### 24. Final transition control names and defaults
+
+**`Transition Type` is the dropdown used to select the step-transition style and defaults to `Blur Scale`.** Keep all six options (`Fade Rise`, `Blur Scale`, `Slide`, `Zoom`, `Vertical Slide`, `Blur Slide`). **`Transition` controls timing and defaults to Ease In Out, cubic-bezier `0.44, 0, 0.56, 1`, `0.4s` duration, and `0s` delay.** Do not reintroduce a segmented control for transition type, do not rename these controls back to "Step Transition"/"Transition Duration", and do not change the default type away from `Blur Scale` or the default timing away from `0.4s`.

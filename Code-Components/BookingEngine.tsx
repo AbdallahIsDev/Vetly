@@ -7248,33 +7248,6 @@ type InSessionFormSnapshot = {
 };
 let inSessionFormSnapshot: InSessionFormSnapshot | null = null;
 
-function readSessionStorageSnapshot(key: string): InSessionFormSnapshot | null {
-	if (typeof window === "undefined") return null;
-	try {
-		const raw = window.sessionStorage.getItem(key);
-		if (!raw) return null;
-		const parsed = JSON.parse(raw) as {
-			v?: unknown;
-			values?: Record<string, unknown>;
-			timeFormat?: unknown;
-			currentIndex?: unknown;
-		};
-		if (!parsed || parsed.v !== 1 || typeof parsed !== "object") return null;
-		const restoredValues = (parsed.values || {}) as BookingValues;
-		const currentIndex =
-			typeof parsed.currentIndex === "number" && Number.isFinite(parsed.currentIndex)
-				? Math.max(0, parsed.currentIndex)
-				: 0;
-		const timeFormat =
-			parsed.timeFormat === "24h" || parsed.timeFormat === "12h"
-				? parsed.timeFormat
-				: "12h";
-		return { values: restoredValues, currentIndex, timeFormat };
-	} catch {
-		return null;
-	}
-}
-
 function useBookingEngineState(props: BookingEngineProps) {
 	const {
 		style,
@@ -7456,7 +7429,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const stepTransition: Transition = prefersReducedMotion
 		? ({ type: "tween", duration: 0 } as const)
 		: transition ||
-			({ type: "tween", ease: "easeInOut", duration: 0.3 } as const);
+			({ type: "tween", ease: [0.44, 0, 0.56, 1], duration: 0.4 } as const);
 
 	const allowedTransitionVariants: TransitionVariantId[] = [
 		"fadeRise",
@@ -7466,12 +7439,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 		"verticalSlide",
 		"blurSlide",
 	];
-	const rawVariant = (transitionVariant ?? "fadeRise") as string;
+	const rawVariant = (transitionVariant ?? "blurScale") as string;
 	const resolvedTransitionVariant: TransitionVariantId = (
 		allowedTransitionVariants as string[]
 	).includes(rawVariant)
 		? (rawVariant as TransitionVariantId)
-		: "fadeRise";
+		: "blurScale";
 
 	// Resolve colorMode → effective palette. "auto" uses the dark palette only
 	// when the visitor's OS reports prefers-color-scheme: dark. Default is light.
@@ -12953,16 +12926,19 @@ addPropertyControls(BookingEngine, {
 	// ----- Animation -----
 	transitionVariant: {
 		type: ControlType.Enum,
-		title: "Step Transition",
+		title: "Transition Type",
 		options: ["fadeRise", "blurScale", "slide", "zoom", "verticalSlide", "blurSlide"],
 		optionTitles: ["Fade Rise", "Blur Scale", "Slide", "Zoom", "Vertical Slide", "Blur Slide"],
-		defaultValue: "fadeRise",
-		displaySegmentedControl: true,
+		defaultValue: "blurScale",
 	},
 	transition: {
 		type: ControlType.Transition,
-		title: "Transition Duration",
-		defaultValue: { type: "tween", ease: "easeInOut", duration: 0.3 },
+		title: "Transition",
+		defaultValue: {
+			type: "tween",
+			ease: [0.44, 0, 0.56, 1],
+			duration: 0.4,
+		},
 	},
 
 	// ----- Copy (configurable terminal-state strings) -----
