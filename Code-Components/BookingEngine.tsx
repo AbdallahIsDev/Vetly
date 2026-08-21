@@ -4829,32 +4829,17 @@ interface BookingEngineConfigProps {
 	// from the browser via `detectTimezone()`. There is no time-zone list,
 	// no manual time-zone selector, and no Properties-Controls time-zone
 	// control — `timezones` was deliberately removed (see AGENTS.md).
-	// W1-02-F1 fix (bundle 17): author-tunable Cal.com request timeout
-	// (both the availability GET and the booking POST use it). Defaults to
-	// 18000ms when the control hasn't been saved on an old instance.
-	fetchTimeoutMs: number;
 	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
 	// deployments use the engine without forking. Default: Cal.com cloud.
 	calApiBaseUrl?: string;
-	// W1-02-F27 fix: `cal-api-version` header value sent with both the
-	// slots GET and the bookings POST.
-	calApiVersion?: string;
-	// W1-02-F30 fix: the per-month slots cache TTL. Tune down for
-	// high-velocity availability (concert tickets) or up for low-churn
-	// bookings (salons).
-	slotsCacheTtlMs?: number;
 	// W2-23-N1 fix: meeting-duration fallback (ms) for ICS exports,
 	// Google/Outlook deep links, and the success screen when the Cal.com
 	// slot carries no end.
 	defaultMeetingDurationMs?: number;
-	// W1-02-F28 fix: .ics download filename prefix (the "-YYYY-MM-DD.ics"
-	// part is appended automatically).
-	icsDownloadFilenamePrefix?: string;
-	// W1-02-F29 fix: fallback UID domain used ONLY when crypto.randomUUID
-	// is unavailable (older browsers) — branding for the non-UUID UID path.
-	icsUidDomain?: string;
-	// T10-L6 fix: destination for the success screen's "Done" link. Empty
-	// value hides the link entirely.
+	// T10-L6 fix: destination for the success screen's "Return Home" link.
+	// Defaults to the website root ("/") so returning home works out of the
+	// box. The success screen never auto-redirects — it stays visible until
+	// the visitor chooses an action.
 	returnHomeUrl: string;
 	// T10-M1 fix: analytics hook. The component fires a small set of events
 	// with serializable payloads - `step_complete`, `booking_submitted`,
@@ -4930,15 +4915,16 @@ const DEFAULT_MEETING_DURATION_MS = 30 * 60 * 1000;
 // deployments can point at their own instance. Trailing slashes are stripped
 // at the use site (the path builder appends "/v2/...").
 const DEFAULT_CAL_API_BASE_URL = "https://api.cal.com";
-// W1-02-F27 fix: the `cal-api-version` header value is author-configurable
-// so future Cal.com v2 minor versions can be adopted without a code change.
+// The `cal-api-version` header value sent with both Cal.com calls. Internal
+// only — not a Property Control; adopting a new Cal.com API version is a
+// component code update (see AGENTS.md).
 const DEFAULT_CAL_API_VERSION = "2024-09-04";
-// W1-02-F28 fix: .ics download filename prefix is brandable. The YYYY-MM-DD
-// stamp and ".ics" extension always follow it.
-const DEFAULT_ICS_FILENAME_PREFIX = "booking-";
-// W1-02-F29 fix: fallback UID domain when crypto.randomUUID is unavailable
-// (RFC 5545 requires a UID; the domain after the @ is decorative on the
-// non-UUID path — author-brandable per W1-02-F29).
+// Fixed, industry-neutral .ics download filename — never business-branded
+// and never a Property Control (see AGENTS.md).
+const DEFAULT_ICS_FILENAME = "Booking Appointment.ics";
+// Fallback UID domain when crypto.randomUUID is unavailable (RFC 5545
+// requires a UID; the domain after the @ is decorative on the non-UUID
+// path). Internal compatibility detail — not a Property Control.
 const DEFAULT_ICS_UID_DOMAIN = "@booking-engine";
 
 const DEFAULT_DARK_THEME = {
@@ -5647,13 +5633,14 @@ function monthCacheKey(
 
 // CC-15 fix: shared timeout for both Cal.com calls. 18s comfortably covers a
 // slow-but-working connection while still recovering a stranded visitor well
-// before they'd give up and leave. W1-02-F1 fix: `useCalcomSlots` and
-// `submitCalcomBooking` accept an optional override via `fetchTimeoutMs`.
+// before they'd give up and leave. Internal only — not a Property Control;
+// `useCalcomSlots` and `submitCalcomBooking` both default to it.
 const FETCH_TIMEOUT_MS = 18000;
 
 // W1-05-F-04 fix: slots cache entries are considered stale after 5 minutes
 // (long enough to make month paging feel instant, short enough that a
-// long-lived tab never offers already-elapsed slots as selectable).
+// long-lived tab never offers already-elapsed slots as selectable). Internal
+// only — not a Property Control.
 const SLOTS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // W1-15-TS-08 fix: the HTTP-failure path used to throw
@@ -5784,7 +5771,6 @@ function useCalcomSlots(
 		const cached = cacheRef.current.get(monthKey);
 		// W1-05-F-04 fix: honor the TTL — a fresh-enough entry short-circuits
 		// the fetch; a stale one falls through and is replaced below.
-		// W1-02-F30 fix: the TTL is author-tunable via slotsCacheTtlMs.
 		if (cached && Date.now() - cached.fetchedAt < cacheTtl) {
 			setSlots(cached.slots);
 			setLoading(false);
@@ -7381,25 +7367,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 		() => ({ ...ERROR_COPY_DEFAULTS, ...(copy?.errorCopy || {}) }),
 		[copy?.errorCopy],
 	);
-	// W1-02-F1 fix (bundle 17): author-tunable timeout; `??` only fires
-	// for pre-save instances that never got the new control.
-	const fetchTimeoutMs = props.fetchTimeoutMs ?? FETCH_TIMEOUT_MS;
-	// W1-02-F26/F27 fixes: self-hosted Cal.com base URL + API version
-	// header are author-tunable; trailing slashes are normalized so the
-	// "/v2/..." suffix always joins cleanly. `??` covers instances saved
-	// before these controls existed.
+	// W1-02-F26 fix: self-hosted Cal.com base URL; trailing slashes are
+	// normalized so the "/v2/..." suffix always joins cleanly. `??` covers
+	// instances saved before the control existed.
 	const calApiBaseUrl = (
 		props.calApiBaseUrl ?? DEFAULT_CAL_API_BASE_URL
 	).replace(/\/+$/, "");
-	const calApiVersion =
-		(typeof props.calApiVersion === "string" && props.calApiVersion.trim()) ||
-		DEFAULT_CAL_API_VERSION;
-	// W1-02-F30 fix: author-tunable slots cache TTL (the read site in
-	// useCalcomSlots checks freshness against it).
-	const slotsCacheTtlMs =
-		typeof props.slotsCacheTtlMs === "number" && props.slotsCacheTtlMs >= 0
-			? props.slotsCacheTtlMs
-			: SLOTS_CACHE_TTL_MS;
 	// W2-23-N1 fix: author-tunable fallback meeting duration (ICS export,
 	// deep links, success screen) when Cal.com's slot carries no end.
 	const meetingDurationMs =
@@ -7407,15 +7380,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		props.defaultMeetingDurationMs > 0
 			? props.defaultMeetingDurationMs
 			: DEFAULT_MEETING_DURATION_MS;
-	// W1-02-F28/F29 fixes: author-brandable .ics filename prefix and
-	// non-UUID UID domain.
-	const icsFilenamePrefix =
-		(typeof props.icsDownloadFilenamePrefix === "string" &&
-			props.icsDownloadFilenamePrefix) ||
-		DEFAULT_ICS_FILENAME_PREFIX;
-	const icsUidDomain =
-		(typeof props.icsUidDomain === "string" && props.icsUidDomain.trim()) ||
-		DEFAULT_ICS_UID_DOMAIN;
 
 	// T5-M8 fix: honor the visitor's prefers-reduced-motion setting - the
 	// step fades/glides, the progress-bar spring, and the toggle slider all
@@ -8180,12 +8144,11 @@ function useBookingEngineState(props: BookingEngineProps) {
 		timeZone,
 		copy?.availabilityErrorLabel,
 		errorCopy,
-		fetchTimeoutMs,
-		// W1-02-F26/F27/F30 fixes: self-hosted base URL, API version
-		// header, and author-tunable cache TTL.
+		FETCH_TIMEOUT_MS,
+		// W1-02-F26 fix: self-hosted base URL.
 		calApiBaseUrl,
-		calApiVersion,
-		slotsCacheTtlMs,
+		DEFAULT_CAL_API_VERSION,
+		SLOTS_CACHE_TTL_MS,
 	);
 
 	// Task 1 M6 fix (completion): `hasKnownAvailability`/`availableDates`
@@ -8666,14 +8629,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 			bookingFieldsResponses,
 			idempotencyKey: idempotencyKeyRef.current,
 			externalSignal: abortControllerRef.current.signal,
-			// W1-02-F4–F8 fix (bundle 17): thread the merged copy + the
-			// author-tunable timeout into the POST.
+			// W1-02-F4–F8 fix (bundle 17): thread the merged copy into the
+			// POST; the timeout stays internal (FETCH_TIMEOUT_MS).
 			errorCopy,
-			timeoutMs: fetchTimeoutMs,
-			// W1-02-F26/F27 fixes: same self-hosted base URL + API version
-			// as the slots GET.
+			timeoutMs: FETCH_TIMEOUT_MS,
+			// W1-02-F26 fix: same self-hosted base URL as the slots GET.
 			apiBaseUrl: calApiBaseUrl,
-			apiVersion: calApiVersion,
+			apiVersion: DEFAULT_CAL_API_VERSION,
 		});
 		abortControllerRef.current = null;
 
@@ -8749,11 +8711,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 		validationCopy,
 		emitAnalytics,
 		errorCopy,
-		fetchTimeoutMs,
-		// W1-02-F26/F27 fixes: a live base-URL/version edit in the panel
-		// re-targets the POST on the next submit.
+		// W1-02-F26 fix: a live base-URL edit in the panel re-targets the
+		// POST on the next submit.
 		calApiBaseUrl,
-		calApiVersion,
 		// W1-14-F2 fix: the body reads copy.unknownErrorLabel and
 		// copy.errorFallbackMessage (L7949/7952) - an author editing the
 		// Copy panel in Framer kept stale error strings being POSTed
@@ -9293,15 +9253,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		returnHomeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
-		fetchTimeoutMs,
-		// W1-02-F26/F27/F30 + W2-23-N1 + W1-02-F28/F29 fixes: the
-		// resolved author-tunable Cal.com + ICS integration values.
+		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
+		// and the author-tunable fallback meeting duration.
 		calApiBaseUrl,
-		calApiVersion,
-		slotsCacheTtlMs,
 		meetingDurationMs,
-		icsFilenamePrefix,
-		icsUidDomain,
 	};
 }
 
@@ -9384,11 +9339,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 		returnHomeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
-		// W1-02-F28/F29 + W2-23-N1 fixes: resolved author-tunable ICS
-		// branding + duration values, threaded to the SuccessScreen.
+		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
+		// to the SuccessScreen.
 		meetingDurationMs,
-		icsFilenamePrefix,
-		icsUidDomain,
 	} = useBookingEngineState(props);
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
@@ -9595,11 +9548,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 					notesTimePrefix={copy.notesTimePrefix}
 					icsProdid={copy.icsProdid}
 					icsSummaryFallback={copy.icsSummaryFallback}
-					// W1-02-F28/F29 + W2-23-N1 fixes: brandable .ics filename
-					// prefix + UID domain, and the author-tunable fallback
-					// meeting duration (ICS + deep links).
-					icsFilenamePrefix={icsFilenamePrefix}
-					icsUidDomain={icsUidDomain}
+					// W2-23-N1 fix: author-tunable fallback meeting duration
+					// (ICS + deep links).
 					meetingDurationMs={meetingDurationMs}
 				/>
 			</RootShell>
@@ -11653,10 +11603,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	notesTimePrefix: string;
 	icsProdid: string;
 	icsSummaryFallback: string;
-	// W1-02-F28 fix: brandable .ics download filename prefix.
-	icsFilenamePrefix: string;
-	// W1-02-F29 fix: brandable fallback UID domain (non-UUID path only).
-	icsUidDomain: string;
 	// W2-23-N1 fix: author-tunable fallback meeting duration (ms).
 	meetingDurationMs: number;
 }) {
@@ -11692,8 +11638,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		notesTimePrefix,
 		icsProdid,
 		icsSummaryFallback,
-		icsFilenamePrefix,
-		icsUidDomain,
 		meetingDurationMs,
 	} = props;
 
@@ -11785,20 +11729,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		const cut = raw.indexOf(notesSelectedTimeLabel);
 		return cut > 0 ? raw.slice(0, cut).trim() : raw;
 	}, [steps, values, notesSelectedTimeLabel, notesDatePrefix, notesTimePrefix, timeZone]);
-	const icsDateStamp = (() => {
-		if (!values[SELECTED_SLOT_KEY]) return "";
-		const slot = values[SELECTED_SLOT_KEY];
-		const iso = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-			? slot.time24h
-			: slot.date.toISOString();
-		// W1-07-N2 fix: was `iso.slice(0, 10)` — the UTC calendar date,
-		// which disagrees with the visitor-tz date shown on the success
-		// screen on cross-tz bookings (NYC visitor booking a late-UTC
-		// slot saw Dec 16 on screen but downloaded booking-12-15.ics).
-		// getDateKeyInTimeZone formats the key in the visitor's zone
-		// (invalid zone falls back to browser-local, same guard chain).
-		return getDateKeyInTimeZone(new Date(iso), timeZone || "");
-	})();
 
 	const icsUri = values[SELECTED_SLOT_KEY]
 		? buildIcsDataUri(
@@ -11809,8 +11739,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				icsSummaryFallback,
 				// W2-23-N1 fix: author-tunable fallback duration.
 				meetingDurationMs,
-				// W1-02-F29 fix: author-brandable UID domain.
-				icsUidDomain,
 			)
 		: "";
 
@@ -11996,15 +11924,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				{icsUri ? (
 					<a
 						href={icsUri}
-						// T3-L7 fix: every download used the same static
-						// "booking.ics" filename, so importing several
-						// bookings made later downloads silently overwrite
-						// earlier ones in the Downloads folder. Date-stamp
-						// the filename instead.
-						// W1-02-F28 fix: filename prefix is author-brandable
-						// (default "booking-"); the YYYY-MM-DD stamp + ".ics"
-						// extension always follow it.
-						download={`${icsFilenamePrefix}${icsDateStamp}.ics`}
+						// Fixed, industry-neutral download filename — never
+						// business-branded and never a Property Control (see
+						// AGENTS.md).
+						download={DEFAULT_ICS_FILENAME}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
@@ -13542,43 +13465,19 @@ addPropertyControls(BookingEngine, {
 	// author list, no manual time-zone picker, no Framer user exposure (see
 	// AGENTS.md).
 	//
-	// W1-02-F1 fix (bundle 17): author-tunable Cal.com request timeout —
-	// applies to both the availability GET and the booking POST.
-	fetchTimeoutMs: {
-		type: ControlType.Number,
-		title: "Cal.com Timeout (ms)",
-		defaultValue: 18000,
-		min: 3000,
-		max: 60000,
-		step: 500,
-	},
 	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
 	// deployments use the engine. Trailing slashes are stripped at use.
+	// (Self-hosted Cal.com support is still being evaluated; keep this
+	// control for now.)
 	calApiBaseUrl: {
 		type: ControlType.String,
 		title: "Cal.com API Base URL",
 		defaultValue: DEFAULT_CAL_API_BASE_URL,
 	},
-	// W1-02-F27 fix: `cal-api-version` header value — adopt new Cal.com
-	// v2 minor versions without a code change.
-	calApiVersion: {
-		type: ControlType.String,
-		title: "Cal.com API Version",
-		defaultValue: DEFAULT_CAL_API_VERSION,
-	},
-	// W1-02-F30 fix: author-tunable slots cache TTL — tune down for
-	// high-velocity availability, up for low-churn bookings.
-	slotsCacheTtlMs: {
-		type: ControlType.Number,
-		title: "Slots Cache TTL (ms)",
-		defaultValue: SLOTS_CACHE_TTL_MS,
-		min: 0,
-		max: 30 * 60 * 1000,
-		step: 60 * 1000,
-	},
 	// W2-23-N1 fix: author-tunable fallback meeting duration — used for
 	// the .ics, the Google/Outlook deep links, and the success-screen
-	// time when Cal.com's slot has no end.
+	// time when Cal.com's slot has no end. Genuinely author-relevant:
+	// different businesses run different appointment lengths.
 	defaultMeetingDurationMs: {
 		type: ControlType.Number,
 		title: "Default Meeting Duration (ms)",
@@ -13587,24 +13486,14 @@ addPropertyControls(BookingEngine, {
 		max: 8 * 60 * 60 * 1000,
 		step: 5 * 60 * 1000,
 	},
-	// W1-02-F28 fix: brandable .ics download filename prefix.
-	icsDownloadFilenamePrefix: {
-		type: ControlType.String,
-		title: "ICS Filename Prefix",
-		defaultValue: DEFAULT_ICS_FILENAME_PREFIX,
-	},
-	// W1-02-F29 fix: brandable fallback UID domain (only used when the
-	// browser lacks crypto.randomUUID).
-	icsUidDomain: {
-		type: ControlType.String,
-		title: "ICS UID Domain",
-		defaultValue: DEFAULT_ICS_UID_DOMAIN,
-	},
-	// T10-L6 fix: destination of the success-screen "Done" link. Empty hides it.
+	// T10-L6 fix: destination of the success-screen "Return Home" link.
+	// Defaults to the website root ("/") so returning home works out of
+	// the box. The success screen NEVER auto-redirects — it stays visible
+	// until the visitor chooses an action.
 	returnHomeUrl: {
 		type: ControlType.String,
 		title: "Return Home URL",
-		defaultValue: "",
-		placeholder: "https://your-site.com",
+		defaultValue: "/",
+		placeholder: "/ or https://your-site.com",
 	},
 });

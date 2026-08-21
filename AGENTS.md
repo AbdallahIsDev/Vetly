@@ -243,3 +243,19 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 ### 25. Navigation-button grouping lives inside the Buttons group and defaults to Split
 
 **The navigation-button grouping control belongs inside the existing `Buttons` Property Control group (`buttonLabels`), not as a standalone top-level control.** It defaults to **Split** (Back far left, primary action far right) with the opt-in **Grouped** side-by-side option still available. Use a **short label** (one or two words — "Layout" with `Grouped`/`Split` options) and **no helper/description text** under it; the label and option titles must be self-explanatory. Do not reintroduce a long label, a description, or move the control back out of the Buttons group.
+
+### 26. Cal.com integration internals are not Property Controls
+
+**The Cal.com request timeout (`FETCH_TIMEOUT_MS`, 18s), the `cal-api-version` header value (`DEFAULT_CAL_API_VERSION`), the slots cache TTL (`SLOTS_CACHE_TTL_MS`, 5 min), and the ICS UID domain (`DEFAULT_ICS_UID_DOMAIN`) are internal implementation details.** They are **not** Property Controls and must not be re-exposed to Framer users. Do not reintroduce "Cal.com Timeout (ms)", "Cal.com API Version", "Slots Cache TTL (ms)", or "ICS UID Domain" controls. Adopting a new Cal.com API version is a component code update.
+
+### 27. ICS download filename is fixed and generic
+
+**The .ics download filename is the fixed, industry-neutral `Booking Appointment.ics` (`DEFAULT_ICS_FILENAME`) — never business-branded and never a Property Control.** The Booking Engine must stay suitable for clinics, hotels, consultants, travel businesses, and other industries without requiring the owner to customize the filename. Do not reintroduce an "ICS Filename Prefix" branding control.
+
+### 28. Default Meeting Duration stays author-configurable
+
+**`Default Meeting Duration (ms)` remains an exposed Property Control** because different businesses use different appointment lengths and it affects the .ics export, Google/Outlook deep links, and the success-screen time when a Cal.com slot carries no end. Keep its default (`DEFAULT_MEETING_DURATION_MS`, 30 min).
+
+### 29. Return Home URL is author-facing; success never auto-redirects
+
+**`Return Home URL` is an author-facing Property Control for a real visitor-facing navigation destination, and it defaults to the website root (`"/"`).** A successful booking must **show the success/result screen** (with its actions) and must **never automatically redirect** — the result screen stays visible until the visitor chooses an action, and only the "Return Home" button navigates to the configured URL. Do not reintroduce an empty default that hides the link, and do not add any auto-redirect after booking.
