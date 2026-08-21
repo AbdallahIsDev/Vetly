@@ -7060,10 +7060,54 @@ function buildCalendarDeepLink(
 // no layout projection. Motion only interpolates between the two deterministic
 // end states; initial={false} guarantees the first paint (including a restored
 // saved step) is already at the correct final opacity without flashing.
-const STEP_VISIBILITY_VARIANTS = {
-	active: { opacity: 1, y: 0 },
-	inactive: { opacity: 0, y: 8 },
-} as const;
+//
+// Three genuinely different transition concepts (temporary selector):
+// 1 — Fade Rise (soft opacity + y, premium minimal)
+// 2 — Scale Depth (scale + opacity, subtle depth)
+// 3 — Slide Flow (horizontal x + opacity, direction-aware)
+// All share the same deterministic isActive → position/opacity/pointerEvents
+// contract; only the interpolated values differ. `initial={false}` keeps first
+// paint correct, and `custom` carries navigation direction for slide.
+type TransitionVariantId = 1 | 2 | 3;
+
+const TRANSITION_VARIANT_DEFS: Record<
+	TransitionVariantId,
+	{
+		variants: Record<string, unknown>;
+		transition: Transition;
+		useDirection?: boolean;
+	}
+> = {
+	1: {
+		variants: {
+			active: { opacity: 1, y: 0 },
+			inactive: { opacity: 0, y: 8 },
+		},
+		transition: { duration: 0.32, ease: [0.25, 0.1, 0.25, 1] } as Transition,
+	},
+	2: {
+		variants: {
+			active: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" },
+			inactive: { opacity: 0, scale: 0.97, y: 0, filter: "blur(2px)" },
+		},
+		transition: { type: "spring", stiffness: 320, damping: 28, mass: 0.9 } as Transition,
+	},
+	3: {
+		// Slide: direction-aware via `custom`. Active is always x:0; inactive
+		// slides left (-18) when navigating forward (custom>0) and right (+18)
+		// when navigating back, so the motion feels directional both ways.
+		variants: {
+			active: { opacity: 1, x: 0, y: 0 },
+			inactive: (custom: number) => ({
+				opacity: 0,
+				x: custom > 0 ? -20 : 20,
+				y: 0,
+			}),
+		} as unknown as Record<string, unknown>,
+		transition: { type: "spring", stiffness: 380, damping: 30 } as Transition,
+		useDirection: true,
+	},
+};
 
 function StepVisibilityWrapper(props: {
 	isActive: boolean;
@@ -7072,6 +7116,8 @@ function StepVisibilityWrapper(props: {
 	// Diagnostic: step index for logging, not for identity (key is step.id).
 	stepIndex: number;
 	activeIndex: number;
+	variant: TransitionVariantId;
+	direction: number;
 }) {
 	const reducedMotion = useReducedMotion();
 	const isStatic = useIsStaticRenderer();
@@ -7093,12 +7139,14 @@ function StepVisibilityWrapper(props: {
 			</div>
 		);
 	}
+	const def = TRANSITION_VARIANT_DEFS[props.variant];
 	return (
 		<motion.div
-			variants={STEP_VISIBILITY_VARIANTS}
+			variants={def.variants as never}
+			custom={def.useDirection ? props.direction : undefined}
 			initial={false}
 			animate={props.isActive ? "active" : "inactive"}
-			transition={reducedMotion ? INSTANT_TRANSITION : props.transition}
+			transition={reducedMotion ? INSTANT_TRANSITION : def.transition}
 			style={{
 				position: props.isActive ? "relative" : "absolute",
 				left: props.isActive ? undefined : 0,
@@ -7113,6 +7161,7 @@ function StepVisibilityWrapper(props: {
 			data-step-index={props.stepIndex}
 			data-active-index={props.activeIndex}
 			data-is-active={props.isActive ? "1" : "0"}
+			data-transition-variant={props.variant}
 			onAnimationComplete={() => {
 				// Diagnostic hook — logs final deterministic state after each
 				// transition. Keep lightweight; gated behind __BE_STEP_DEBUG__.
@@ -7122,11 +7171,11 @@ function StepVisibilityWrapper(props: {
 						.__BE_STEP_DEBUG__
 				) {
 					const el = document.querySelector(
-						`[data-step-index=\"${props.stepIndex}\"]`,
+						`[data-step-index="${props.stepIndex}"]`,
 					) as HTMLElement | null;
 					const cs = el ? getComputedStyle(el) : null;
 					console.debug(
-						`[BE StepVisibility] step=${props.stepIndex} active=${props.activeIndex} isActive=${props.isActive} position=${cs?.position ?? (props.isActive ? "relative" : "absolute")} opacity=${cs?.opacity ?? (props.isActive ? "1" : "0")} pointerEvents=${cs?.pointerEvents ?? (props.isActive ? "auto" : "none")}`,
+						`[BE StepVisibility] variant=${props.variant} step=${props.stepIndex} active=${props.activeIndex} isActive=${props.isActive} position=${cs?.position ?? (props.isActive ? "relative" : "absolute")} opacity=${cs?.opacity ?? (props.isActive ? "1" : "0")} pointerEvents=${cs?.pointerEvents ?? (props.isActive ? "auto" : "none")}`,
 					);
 				}
 			}}
@@ -7269,7 +7318,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		progressBar?.stepCountPosition === "bottom" ? "bottom" : "top";
 	const progressShowTextContent = progressBar?.showTextContent !== false;
 	const progressBarStyle: "solid" | "dashed" =
-		progressBar?.barStyle === "dashed" ? "dashed" : "solid";
+		progressBar?.barStyle === "solid" ? "solid" : "dashed";
 
 	// Destructure copy from the grouped Buttons object (Requirement 5).
 	const { continueLabel, backLabel, finalActionLabel } = buttonLabels;
@@ -7589,10 +7638,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 	);
 	const totalActive = activeSteps.length;
 
+	// Hydration fix (#425/#418/#422): do not read sessionStorage synchronously
+	// during initial render — server renders 0, client would read 1 and mismatch.
+	// Initialize deterministically (0 or in-memory snapshot which is null on hard
+	// reload and thus matches server). Saved-step restoration happens in the
+	// layout effect below before paint, so no flash but no mismatch.
 	const [currentIndex, setCurrentIndex] = useStateGuarded(
-		inSessionFormSnapshot?.currentIndex ??
-			readSessionStorageSnapshot("booking-engine:session")?.currentIndex ??
-			0,
+		inSessionFormSnapshot?.currentIndex ?? 0,
 		totalActive,
 	);
 	// CC-8 fix: `useStateGuarded` only re-clamps when its setter is called —
@@ -7650,13 +7702,11 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 	}
 
-	// Form state. Seed from the in-session snapshot (survives step
-	// remounts) then sessionStorage (survives reloads). Never start empty
-	// when the visitor already typed answers this session.
+	// Form state. Hydration-safe: start empty (matches server) and hydrate
+	// from in-memory snapshot (remount) or sessionStorage in layout effect.
+	// Do not read sessionStorage synchronously during render (hydration #425).
 	const [values, setValues] = React.useState<BookingValues>(() => {
-		const snap =
-			inSessionFormSnapshot ??
-			readSessionStorageSnapshot("booking-engine:session");
+		const snap = inSessionFormSnapshot;
 		return snap?.values ? { ...snap.values } : {};
 	});
 	const [errors, setErrors] = React.useState<Record<string, string | null>>({});
@@ -7714,10 +7764,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// (The visitor's own format choice is still persisted to sessionStorage
 	// below — that is a per-viewer preference, not an author preset.)
 	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">(
-		() =>
-			inSessionFormSnapshot?.timeFormat ??
-			readSessionStorageSnapshot("booking-engine:session")?.timeFormat ??
-			"12h",
+		() => inSessionFormSnapshot?.timeFormat ?? "12h",
 	);
 
 	// Keep the module-level snapshot in lockstep so a remount (animation
@@ -7736,11 +7783,26 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const PERSIST_SCHEMA_VERSION = 1;
 	const sessionKey = "booking-engine:session";
 	// Restore before paint so a saved currentIndex never flashes Step 1.
+	// Hydration fix (#425/#418/#422): server and initial client render must
+	// match (Step 1). Do not read sessionStorage synchronously in initializers.
+	// This layout effect runs after hydration but before paint, so the update
+	// to Step 2/3 is not a hydration mismatch (both initial renders were Step 1).
+	// If an in-memory snapshot exists (remount within same session), it was
+	// already used as initial state and is more recent than debounced storage,
+	// so skip the sessionStorage read to avoid stale overwrite.
 	useIsomorphicLayoutEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: no restore on the canvas / in exports.
 		if (isStaticRender) return;
+		if (inSessionFormSnapshot) {
+			const m = inSessionFormSnapshot;
+			const hasData =
+				m.currentIndex !== 0 ||
+				Object.keys(m.values).length > 0 ||
+				m.timeFormat !== "12h";
+			if (hasData) return;
+		}
 		try {
 			const raw = window.sessionStorage.getItem(sessionKey);
 			if (!raw) return;
@@ -9392,6 +9454,22 @@ export default function BookingEngine(props: BookingEngineProps) {
 		});
 	}, [safeCurrentIndex, activeSteps, totalActive]);
 
+	// Temporary transition selector — three genuinely different concepts
+	// for evaluation. Not a permanent Framer control; remove after choice.
+	// Variant 1: Fade Rise (soft y), Variant 2: Scale Depth, Variant 3: Slide Flow (direction-aware x).
+	const [transitionVariant, setTransitionVariant] =
+		React.useState<TransitionVariantId>(1);
+	const prevNavDirectionRef = React.useRef<number>(safeCurrentIndex);
+	const navDirection =
+		safeCurrentIndex > prevNavDirectionRef.current
+			? 1
+			: safeCurrentIndex < prevNavDirectionRef.current
+				? -1
+				: 0;
+	React.useEffect(() => {
+		prevNavDirectionRef.current = safeCurrentIndex;
+	}, [safeCurrentIndex]);
+
 	if (totalActive === 0) {
 		// On the published site, rendering nothing is cleaner than an error
 		// message. On canvas, show the notice so the editor knows what's wrong.
@@ -9870,6 +9948,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 				}}
 				style={{
 					position: "relative",
+					// Task 1: stable minimum visual size for short steps
+					// (e.g., Calendar fallback "unavailable" message). Generic
+					// for every step — not fixed height, grows naturally when
+					// content exceeds the minimum.
+					minHeight: 320,
 				}}
 			>
 				{activeSteps.map((step, idx) => {
@@ -9881,6 +9964,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 							stepIndex={idx}
 							activeIndex={safeCurrentIndex}
 							transition={stepTransition}
+							variant={transitionVariant}
+							direction={navDirection}
 						>
 							<h2
 								ref={isActive ? stepTitleRef : null}
@@ -9957,6 +10042,71 @@ export default function BookingEngine(props: BookingEngineProps) {
 					);
 				})}
 			</form>
+
+			{/* Temporary transition selector — three genuinely different concepts for evaluation.
+			     Variant 1: Fade Rise (soft y), Variant 2: Scale Depth, Variant 3: Slide Flow (direction-aware).
+			     Clearly labeled, floating, not a permanent Framer control. Remove after production choice. */}
+			<div
+				style={{
+					position: "absolute",
+					top: 8,
+					right: 8,
+					zIndex: 50,
+					display: "flex",
+					alignItems: "center",
+					gap: 6,
+					padding: "6px 8px",
+					background: "rgba(255,255,255,0.97)",
+					border: "1px solid #e5e7eb",
+					borderRadius: 999,
+					boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+					backdropFilter: "blur(8px)",
+				}}
+				aria-label="Transition selector (temporary debug)"
+			>
+				<span
+					style={{
+						fontSize: 10,
+						fontWeight: 700,
+						color: "#6b7280",
+						letterSpacing: 0.4,
+						marginRight: 2,
+					}}
+				>
+					TRANSITION
+				</span>
+				{[1, 2, 3].map((n) => (
+					<button
+						key={n}
+						type="button"
+						onClick={() => setTransitionVariant(n as TransitionVariantId)}
+						aria-pressed={transitionVariant === n}
+						aria-label={`Transition variant ${n}`}
+						style={{
+							width: 28,
+							height: 28,
+							borderRadius: 999,
+							border: "none",
+							background:
+								transitionVariant === n ? theme.accentColor : "#f3f4f6",
+							color: transitionVariant === n ? "#fff" : "#374151",
+							fontWeight: 700,
+							fontSize: 12,
+							cursor: "pointer",
+							boxShadow:
+								transitionVariant === n
+									? "0 2px 8px rgba(0,0,0,0.15)"
+									: "none",
+							transition: "all 0.18s ease",
+						}}
+					>
+						{n}
+					</button>
+				))}
+				<span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 2 }}>
+					(debug)
+				</span>
+			</div>
 
 			{/* Footer nav */}
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
@@ -12713,7 +12863,7 @@ addPropertyControls(BookingEngine, {
 				title: "Bar Style",
 				options: ["solid", "dashed"],
 				optionTitles: ["Solid", "Dashed"],
-				defaultValue: "solid",
+				defaultValue: "dashed",
 				displaySegmentedControl: true,
 			},
 		},

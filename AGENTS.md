@@ -211,3 +211,19 @@ Read the existing always-on sessionStorage payload in a layout effect (or equiva
 **Step visibility must be deterministically derived from the active step. The active step must always end at `position: relative`, `opacity: 1`, and `pointer-events: auto`; inactive steps must end at `position: absolute`, `opacity: 0`, and `pointer-events: none`. This must remain correct across unlimited repeated forward/back navigation. Do not use timing hacks, retries, or navigation-count-specific fixes.**
 
 There must be a single source of truth (`activeStepIndex` → `isActive` → style). Do not maintain independent long-lived animation/opacity/position state that can desynchronize from the logical active step. Any recurrence of `active step at opacity 0` is an architectural regression — fix the deterministic derivation, do not add another conditional, timeout, forced repaint, or recovery patch.
+
+### 18. Booking Engine maintains minimum visual height
+
+**The main booking/form content area must maintain a sensible minimum height while still growing naturally with larger step content.** Use `min-height` (not fixed `height`) on the form container so short steps (e.g., Calendar fallback "Booking is currently unavailable") do not cause the component to shrink vertically. When a step contains more fields/content than the minimum, the component must expand to fit it. Apply generically to every step/configuration.
+
+### 19. Progress-bar style defaults to Dashed
+
+**The progress indicator's `barStyle` defaults to `Dashed` (segmented) but remains user-configurable via the existing Framer Properties Control.** The control must still offer both `Solid` and `Dashed`. Do not hard-code the style or remove the control. The runtime fallback must also default to `dashed` when the stored value is missing.
+
+### 20. Saved-progress restoration must not cause hydration mismatches
+
+**Saved-progress restoration must not introduce server/client or hydration mismatches (#425/#418/#422).** The server and initial client render must match (Step 1). Do not read `sessionStorage` synchronously during render/initializers. Restore the saved `currentIndex`/`values`/`timeFormat` in a layout effect (or equivalent pre-paint path) using the stable `booking-engine:session` key, after hydration but before paint, so the saved step appears without a visible Step 1 flash. Keep the stable key plus in-session memory snapshot for remounts, but do not let either cause initial-render divergence.
+
+### 21. Animation architecture remains deterministic
+
+**Future animation work must preserve the deterministic active-step visibility architecture.** The active step is the single source of truth; every transition variant must resolve to `relative/1/auto` for active and `absolute/0/none` for inactive, regardless of direction or number of steps. Do not reintroduce `AnimatePresence`/`usePresence`/enter-flag state that can desynchronize, and do not use opacity/position recovery hacks. The temporary three-option transition selector is for evaluation only and must not be documented as a permanent feature.
