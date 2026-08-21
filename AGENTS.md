@@ -239,3 +239,7 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 ### 24. Final transition control names and defaults
 
 **`Transition Type` is the dropdown used to select the step-transition style and defaults to `Blur Scale`.** Keep all six options (`Fade Rise`, `Blur Scale`, `Slide`, `Zoom`, `Vertical Slide`, `Blur Slide`). **`Transition` controls timing and defaults to Ease In Out, cubic-bezier `0.44, 0, 0.56, 1`, `0.4s` duration, and `0s` delay.** Do not reintroduce a segmented control for transition type, do not rename these controls back to "Step Transition"/"Transition Duration", and do not change the default type away from `Blur Scale` or the default timing away from `0.4s`.
+
+### 25. Navigation-button grouping lives inside the Buttons group and defaults to Split
+
+**The navigation-button grouping control belongs inside the existing `Buttons` Property Control group (`buttonLabels`), not as a standalone top-level control.** It defaults to **Split** (Back far left, primary action far right) with the opt-in **Grouped** side-by-side option still available. Use a **short label** (one or two words — "Layout" with `Grouped`/`Split` options) and **no helper/description text** under it; the label and option titles must be self-explanatory. Do not reintroduce a long label, a description, or move the control back out of the Buttons group.

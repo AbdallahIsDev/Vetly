@@ -4630,6 +4630,10 @@ interface BookingEngineCopyProps {
 		// SYN-03 fix: the "Cancel" affordance shown while a booking POST is
 		// in flight — the last footer button without a label control.
 		cancelSubmitLabel: string;
+		// NAV-GROUP-TOGGLE: lives inside the Buttons group. Default (false /
+		// undefined) keeps the Split layout — Back far left, primary action
+		// far right (see AGENTS.md hard rules).
+		groupNavButtons?: boolean;
 	};
 	// Copy (fix #20: configurable terminal-state strings)
 	copy: {
@@ -4852,10 +4856,6 @@ interface BookingEngineConfigProps {
 	// T10-L6 fix: destination for the success screen's "Done" link. Empty
 	// value hides the link entirely.
 	returnHomeUrl: string;
-	// NAV-GROUP-TOGGLE: opt-in to placing the Back and primary (Continue /
-	// Book Now) buttons side-by-side. Default is FALSE, so Back sits far
-	// left and the primary action far right (see AGENTS.md hard rules).
-	groupNavButtons?: boolean;
 	// T10-M1 fix: analytics hook. The component fires a small set of events
 	// with serializable payloads - `step_complete`, `booking_submitted`,
 	// `booking_success`, `booking_error` - through this callback. No
@@ -7272,7 +7272,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		calApiKey,
 		calEventTypeId,
 		returnHomeUrl,
-		groupNavButtons,
 		onAnalytics,
 	} = props;
 
@@ -7348,7 +7347,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 		progressBar?.barStyle === "solid" ? "solid" : "dashed";
 
 	// Destructure copy from the grouped Buttons object (Requirement 5).
-	const { continueLabel, backLabel, finalActionLabel } = buttonLabels;
+	// NAV-GROUP-TOGGLE: `groupNavButtons` is read from the Buttons group
+	// (moved out of the top-level props). `=== true` keeps the default
+	// Split layout for old instances that never set it.
+	const { continueLabel, backLabel, finalActionLabel, groupNavButtons } = buttonLabels;
 
 	// Autosave-to-browser is a permanent, always-on product feature —
 	// never an author toggle and never paired with disclosure UI.
@@ -9046,7 +9048,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		valuesRef.current = {
 			...valuesRef.current,
 			[SELECTED_SLOT_KEY]: payload,
-		};
+		} as BookingValues;
 		setValues(
 			(prev) => ({ ...prev, [SELECTED_SLOT_KEY]: payload }) as BookingValues,
 		);
@@ -10104,11 +10106,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					zIndex: 10,
 					background: theme.backgroundColor,
 					paddingTop: 12,
-					paddingBottom:
-						// W1-19-N4 fix: same `, 0px` fallback as the
-						// submit bar — non-notch browsers evaluate the
-						// whole calc() as invalid otherwise.
-						"calc(12px + env(safe-area-inset-bottom, 0px))",
 				}}
 			>
 				{!isFirst ? (
@@ -12798,6 +12795,17 @@ addPropertyControls(BookingEngine, {
 				title: "Cancel Submit",
 				defaultValue: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
 			},
+			// NAV-GROUP-TOGGLE: the grouping control belongs to the
+			// navigation buttons, so it lives inside the Buttons group.
+			// Default Split (Back far left, primary action far right);
+			// opt-in Grouped places them side-by-side (AGENTS.md hard rule).
+			groupNavButtons: {
+				type: ControlType.Boolean,
+				title: "Layout",
+				defaultValue: false,
+				enabledTitle: "Grouped",
+				disabledTitle: "Split",
+			},
 		},
 	},
 
@@ -13534,18 +13542,6 @@ addPropertyControls(BookingEngine, {
 	// author list, no manual time-zone picker, no Framer user exposure (see
 	// AGENTS.md).
 	//
-	// NAV-GROUP-TOGGLE: opt into placing the Back and primary (Continue /
-	// Book Now) buttons side-by-side. Defaults to OFF, so Back sits far left
-	// and the primary action far right.
-	groupNavButtons: {
-		type: ControlType.Boolean,
-		title: "Group navigation buttons together",
-		defaultValue: false,
-		enabledTitle: "Grouped",
-		disabledTitle: "Split",
-		description:
-			"Default: Back on the far left, Continue/Book Now on the far right. Turn on to place them side-by-side.",
-	},
 	// W1-02-F1 fix (bundle 17): author-tunable Cal.com request timeout —
 	// applies to both the availability GET and the booking POST.
 	fetchTimeoutMs: {
