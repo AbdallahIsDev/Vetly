@@ -194,3 +194,14 @@ Do not key browser autosave with a per-mount incrementing instance id. Keep a st
 **Only the active step may participate in normal layout flow. The active step must be `position: relative` and visible; inactive rendered steps must be removed from normal flow using `position: absolute`, hidden appropriately, and must not intercept interaction. Step navigation must update this state correctly in both directions.**
 
 This is a **permanent architectural rule**. Do not hide inactive steps with opacity alone while leaving them `position: relative`. Do not use `display: none` as the primary transition mechanism. Do not add arbitrary spacers, min-heights, or fixed-height workarounds so the form can ignore leftover inactive content. The form's height must follow the active step. Inactive steps must use `pointer-events: none` (or equivalent) so they cannot capture clicks or focus. Form state and step layout are separate concerns — do not use extra persistence layers to compensate for a layout bug.
+### 15. Active-step opacity is never 0
+
+**The active step must always resolve to `position: relative`, `opacity: 1`, and `pointer-events: auto`. Inactive rendered steps must resolve to `position: absolute`, `opacity: 0`, and `pointer-events: none`. Navigation in either direction must never leave the active step at opacity 0.**
+
+Opacity is a function of the logical active/presence state, not leftover enter/exit animation from a previous step. Do not start a remounted destination step at `initial: { opacity: 0 }` without a guaranteed animate-to-1. This applies to every configured step index, not only Step 1 ↔ Step 2.
+
+### 16. Restore saved step before the first visible paint
+
+**When saved progress exists, the component must restore the saved current step before the first visible render so users never see an intermediate Step 1 flash before being moved to the saved step.**
+
+Read the existing always-on sessionStorage payload in a layout effect (or equivalent pre-paint path) using a **stable** storage key. Do not wait for a post-paint `useEffect`. Do not introduce a second persistence system. No-saved-progress still starts at step 0.
