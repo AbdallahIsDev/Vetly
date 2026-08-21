@@ -460,7 +460,7 @@ const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
 // group. These constants are the control defaults AND the runtime fallbacks
 // for instances saved before the controls existed.
 const DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL = "Book another";
-const DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL = "Add to calendar";
+const DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL = "Add to Calendar";
 // CONFIRM-HOME-URL: default destination of the "Done" action — website root.
 // The success screen never auto-redirects (see AGENTS.md).
 const DEFAULT_CONFIRM_HOME_URL = "/";
@@ -11914,8 +11914,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						{animateCheck ? (
 							// Stage 2: path-drawing reveal — the stroke grows
 							// from its start point once the circle has landed.
+							// Path direction matters: it starts at the check's
+							// natural lower-left tail (4,12), passes through
+							// the bottom vertex (9,17) and finishes at the
+							// upper-right tip (20,6). Never reversed.
 							<motion.path
-								d="M20 6 9 17 4 12"
+								d="M4 12 9 17 20 6"
 								initial={{ pathLength: 0 }}
 								animate={{ pathLength: 1 }}
 								transition={{
@@ -11925,7 +11929,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 								}}
 							/>
 						) : (
-							<path d="M20 6 9 17 4 12" />
+							<path d="M4 12 9 17 20 6" />
 						)}
 					</svg>
 				</div>
@@ -13016,13 +13020,12 @@ addPropertyControls(BookingEngine, {
 			successTitle: {
 				type: ControlType.String,
 				title: "Success Title",
-				defaultValue: "Booking successfully confirmed",
+				defaultValue: "Booked Successfully",
 			},
 			successSubtitle: {
 				type: ControlType.String,
 				title: "Success Subtitle",
-				defaultValue:
-					"Your appointment details are below — add them to your calendar.",
+				defaultValue: "Your appointment details are below.",
 				displayTextArea: true,
 			},
 			errorTitle: {

@@ -280,3 +280,16 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **`Cal.com API Base URL` (`calApiBaseUrl`, default `https://api.cal.com`) remains an exposed Property Control** because self-hosted Cal.com deployments point at a different origin — something only the site author knows. It feeds both Cal.com calls (slots GET and booking POST) with trailing slashes stripped at the use site. Unlike rule 26's internals, this is deployment configuration, not implementation detail; do not hard-code it.
 
+### 35. Final confirmation copy defaults (supersedes rule 30 defaults)
+
+**The confirmation heading default is `"Booked Successfully"`; the subtitle default is `"Your appointment details are below."`** Heading and subtitle still never repeat each other (rule 30's structural requirement stands). Subtitle copy must stay concise and natural: **no em dashes and no AI-style punctuation**, and it must only mention adding to a calendar when an actual calendar action is rendered on the confirmation state.
+
+### 36. Add to Calendar action must exist and be configurable
+
+**The confirmation state always offers a working Add to Calendar action wired to the existing ICS pipeline (`buildIcsDataUri`, fixed generic filename) — never a duplicate calendar system or an invented external-auth flow.** It renders whenever a booked slot exists (an .ics needs a date/time), sits inside the right-aligned confirmation group to the left of Done/Book another, and its label comes from the Buttons group (`addToCalendarLabel`, default `"Add to Calendar"`). Google/Outlook deep links may accompany it but do not replace it.
+
+### 37. Check-mark draw direction is forward along the path
+
+**The confirmation check mark must visibly trace its SVG path from its natural starting point at the lower-left tail (`4,12`), through the bottom vertex (`9,17`), ending at the upper-right tip (`20,6`) — i.e., `d="M4 12 9 17 20 6"` with `pathLength` 0 → 1.** Never reverse the path so it draws tip-first, and never fake the draw with an opacity reveal. Rule 33's requirements (reuse Transition Type for the circle, own draw animation for the check) are unchanged.
+
+
