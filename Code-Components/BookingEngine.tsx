@@ -22,11 +22,9 @@ import {
 	useIsStaticRenderer,
 } from "framer";
 import {
-	AnimatePresence,
 	MotionConfig,
 	motion,
 	type Transition,
-	usePresence,
 	useReducedMotion,
 } from "framer-motion";
 import * as React from "react";
@@ -7051,66 +7049,87 @@ function buildCalendarDeepLink(
 // away; reworded to point at the real location without implying adjacency.
 // T7-I3 fix: @framerDisableUnlink prevents editors from
 // accidentally unlink-detaching this code component into a divergent copy.
-// Named variants (stable identity) so opacity is a function of presence,
-// not leftover enter/exit motion from the previous step. `layout` +
-// popLayout previously projected the exiting step's opacity:0 onto the
-// destination on reverse navigation, leaving the active step invisible
-// while position/pointer-events had already flipped.
-const STEP_PRESENCE_VARIANTS = {
-	enter: { opacity: 0, y: 12 },
+// Deterministic step visibility — single source of truth.
+// Previous architecture used AnimatePresence + usePresence + playEnterAnimation
+// + variants enter/active/inactive. That left animation state (initial/animate
+// /exit, layout projection, AnimatePresence mode) as a second source of truth
+// that could survive re-mounts and leave `isPresent:true` with `opacity:0`
+// after repeated 1↔2 cycles. This replaces it with a pure function of
+// `activeIndex`: every render derives position/opacity/pointerEvents directly
+// from `isActive`. No AnimatePresence, no usePresence, no initial-enter flag,
+// no layout projection. Motion only interpolates between the two deterministic
+// end states; initial={false} guarantees the first paint (including a restored
+// saved step) is already at the correct final opacity without flashing.
+const STEP_VISIBILITY_VARIANTS = {
 	active: { opacity: 1, y: 0 },
-	inactive: { opacity: 0, y: -12 },
+	inactive: { opacity: 0, y: 8 },
 } as const;
 
-// T5-M3 fix: AnimatePresence keeps the exiting step mounted during the
-// fade, and the old motion.div stayed fully present in the
-// accessibility tree - screen-reader users could re-read, and even tab
-// into, the step that is visually gone. usePresence() flips to false the
-// moment the step starts exiting, so the wrapper is hidden from assistive
-// tech immediately (focus has already moved to the new step's heading).
-function AnimatedStepContent(props: {
+function StepVisibilityWrapper(props: {
+	isActive: boolean;
 	transition: Transition;
 	children: React.ReactNode;
-	/** False for the first visible step (including a restored saved step)
-	 *  so it never paints at opacity 0. True after the visitor navigates. */
-	playEnterAnimation: boolean;
+	// Diagnostic: step index for logging, not for identity (key is step.id).
+	stepIndex: number;
+	activeIndex: number;
 }) {
-	const [isPresent] = usePresence();
 	const reducedMotion = useReducedMotion();
-	// T8-H1 fix: on the canvas and in exports there is nothing to animate -
-	// skip framer-motion entirely so every properties-panel edit stops
-	// triggering layout measurement + spring runs.
 	const isStatic = useIsStaticRenderer();
 	if (isStatic) {
-		return <div style={{ position: "relative" }}>{props.children}</div>;
+		return (
+			<div
+				style={{
+					position: props.isActive ? "relative" : "absolute",
+					left: props.isActive ? undefined : 0,
+					right: props.isActive ? undefined : 0,
+					width: "100%",
+					pointerEvents: props.isActive ? "auto" : "none",
+					opacity: props.isActive ? 1 : 0,
+				}}
+				aria-hidden={props.isActive ? undefined : true}
+				inert={props.isActive ? undefined : true}
+			>
+				{props.children}
+			</div>
+		);
 	}
-	// Presence is the source of truth for layout AND opacity. Active
-	// steps always animate toward `active` (opacity 1); inactive/exiting
-	// steps toward `inactive` (opacity 0). Do not use `layout` here —
-	// layout projection fights opacity/y on reverse navigation.
 	return (
 		<motion.div
-			variants={STEP_PRESENCE_VARIANTS}
-			initial={props.playEnterAnimation ? "enter" : false}
-			animate={isPresent ? "active" : "inactive"}
-			exit="inactive"
+			variants={STEP_VISIBILITY_VARIANTS}
+			initial={false}
+			animate={props.isActive ? "active" : "inactive"}
 			transition={reducedMotion ? INSTANT_TRANSITION : props.transition}
 			style={{
-				position: isPresent ? "relative" : "absolute",
-				left: isPresent ? undefined : 0,
-				right: isPresent ? undefined : 0,
+				position: props.isActive ? "relative" : "absolute",
+				left: props.isActive ? undefined : 0,
+				right: props.isActive ? undefined : 0,
 				width: "100%",
-				pointerEvents: isPresent ? "auto" : "none",
+				pointerEvents: props.isActive ? "auto" : "none",
 			}}
-			// W1-11-NEW-FIND-5 fix: aria-hidden only hides the exiting step
-			// from screen readers — Tab still reached its focusable elements
-			// during the ~16ms AnimatePresence exit window, and when the old
-			// step unmounted the focus dropped to <body>. `inert` removes the
-			// departing subtree from BOTH the accessibility tree and the Tab
-			// order while it plays out (supported natively as a boolean prop
-			// by React 19).
-			aria-hidden={isPresent ? undefined : true}
-			inert={isPresent ? undefined : true}
+			aria-hidden={props.isActive ? undefined : true}
+			inert={props.isActive ? undefined : true}
+			// Diagnostic: expose deterministic state as data attributes for
+			// Elements/Computed inspection and for runtime logging verification.
+			data-step-index={props.stepIndex}
+			data-active-index={props.activeIndex}
+			data-is-active={props.isActive ? "1" : "0"}
+			onAnimationComplete={() => {
+				// Diagnostic hook — logs final deterministic state after each
+				// transition. Keep lightweight; gated behind __BE_STEP_DEBUG__.
+				if (
+					typeof window !== "undefined" &&
+					(window as unknown as { __BE_STEP_DEBUG__?: boolean })
+						.__BE_STEP_DEBUG__
+				) {
+					const el = document.querySelector(
+						`[data-step-index=\"${props.stepIndex}\"]`,
+					) as HTMLElement | null;
+					const cs = el ? getComputedStyle(el) : null;
+					console.debug(
+						`[BE StepVisibility] step=${props.stepIndex} active=${props.activeIndex} isActive=${props.isActive} position=${cs?.position ?? (props.isActive ? "relative" : "absolute")} opacity=${cs?.opacity ?? (props.isActive ? "1" : "0")} pointerEvents=${cs?.pointerEvents ?? (props.isActive ? "auto" : "none")}`,
+					);
+				}
+			}}
 		>
 			{props.children}
 		</motion.div>
@@ -8254,9 +8273,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// and double-firing analytics. This ref closes it; released when the
 	// new index actually lands (effect on safeCurrentIndex below).
 	const navigatingRef = React.useRef(false);
-	// First visible step (including a restored saved step) must paint at
-	// opacity 1. Enter animation is armed only after the visitor navigates.
-	const playStepEnterAnimationRef = React.useRef(false);
 	// T3-H2 fix: one idempotency key per selected slot, generated on first
 	// submit and REUSED across retries of the same submission — see
 	// handleSubmitBooking / handleSlotReady / makeIdempotencyKey.
@@ -8669,7 +8685,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 						.errors,
 				}));
 				setTouched((prev) => touchAllFieldsIn(invalidStep, prev));
-				playStepEnterAnimationRef.current = true;
 				setCurrentIndex(firstInvalidIdx);
 				scheduleFocusTimer(() => focusFirstInvalidField(invalidStep));
 				return;
@@ -8730,7 +8745,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// is separately guarded by submittingRef.
 		if (navigatingRef.current) return;
 		navigatingRef.current = true;
-		playStepEnterAnimationRef.current = true;
 		// T10-M1 fix: announce step completion as the visitor advances.
 		emitAnalytics("step_complete", {
 			stepIndex: safeCurrentIndex,
@@ -8778,7 +8792,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// (W1-14-F9, ~L7063) resets it after the transition.
 		if (navigatingRef.current) return;
 		navigatingRef.current = true;
-		playStepEnterAnimationRef.current = true;
 		setCurrentIndex((i) => Math.max(0, i - 1));
 	}, [isFirst]);
 
@@ -8800,7 +8813,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// link cannot trigger two transitions in the same commit.
 			if (navigatingRef.current) return;
 			navigatingRef.current = true;
-			playStepEnterAnimationRef.current = true;
 			if (flowStatus === "submitting") {
 				setSubmitError(null);
 				idempotencyKeyRef.current = null;
@@ -8847,7 +8859,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 				setValues((prev) => ({ ...prev, [SELECTED_SLOT_KEY]: undefined }));
 				setPickedDate(null);
 				idempotencyKeyRef.current = null;
-				playStepEnterAnimationRef.current = true;
 				setCurrentIndex(dtIdx);
 				slotsRefetch();
 			}
@@ -8901,7 +8912,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		setVisibleMonth(null);
 		setSubmitError(null);
 		setBookingResult(null);
-		playStepEnterAnimationRef.current = false;
 		setCurrentIndex(0);
 		transitionFlowStatus("in-progress");
 		submittingRef.current = false;
@@ -9084,7 +9094,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		handleBack,
 		handleCancelSubmit,
 		handleContinue,
-		playStepEnterAnimation: playStepEnterAnimationRef.current,
 		handleFieldChange,
 		handleInlineDateChange,
 		handleInlineMonthChange,
@@ -9230,7 +9239,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		handleSlotReady,
 		handleTimeFormatChange,
 		hasCalConfig,
-		playStepEnterAnimation,
 		isCanvas,
 		isFirst,
 		isSubmitting,
@@ -9318,6 +9326,71 @@ export default function BookingEngine(props: BookingEngineProps) {
 		() => ({ ...DEFAULT_ARIA_LABELS, ...(copy.aria || {}) }),
 		[copy.aria],
 	);
+
+	// Diagnostic instrumentation — temporary, clearly labeled, easy to remove.
+	// Enable in Framer/live site by running `window.__BE_STEP_DEBUG__ = true`
+	// in the console before reproducing navigation. Logs deterministic state
+	// for every step on every navigation and verifies computed opacity/position.
+	// Keep lightweight and gated; remove once the fix is confirmed.
+	const prevDiagnosticIndexRef = React.useRef<number>(safeCurrentIndex);
+	React.useEffect(() => {
+		const prev = prevDiagnosticIndexRef.current;
+		const direction =
+			safeCurrentIndex > prev
+				? "forward"
+				: safeCurrentIndex < prev
+					? "back"
+					: "initial";
+		prevDiagnosticIndexRef.current = safeCurrentIndex;
+		if (typeof window === "undefined") return;
+		const w = window as unknown as { __BE_STEP_DEBUG__?: boolean };
+		if (!w.__BE_STEP_DEBUG__) return;
+		console.debug(
+			`[BE Diagnostic] navigation: ${prev} → ${safeCurrentIndex} direction=${direction} total=${totalActive}`,
+		);
+		activeSteps.forEach((step, idx) => {
+			const isActive = idx === safeCurrentIndex;
+			console.debug(
+				`[BE Diagnostic] expected step=${idx} id=${step.id} isActive=${isActive} position=${isActive ? "relative" : "absolute"} opacity=${isActive ? 1 : 0} pointerEvents=${isActive ? "auto" : "none"} direction=${direction}`,
+			);
+		});
+		// Verify computed styles after paint (double rAF)
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				if (!w.__BE_STEP_DEBUG__) return;
+				let mismatch = false;
+				activeSteps.forEach((_, idx) => {
+					const el = document.querySelector(
+						`[data-step-index="${idx}"]`,
+					) as HTMLElement | null;
+					if (!el) {
+						console.warn(`[BE Diagnostic] missing DOM for step ${idx}`);
+						return;
+					}
+					const cs = getComputedStyle(el);
+					const expectedOpacity = idx === safeCurrentIndex ? "1" : "0";
+					const expectedPosition = idx === safeCurrentIndex ? "relative" : "absolute";
+					const expectedPointer = idx === safeCurrentIndex ? "auto" : "none";
+					const ok =
+						cs.opacity === expectedOpacity &&
+						cs.position === expectedPosition &&
+						cs.pointerEvents === expectedPointer;
+					console.debug(
+						`[BE Diagnostic] DOM step=${idx} computed position=${cs.position} opacity=${cs.opacity} pointerEvents=${cs.pointerEvents} expected ${expectedPosition}/${expectedOpacity}/${expectedPointer} ${ok ? "OK" : "MISMATCH"}`,
+					);
+					if (!ok) {
+						mismatch = true;
+						console.error(
+							`[BE Diagnostic] MISMATCH step=${idx} active=${safeCurrentIndex} expected opacity ${expectedOpacity} got ${cs.opacity} — deterministic invariant violated`,
+						);
+					}
+				});
+				if (!mismatch) {
+					console.debug(`[BE Diagnostic] invariant OK for active=${safeCurrentIndex}`);
+				}
+			});
+		});
+	}, [safeCurrentIndex, activeSteps, totalActive]);
 
 	if (totalActive === 0) {
 		// On the published site, rendering nothing is cleaner than an error
@@ -9760,12 +9833,15 @@ export default function BookingEngine(props: BookingEngineProps) {
 				</div>
 			) : null}
 
-			{/* Step content with smooth transition between steps.
-                AnimatePresence mode="sync" runs enter/exit together. Exiting
-                steps leave document flow via position:absolute (isPresent),
-                so the form height follows the active step without popLayout
-                layout projection (which left reverse-nav destinations at
-                opacity 0). */}
+			{/* Deterministic step visibility — single source of truth is
+                 `safeCurrentIndex`. Every step is rendered, but only the
+                 active step is `relative/1/auto`; all others are
+                 `absolute/0/none`. No AnimatePresence, no usePresence, no
+                 enter-flag — opacity/position are pure functions of
+                 `isActive`. Motion only interpolates between the two
+                 deterministic end states; `initial={false}` guarantees the
+                 first paint (including a restored saved step) is already at
+                 the correct final opacity without flashing. */}
 			<form
 				// T5-L6 fix: give the form an accessible name so screen
 				// readers can distinguish it from other forms on a page.
@@ -9796,85 +9872,90 @@ export default function BookingEngine(props: BookingEngineProps) {
 					position: "relative",
 				}}
 			>
-				<AnimatePresence mode="sync" initial={false}>
-					<AnimatedStepContent
-						key={safeCurrentIndex}
-						transition={stepTransition}
-						playEnterAnimation={playStepEnterAnimation}
-					>
-						<h2
-							ref={stepTitleRef}
-							tabIndex={-1}
-							style={{
-								color: theme.textPrimaryColor,
-								fontSize: 22,
-								fontWeight: 700,
-								marginBottom: 4,
-								lineHeight: 1.2,
-								marginTop: 0,
-								outline: "none",
-								// W1-19-F-09 fix: when the browser
-								// scrolls this focus target into view
-								// (native focus scroll / page restore),
-								// keep it clear of any sticky headers
-								// or the sticky footer nav.
-								scrollMarginTop: 72,
-							}}
+				{activeSteps.map((step, idx) => {
+					const isActive = idx === safeCurrentIndex;
+					return (
+						<StepVisibilityWrapper
+							key={step.id}
+							isActive={isActive}
+							stepIndex={idx}
+							activeIndex={safeCurrentIndex}
+							transition={stepTransition}
 						>
-							{currentStep.title}
-						</h2>
-						{currentStep.subtitle ? (
-							<div
+							<h2
+								ref={isActive ? stepTitleRef : null}
+								tabIndex={-1}
 								style={{
-									color: theme.textSecondaryColor,
-									fontSize: 14,
-									marginBottom: 16,
-									lineHeight: 1.5,
+									color: theme.textPrimaryColor,
+									fontSize: 22,
+									fontWeight: 700,
+									marginBottom: 4,
+									lineHeight: 1.2,
+									marginTop: 0,
+									outline: "none",
+									// W1-19-F-09 fix: when the browser
+									// scrolls this focus target into view
+									// (native focus scroll / page restore),
+									// keep it clear of any sticky headers
+									// or the sticky footer nav.
+									scrollMarginTop: 72,
 								}}
 							>
-								{currentStep.subtitle}
-							</div>
-						) : null}
-						<StepBody
-							step={currentStep}
-							steps={activeSteps}
-							values={values}
-							errors={errors}
-							touched={touched}
-							theme={theme}
-							borderRadius={borderRadius}
-							hasCalConfig={hasCalConfig}
-							slotsLoading={slotsLoading}
-							slotsError={slotsError}
-							slotsForSelectedDate={slotsForSelectedDate}
-							availableDates={availableDates}
-							selectedDate={selectedDate}
-							visibleMonth={visibleMonth}
-						timeZone={timeZone}
-						timeFormat={timeFormat}
-						copy={copy}
-							ariaLabels={ariaLabels}
-							errorCopy={errorCopy}
-							onFieldChange={handleFieldChange}
-							onSlotReady={handleSlotReady}
-						onDateChange={handleInlineDateChange}
-						onMonthChange={handleInlineMonthChange}
-						// TZ-TIME-HARD-RULE: no `onTimeZoneChange` — the zone
-						// is auto-detected and cannot be changed by visitors.
-						// W1-14-F3 fix: was an inline arrow — now the
-							// stable handleTimeFormatChange so StepBody's
-							// React.memo holds between unrelated re-renders.
-							onTimeFormatChange={handleTimeFormatChange}
-							onJumpToStep={handleJumpToStep}
-							onRetrySlots={slotsRefetch}
-							hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
-							engineWidth={engineWidth}
-							// W1-20-N1 fix: freeze all authored fields during
-							// the POST (see StepBodyProps.isSubmitting).
-							isSubmitting={isSubmitting}
-						/>
-					</AnimatedStepContent>
-				</AnimatePresence>
+								{step.title}
+							</h2>
+							{step.subtitle ? (
+								<div
+									style={{
+										color: theme.textSecondaryColor,
+										fontSize: 14,
+										marginBottom: 16,
+										lineHeight: 1.5,
+									}}
+								>
+									{step.subtitle}
+								</div>
+							) : null}
+							<StepBody
+								step={step}
+								steps={activeSteps}
+								values={values}
+								errors={errors}
+								touched={touched}
+								theme={theme}
+								borderRadius={borderRadius}
+								hasCalConfig={hasCalConfig}
+								slotsLoading={slotsLoading}
+								slotsError={slotsError}
+								slotsForSelectedDate={slotsForSelectedDate}
+								availableDates={availableDates}
+								selectedDate={selectedDate}
+								visibleMonth={visibleMonth}
+								timeZone={timeZone}
+								timeFormat={timeFormat}
+								copy={copy}
+								ariaLabels={ariaLabels}
+								errorCopy={errorCopy}
+								onFieldChange={handleFieldChange}
+								onSlotReady={handleSlotReady}
+								onDateChange={handleInlineDateChange}
+								onMonthChange={handleInlineMonthChange}
+								// TZ-TIME-HARD-RULE: no `onTimeZoneChange` — the zone
+								// is auto-detected and cannot be changed by visitors.
+								// W1-14-F3 fix: was an inline arrow — now the
+								// stable handleTimeFormatChange so StepBody's
+								// React.memo holds between unrelated re-renders.
+								onTimeFormatChange={handleTimeFormatChange}
+								onJumpToStep={handleJumpToStep}
+								onRetrySlots={slotsRefetch}
+								hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
+								engineWidth={engineWidth}
+								// W1-20-N1 fix: freeze all authored fields during
+								// the POST (see StepBodyProps.isSubmitting).
+								isSubmitting={isSubmitting}
+							/>
+						</StepVisibilityWrapper>
+					);
+				})}
 			</form>
 
 			{/* Footer nav */}

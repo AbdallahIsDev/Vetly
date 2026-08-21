@@ -205,3 +205,9 @@ Opacity is a function of the logical active/presence state, not leftover enter/e
 **When saved progress exists, the component must restore the saved current step before the first visible render so users never see an intermediate Step 1 flash before being moved to the saved step.**
 
 Read the existing always-on sessionStorage payload in a layout effect (or equivalent pre-paint path) using a **stable** storage key. Do not wait for a post-paint `useEffect`. Do not introduce a second persistence system. No-saved-progress still starts at step 0.
+
+### 17. Step visibility is deterministically derived from the active step
+
+**Step visibility must be deterministically derived from the active step. The active step must always end at `position: relative`, `opacity: 1`, and `pointer-events: auto`; inactive steps must end at `position: absolute`, `opacity: 0`, and `pointer-events: none`. This must remain correct across unlimited repeated forward/back navigation. Do not use timing hacks, retries, or navigation-count-specific fixes.**
+
+There must be a single source of truth (`activeStepIndex` → `isActive` → style). Do not maintain independent long-lived animation/opacity/position state that can desynchronize from the logical active step. Any recurrence of `active step at opacity 0` is an architectural regression — fix the deterministic derivation, do not add another conditional, timeout, forced repaint, or recovery patch.
