@@ -1,14 +1,15 @@
-import * as React from "react"
 import { addPropertyControls, ControlType, useIsStaticRenderer } from "framer"
 import {
     animate,
     motion,
+    type Transition,
     useInView,
     useMotionTemplate,
     useMotionValue,
     useScroll,
     useTransform,
 } from "framer-motion"
+import * as React from "react"
 
 type RevealDirection =
     | "bottom"
@@ -27,6 +28,24 @@ type ResponsiveImageLike = {
     alt?: string
 }
 
+type CornerRadius = {
+    radius?: number
+    topLeft?: number
+    topRight?: number
+    bottomRight?: number
+    bottomLeft?: number
+}
+
+type BorderConfig = {
+    borderWidth?: number
+    borderTopWidth?: number
+    borderRightWidth?: number
+    borderBottomWidth?: number
+    borderLeftWidth?: number
+    borderStyle?: "solid" | "dashed" | "dotted" | "double" | "none" | "hidden"
+    borderColor?: string
+}
+
 type Props = {
     image?: ResponsiveImageLike
     revealEnabled: boolean
@@ -37,23 +56,23 @@ type Props = {
     inViewAmount: number
     scrollStart: number
     scrollEnd: number
-    transition: any
+    transition?: Transition
     placeholderBackground: string
     once: boolean
     shadowEnabled: boolean
     shadow: string
-    radius?: any
+    radius?: number | CornerRadius
     radiusPerCorner?: boolean
     topLeft?: number
     topRight?: number
     bottomRight?: number
     bottomLeft?: number
-    border?: any
+    border?: BorderConfig
     style?: React.CSSProperties
     imagePadding: string
     hoverEnabled: boolean
     hoverScale: number
-    hoverTransition: any
+    hoverTransition?: Transition
 }
 
 const DIAGONAL_DIRECTIONS: RevealDirection[] = [
@@ -106,10 +125,7 @@ export default function ImageReveal(props: Props) {
     // When the reveal is disabled, behave like a plain static image.
     const noReveal = !revealEnabled
 
-    const isDiagonal = React.useMemo(
-        () => DIAGONAL_DIRECTIONS.includes(direction),
-        [direction]
-    )
+    const isDiagonal = React.useMemo(() => DIAGONAL_DIRECTIONS.includes(direction), [direction])
 
     const ref = React.useRef<HTMLDivElement | null>(null)
     const inView = useInView(ref, { amount: inViewAmount, once })
@@ -134,12 +150,9 @@ export default function ImageReveal(props: Props) {
         [scrollStart, scrollEnd]
     )
 
-    const scrollProgress = useTransform(
-        scrollYProgress,
-        [safeScrollStart, safeScrollEnd],
-        [0, 1],
-        { clamp: true }
-    )
+    const scrollProgress = useTransform(scrollYProgress, [safeScrollStart, safeScrollEnd], [0, 1], {
+        clamp: true,
+    })
 
     const startRevealed = noReveal || revealMode === "revealed"
     const inViewProgress = useMotionValue(startRevealed ? 1 : 0)
@@ -183,10 +196,8 @@ export default function ImageReveal(props: Props) {
         shouldAnimateInView,
     ])
 
-    const currentMaskProgress =
-        revealMode === "scroll" ? scrollProgress : inViewProgress
-    const currentScaleProgress =
-        revealMode === "scroll" ? scrollProgress : scaleProgress
+    const currentMaskProgress = revealMode === "scroll" ? scrollProgress : inViewProgress
+    const currentScaleProgress = revealMode === "scroll" ? scrollProgress : scaleProgress
 
     // ===============================================================
     // CLIP-PATH LOGIC
@@ -224,9 +235,8 @@ export default function ImageReveal(props: Props) {
         []
     )
 
-    const diagStart = (diagDirectionMap as Record<string, { start: number[] }>)[
-        direction
-    ]?.start ?? [0, 100]
+    const diagStart = (diagDirectionMap as Record<string, { start: number[] }>)[direction]
+        ?.start ?? [0, 100]
     const [rawStartX, rawStartY] = diagStart
     const rawEndX = 100 - rawStartX
     const rawEndY = 100 - rawStartY
@@ -249,29 +259,13 @@ export default function ImageReveal(props: Props) {
     const endX = adjustAnchorForInitialSquare(rawEndX)
     const endY = adjustAnchorForInitialSquare(rawEndY)
 
-    const diagSize = useTransform(
-        currentMaskProgress,
-        [0, 1],
-        [initialSize, 260]
-    )
+    const diagSize = useTransform(currentMaskProgress, [0, 1], [initialSize, 260])
     const diagCx = useTransform(currentMaskProgress, [0, 1], [startX, endX])
     const diagCy = useTransform(currentMaskProgress, [0, 1], [startY, endY])
-    const diagLeft = useTransform(
-        [diagCx, diagSize],
-        ([x, s]: [number, number]) => x - s / 2
-    )
-    const diagRight = useTransform(
-        [diagCx, diagSize],
-        ([x, s]: [number, number]) => x + s / 2
-    )
-    const diagTop = useTransform(
-        [diagCy, diagSize],
-        ([y, s]: [number, number]) => y - s / 2
-    )
-    const diagBottom = useTransform(
-        [diagCy, diagSize],
-        ([y, s]: [number, number]) => y + s / 2
-    )
+    const diagLeft = useTransform([diagCx, diagSize], ([x, s]: [number, number]) => x - s / 2)
+    const diagRight = useTransform([diagCx, diagSize], ([x, s]: [number, number]) => x + s / 2)
+    const diagTop = useTransform([diagCy, diagSize], ([y, s]: [number, number]) => y - s / 2)
+    const diagBottom = useTransform([diagCy, diagSize], ([y, s]: [number, number]) => y + s / 2)
 
     const diagClipPath = useMotionTemplate`polygon(${diagLeft}% ${diagTop}%, ${diagRight}% ${diagTop}%, ${diagRight}% ${diagBottom}%, ${diagLeft}% ${diagBottom}%)`
 
@@ -304,7 +298,7 @@ export default function ImageReveal(props: Props) {
     // BORDER
     // ===============================================================
     const borderOverlayStyles: React.CSSProperties = React.useMemo(() => {
-        const b = (border ?? {}) as Record<string, any>
+        const b = border ?? {}
         const bw = b.borderWidth ?? b.borderTopWidth ?? 0
         if (!bw) return { display: "none" }
         return {
@@ -339,9 +333,7 @@ export default function ImageReveal(props: Props) {
             borderTopRightRadius: resolvedRadii.topRight,
             borderBottomRightRadius: resolvedRadii.bottomRight,
             borderBottomLeftRadius: resolvedRadii.bottomLeft,
-            backgroundColor: startRevealed
-                ? "transparent"
-                : placeholderBackground,
+            backgroundColor: startRevealed ? "transparent" : placeholderBackground,
             ...style,
         }),
         [placeholderBackground, resolvedRadii, startRevealed, style]
@@ -379,12 +371,7 @@ export default function ImageReveal(props: Props) {
     // STATIC / NO-REVEAL / REVEALED: render a plain image.
     if (isStatic || startRevealed) {
         return (
-            <div
-                ref={ref}
-                style={containerStyles}
-                aria-label={image?.alt || "Image"}
-                role="img"
-            >
+            <div ref={ref} style={containerStyles} aria-label={image?.alt || "Image"} role="img">
                 {/* Shadow layer (static, fully shown) */}
                 {shadowEnabled && (
                     <div
@@ -416,18 +403,13 @@ export default function ImageReveal(props: Props) {
                     </motion.div>
                     <div style={borderOverlayStyles} />
                 </div>
-        </div>
-    )
+            </div>
+        )
     }
 
     // ANIMATED REVEAL
     return (
-        <div
-            ref={ref}
-            style={containerStyles}
-            aria-label={image?.alt || "Image"}
-            role="img"
-        >
+        <div ref={ref} style={containerStyles} aria-label={image?.alt || "Image"} role="img">
             {/* Animated shadow — fades in with the reveal, no clipPath so boxShadow extends naturally. */}
             {shadowEnabled && (
                 <motion.div
@@ -500,8 +482,7 @@ addPropertyControls(ImageReveal, {
         defaultValue: true,
         enabledTitle: "On",
         disabledTitle: "Off",
-        description:
-            "Turn off to render a plain image with no reveal, scale, or shadow animation.",
+        description: "Turn off to render a plain image with no reveal, scale, or shadow animation.",
     },
     revealMode: {
         type: ControlType.Enum,
@@ -535,8 +516,7 @@ addPropertyControls(ImageReveal, {
             "Top-Right to Bottom-Left",
         ],
         defaultValue: "bottom",
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode === "revealed",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode === "revealed",
     },
     initialSize: {
         type: ControlType.Number,
@@ -548,21 +528,17 @@ addPropertyControls(ImageReveal, {
         step: 1,
         unit: "%",
         hidden: ({ revealEnabled, revealMode, direction }) =>
-            !revealEnabled ||
-            revealMode === "revealed" ||
-            !DIAGONAL_DIRECTIONS.includes(direction),
+            !revealEnabled || revealMode === "revealed" || !DIAGONAL_DIRECTIONS.includes(direction),
     },
     inViewAmount: {
         type: ControlType.Number,
         title: "Appear Amt",
-        description:
-            "How much of the element must be visible (0–1) to trigger the reveal.",
+        description: "How much of the element must be visible (0–1) to trigger the reveal.",
         defaultValue: 0.35,
         min: 0,
         max: 1,
         step: 0.01,
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode !== "inView",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode !== "inView",
     },
     scrollStart: {
         type: ControlType.Number,
@@ -572,8 +548,7 @@ addPropertyControls(ImageReveal, {
         min: 0,
         max: 1,
         step: 0.01,
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode !== "scroll",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode !== "scroll",
     },
     scrollEnd: {
         type: ControlType.Number,
@@ -583,8 +558,7 @@ addPropertyControls(ImageReveal, {
         min: 0,
         max: 1,
         step: 0.01,
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode !== "scroll",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode !== "scroll",
     },
     transition: {
         type: ControlType.Transition,
@@ -594,8 +568,7 @@ addPropertyControls(ImageReveal, {
             duration: 1.5,
             ease: [0.77, 0, 0.175, 1],
         },
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode !== "inView",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode !== "inView",
     },
     scaleFrom: {
         type: ControlType.Number,
@@ -605,15 +578,13 @@ addPropertyControls(ImageReveal, {
         min: 1,
         max: 2,
         step: 0.01,
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode === "revealed",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode === "revealed",
     },
     placeholderBackground: {
         type: ControlType.Color,
         title: "Placeholder",
         defaultValue: "#000000",
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode === "revealed",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode === "revealed",
     },
     once: {
         type: ControlType.Boolean,
@@ -621,8 +592,7 @@ addPropertyControls(ImageReveal, {
         defaultValue: true,
         enabledTitle: "Once",
         disabledTitle: "Repeat",
-        hidden: ({ revealEnabled, revealMode }) =>
-            !revealEnabled || revealMode !== "inView",
+        hidden: ({ revealEnabled, revealMode }) => !revealEnabled || revealMode !== "inView",
     },
     shadowEnabled: {
         type: ControlType.Boolean,
