@@ -13025,7 +13025,7 @@ addPropertyControls(BookingEngine, {
 			successSubtitle: {
 				type: ControlType.String,
 				title: "Success Subtitle",
-				defaultValue: "Your appointment details are below.",
+				defaultValue: "Your appointment has been confirmed, Details are below.",
 				displayTextArea: true,
 			},
 			errorTitle: {
