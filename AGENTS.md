@@ -296,5 +296,10 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Event/organizer metadata for the Calendar-step information panel (organizer/business name, avatar/logo, event title, duration, location/meeting type, description) must be fetched from Cal.com (`GET /v2/event-types/{eventTypeId}`, endpoint-specific `cal-api-version: 2024-06-14`, same browser-exposed read-only key, Base URL honored) — never duplicated as new Framer Property Controls.** The panel belongs to the Calendar step only (info | calendar | times; stacks at narrow widths) and renders only from normalized metadata. **Any metadata failure — auth denial, self-hosted gap, malformed body, offline, timeout — must resolve to `null` and hide the panel; it must never delay availability, surface an error state, or block the booking flow.** The author's `Default Meeting Duration` remains the duration fallback when Cal.com returns no length; the visitor auto-detected time zone (rule 8) remains the only displayed zone.
 
+### 39. Async Cal.com updates must never remount or reset the calendar month/date
+
+**Asynchronous Cal.com metadata and availability updates must not remount, reset, or oscillate the calendar's current month/date state, and must never cause visible month flashing on Calendar-step entry or during data loading.** The calendar's own month changes (arrows, PageUp/Down, empty-month auto-advance, cross-month focus) are child-initiated and must never be re-synced against a stale parent `visibleMonth` prop that has not yet caught up via `onMonthChange`; the parent-prop sync is reserved for genuine external changes (saved-step restoration). Do not reintroduce the parent↔child month ping-pong, and do not fix flashing with arbitrary delays, timeouts, or loading gates.
+
+
 
 

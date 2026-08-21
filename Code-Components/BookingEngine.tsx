@@ -3090,8 +3090,25 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// paged forward. Both months are normalized to day 1 before comparing, so a
 	// "Mar 5" prop can't toggle against the widget's "Mar 1", and identical
 	// months are no-ops.
+	// CAL-CALENDAR-STABILITY fix: the sync effect ALSO ran on month changes
+	// the calendar itself initiated (arrows, PageUp/Down, empty-month
+	// auto-advance, cross-month arrow focus). Those changes commit via
+	// startTransition while the parent prop only catches up afterwards
+	// (onMonthChange → parent state → new prop). With async metadata/
+	// availability re-renders landing around that deferred commit, the effect
+	// saw internal ≠ still-old prop and YANKED the calendar back a month,
+	// then it re-advanced — a visible back/forth month flash on step entry.
+	// A child-initiated flag breaks that ping-pong: only genuine external
+	// prop changes (saved-step restore) may re-sync the month.
+	const childMonthChangeRef = React.useRef(false);
 	React.useEffect(() => {
 		if (!initialVisibleMonth) return;
+		// The calendar changed its own month — the prop catches up via
+		// onMonthChange; never re-sync against the still-old prop value.
+		if (childMonthChangeRef.current) {
+			childMonthChangeRef.current = false;
+			return;
+		}
 		const incoming = new Date(
 			initialVisibleMonth.getFullYear(),
 			initialVisibleMonth.getMonth(),
@@ -3254,6 +3271,7 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 			React.startTransition(() => {
 				setVisibleMonth((prev) => {
 					if (prev.getTime() <= currentMonthStart.getTime()) return prev;
+					childMonthChangeRef.current = true;
 					return new Date(prev.getFullYear(), prev.getMonth() - 1, 1);
 				});
 			});
@@ -3267,6 +3285,7 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 			React.startTransition(() => {
 				setVisibleMonth((prev) => {
 					if (prev.getTime() >= maxMonthStart.getTime()) return prev;
+					childMonthChangeRef.current = true;
 					return new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
 				});
 			});
@@ -3362,9 +3381,27 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		});
 	}, [visibleMonth]);
 
+	// CAL-CALENDAR-STABILITY: the exposed setter marks a child-initiated
+	// month change (cross-month arrow focus in moveFocus, and any future
+	// child month mutation) so the parent-prop sync effect above never yanks
+	// the calendar back to a stale prop month. Marked only when the month
+	// actually changes, so boundary no-ops can't leave a stale flag behind.
+	const setVisibleMonthFromCalendar = React.useCallback(
+		(month: Date | ((prev: Date) => Date)) => {
+			setVisibleMonth((prev) => {
+				const next =
+					typeof month === "function" ? month(prev) : (month as Date);
+				if (next.getTime() === prev.getTime()) return prev;
+				childMonthChangeRef.current = true;
+				return next;
+			});
+		},
+		[],
+	);
+
 	return {
 		visibleMonth,
-		setVisibleMonth,
+		setVisibleMonth: setVisibleMonthFromCalendar,
 		calendarCells,
 		firstDayOfWeek,
 		weekdayLabels,
