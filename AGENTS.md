@@ -308,6 +308,18 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **The time-slot area must render as one vertical column (no two-column grid) and must not contain a nested scroll area or a hidden action button — the panel ends naturally after its content.** The calendar-header month navigation buttons use a compact 32×32px footprint with a 16px gap between them, accessible and visually balanced with the month title. Do not reintroduce the 44px touch-target floor for these in-header controls, the two-column grid, or the `maxHeight:220` scroll container.
 
+### 42. Calendar rendering must never bake wall-clock values into the initial markup
+
+**The first server render and the first client render must be pure functions of props/constants — never of `new Date()`/`Date.now()`.** Framer's prerendered HTML is generated at publish time, so wall-clock-derived state (`today`, elapsed-slot instants, seeded month) differs from the hydrating visitor's and produces guaranteed #425/#418 mismatches across the calendar/slot tree. The deterministic pattern is mandatory: both sides render from fixed placeholders (`HYDRATION_PLACEHOLDER_TODAY`, "nothing elapsed yet"), then an isomorphic layout effect applies the real visitor-tz clock pre-paint (including advancing a self-seeded placeholder month). This refines rules 20 and 39; do not regress to clock-initialized state or mask the mismatch with `suppressHydrationWarning`.
+
+### 43. Time-slot labels are plain times — no GMT/time-zone suffixes
+
+**Individual time-slot buttons must render only the localized time (e.g. `9:00 AM`).** Never append `(GMT+3)`-style offsets or tz abbreviations to visible slot labels, whether before or after a date is selected. Slot identity lives in the ISO value/aria-labels/payload, not in button text. Visitor timezone behavior itself is unchanged (rule 8).
+
+### 44. Time panel stays contained within the calendar row
+
+**On wide layouts the available-times list is height-contained by the calendar-driven flex row (absolute-fill wrapper with internal overflow when many slots exist); on narrow widths it stacks with natural page flow.** It must never stretch the whole Booking Engine component downward. This refines rule 41's single-column requirement with bounded containment; do not reintroduce unbounded growth or fixed pixel caps like `maxHeight:220`.
+
 
 
 

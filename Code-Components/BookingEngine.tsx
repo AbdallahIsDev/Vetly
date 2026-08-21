@@ -2085,10 +2085,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
 				style={{
 					display: "flex",
 					alignItems: "center",
-					// W2-40 fix: compact header — the nav controls sit close
-					// to the month title (was 24px wide, halved to 12px on
-					// narrow). Fixed 16px keeps them balanced everywhere.
-					gap: 16,
+					// W2-46 fix: compact, subtle header controls — 24px buttons
+					// with an 8px gap, visually quieter than the month title.
+					gap: 8,
 				}}
 			>
 				<button
@@ -2103,16 +2102,13 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					style={{
 						appearance: "none",
 						background: "transparent",
-						color: canGoPrev ? textColor : mutedSoftText,
+						// W2-46 fix: muted tone (60% text) so the arrows stay
+						// secondary to the month title; disabled stays softer.
+						color: canGoPrev ? mutedText : mutedSoftText,
 						border: "none",
-						// F-17-3 fix: was 6.
 						borderRadius,
-						// W2-40 fix: compact 32px control (still ≥ the 24px
-						// WCAG 2.5.8 minimum target size) sized to the
-						// calendar header instead of the 44px floor used for
-						// primary form actions.
-						width: 32,
-						height: 32,
+						width: 24,
+						height: 24,
 						padding: 0,
 						display: "inline-flex",
 						alignItems: "center",
@@ -2149,13 +2145,12 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						style={{
 							appearance: "none",
 							background: "transparent",
-							color: canGoNext ? textColor : mutedSoftText,
+							// W2-46 fix: muted tone — matches the prev button.
+							color: canGoNext ? mutedText : mutedSoftText,
 							border: "none",
-							// F-17-3 fix: was 6.
 							borderRadius,
-							// W2-40 fix: compact 32px — matches the prev button.
-							width: 32,
-							height: 32,
+							width: 24,
+							height: 24,
 							padding: 0,
 							display: "inline-flex",
 							alignItems: "center",
@@ -2791,16 +2786,34 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				})}
 			</div>
 
+			{/* W2-47 fix: the time list must stay CONTAINED within the
+                    calendar row, never stretch the whole component. Wide:
+                    this wrapper takes its height from the row (the calendar
+                    section drives it) and the list fills it absolutely,
+                    scrolling internally when there are many slots — so the
+                    panel stays visually aligned with the calendar. Narrow:
+                    natural flow; the stacked page scrolls instead. No fixed
+                    pixel cap, no hidden action area. */}
 			<div
-				className="be-dt-scroll"
-				style={{
-					minWidth: 0,
-					// W2-39 fix: no nested scroll area — the time panel grows
-					// with its content and ends naturally. The old
-					// `overflowY: auto + maxHeight: 220` both capped the list
-					// and left a large empty gap under the buttons.
-				}}
+				style={
+					isNarrow
+						? { minWidth: 0 }
+						: { flex: 1, minHeight: 0, position: "relative", minWidth: 0 }
+				}
 			>
+				<div
+					className="be-dt-scroll"
+					style={
+						isNarrow
+							? { minWidth: 0 }
+							: {
+									position: "absolute",
+									inset: 0,
+									overflowY: "auto",
+									minWidth: 0,
+								}
+					}
+				>
 				{/* Fix #18: when no date is picked (and the engine asked
                             us to hide times until a date is chosen), show a
                             hint instead of dumping all month slots. */}
@@ -3002,6 +3015,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						})}
 					</div>
 				)}
+				</div>
 			</div>
 		</aside>
 	);
@@ -3514,7 +3528,16 @@ function useTimeGrid(options: UseTimeGridOptions): {
 	// mode), which is the only time the synthetic grid should appear.
 	const timeOptions = React.useMemo(() => {
 		if (availableTimes !== undefined) {
-			const base = availableTimes.map((timeOption) => ({
+			// W2-45 fix: plain time labels only. The old DST-collision
+			// suffix ("(EDT)" / "(GMT-05:00)") fired whenever two rows
+			// shared a wall-clock label — which, with times shown before
+			// a date is picked, meant the WHOLE month's identical
+			// wall-times collided and every button rendered a redundant
+			// "(GMT+3)"-style suffix that vanished after picking a date.
+			// Visible labels are now always just the time; slot identity
+			// (and any DST-fold distinction) lives in the ISO `value`,
+			// aria-labels, and the booking payload — never in the text.
+			return availableTimes.map((timeOption) => ({
 				value: timeOption.value,
 				end: timeOption.end,
 				label: formatTimeLabel(
@@ -3525,54 +3548,6 @@ function useTimeGrid(options: UseTimeGridOptions): {
 				),
 				minutes: timeOption.minutes,
 			}));
-			// W1-07-F3 fix: DST fall-back (e.g. 2026-11-01 NY) folds two
-			// distinct UTC instants into the same wall label — two "01:00
-			// AM" rows for what are actually different moments. Only real
-			// Cal.com slots (ISO `value`) can collide (the demo grid's
-			// minute steps can't); suffix the colliding rows with the
-			// visitor-tz abbreviation per instant, e.g. "01:00 AM (EDT)"
-			// vs "01:00 AM (EST)".
-			if (timeZone && isValidTimeZone(timeZone)) {
-				const labelCounts = new Map<string, number>();
-				for (const item of base) {
-					if (!item.value.includes("T")) continue;
-					labelCounts.set(item.label, (labelCounts.get(item.label) || 0) + 1);
-				}
-				const abbrevOf = (instant: string): string | null => {
-					try {
-						const parts = getCachedDateTimeFormat("en", {
-							timeZone,
-							timeZoneName: "short",
-						}).formatToParts(new Date(instant));
-						const short = parts.find((p) => p.type === "timeZoneName")?.value;
-						if (short) return short;
-						// W1-07-F5 fix: an exotic engine can omit the
-						// "short" zone name entirely — the old code then
-						// produced "01:30 AM ()" with empty parens on the
-						// DST fall-back collision branch. Fall back to the
-						// UTC-offset suffix ("GMT-05:00" vs "GMT-06:00"),
-						// which still disambiguates the folded instants.
-						const longParts = getCachedDateTimeFormat("en", {
-							timeZone,
-							timeZoneName: "longOffset",
-						}).formatToParts(new Date(instant));
-						return (
-							longParts.find((p) => p.type === "timeZoneName")?.value || null
-						);
-					} catch {
-						return null;
-					}
-				};
-				return base.map((item) =>
-					item.value.includes("T") && (labelCounts.get(item.label) || 0) > 1
-						? {
-								...item,
-								label: `${item.label} (${abbrevOf(item.value) || ""})`,
-							}
-						: item,
-				);
-			}
-			return base;
 		}
 		const startMin = parseTimeToMinutes(startTime);
 		const endMin = parseTimeToMinutes(endTime);
@@ -3609,14 +3584,22 @@ function useTimeGrid(options: UseTimeGridOptions): {
 	// booking, but only after they'd filled in the rest of the form).
 	// Ticks once a minute, which is plenty granular for greying out a slot
 	// list without re-rendering on every second.
-	const [now, setNow] = React.useState<Date>(() => new Date());
-	React.useEffect(() => {
-		if (typeof window === "undefined") return;
+	// HYDRATION-CLOCK fix: same determinism contract as `today` above. The
+	// wall-clock instant used to be captured independently by the prerender
+	// (publish time) and the hydrating visitor (visit time), so any slot
+	// starting between the two rendered DIFFERENT `disabled` flags in the
+	// served HTML vs the first client render. Both sides now start with
+	// "nothing elapsed yet"; the real instant lands pre-paint on mount and
+	// keeps ticking every minute.
+	const [now, setNow] = React.useState<Date | null>(null);
+	useIsomorphicLayoutEffect(() => {
+		setNow(new Date());
 		const id = window.setInterval(() => setNow(new Date()), 60000);
 		return () => window.clearInterval(id);
 	}, []);
 	const isTimeElapsed = React.useCallback(
 		(time: { value: string; minutes: number }) => {
+			if (!now) return false;
 			if (!selectedDate) return false;
 			if (!isSameDay(selectedDate, today)) return false;
 			// Real Cal.com slots carry a full ISO datetime in `value`; the
@@ -3954,16 +3937,27 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		eventMetaFallbackDurationMinutes,
 	} = props;
 
-	// M4 fix: `today` used to be memoized once with `[]` deps, so a booking
-	// page left open past midnight kept treating yesterday as "today" —
-	// showing the wrong date highlighted and letting a now-past date be
-	// selected. Recompute at each local midnight instead, so a long-lived
-	// session self-corrects without a page refresh.
-	const [today, setToday] = React.useState<Date>(() =>
-		getTodayInTimeZone(timeZone),
-	);
+	// HYDRATION-CLOCK fix (persistent React #425/#418 root cause): `today`
+	// used to initialize straight from the wall clock (`new Date()`), so the
+	// PRERENDERED HTML — generated at publish time — baked the publish-day
+	// calendar into the served markup (today highlight, past-date disabling,
+	// seeded month), while a visitor hydrating days later computed a
+	// different day → guaranteed server/client mismatches across the grid.
+	// First render is now a pure function of constants: BOTH sides start
+	// from one fixed placeholder day; the isomorphic layout effect below
+	// applies the real visitor-tz clock BEFORE paint (no flash, and the
+	// engine's first onMonthChange already carries the real month).
+	const [clockReady, setClockReady] = React.useState(false);
+	const [today, setToday] = React.useState<Date>(() => HYDRATION_PLACEHOLDER_TODAY);
+	useIsomorphicLayoutEffect(() => {
+		setClockReady(true);
+		setToday(getTodayInTimeZone(timeZone));
+		// Mount-only: later timeZone swaps are handled by the scheduler
+		// effect below via its [timeZone] dependency.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 	React.useEffect(() => {
-		if (typeof window === "undefined") return;
+		if (!clockReady || typeof window === "undefined") return;
 		let timeoutId: number;
 		const scheduleNext = () => {
 			const now = new Date();
@@ -3987,7 +3981,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		};
 		scheduleNext();
 		return () => window.clearTimeout(timeoutId);
-	}, [timeZone]);
+	}, [timeZone, clockReady]);
 	// Requirement 4: scoped id for this DateAndTimeInline instance's own
 	// <style> block (hiding the time-list scrollbar needs a real CSS rule
 	// for ::-webkit-scrollbar — inline styles can't target pseudo-elements).
@@ -4042,6 +4036,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		// W1-07-N4/N5 fixes: visitor-tz month seeding + header derivation.
 		timeZone,
 	});
+	// HYDRATION-CLOCK fix: when the calendar self-seeded from the placeholder
+	// day (fresh visit — no saved/restored month), advance to the REAL
+	// current month in the same pre-paint pass as the clock application.
+	// The engine's first onMonthChange then carries the real month — exactly
+	// one availability fetch, no placeholder-month request, and the served
+	// HTML still matches the client's deterministic first render.
+	const selfSeededMonthRef = React.useRef(!initialVisibleMonth);
+	useIsomorphicLayoutEffect(() => {
+		if (!clockReady) return;
+		if (!selfSeededMonthRef.current) return;
+		selfSeededMonthRef.current = false;
+		setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+	}, [clockReady, today, setVisibleMonth]);
 	const [selectedDate, setSelectedDate] = React.useState<Date | null>(
 		() => initialDate ?? null,
 	);
@@ -5111,7 +5118,7 @@ interface BookingEngineConfigProps {
 	step8: StepConfig;
 	step9: StepConfig;
 	step10: StepConfig;
-	// Progress bar - grouped object control (Visible + Step Count Text
+	// Progress - grouped object control (Visible + Step Count Text
 	// Position + Show Text Content + Bar Style).
 	progressBar: {
 		visible: boolean;
@@ -5190,7 +5197,7 @@ const PHONE_REGEX =
 	/^\+?[(]?\d{1,4}[)]?(?:[-\s.]?[(]?\d{1,4}[)]?){2,5}[-\s.]?\d{1,9}$/;
 
 // T7-M6 fix: named constants for repeated magic numbers (touch targets,
-// compact breakpoint, calendar grid size, progress bar height, icon sizes).
+// compact breakpoint, calendar grid size, Progress height, icon sizes).
 const TOUCH_TARGET_MIN = 44;
 const COMPACT_BREAKPOINT = 768;
 const CALENDAR_WEEKS_TO_RENDER = 6;
@@ -5206,7 +5213,7 @@ const CHOICE_COLUMNS_BREAKPOINT_MEDIUM = 380;
 // 50% wide); there is no single-column state anywhere in that code path.
 const PILLS_TWO_PER_ROW_BREAKPOINT = 420;
 // T9-M2/T9-M11 fix: animation configs hoisted to module level so the
-// progress bar and the 12h/24h toggle never allocate new transition/
+// Progress and the 12h/24h toggle never allocate new transition/
 // animate objects per render.
 const PROGRESS_BAR_TRANSITION = {
 	type: "spring",
@@ -6462,6 +6469,12 @@ const CAL_EVENT_TYPE_API_VERSION = "2024-06-14";
 // forbids duplicating Cal.com data as author-facing controls.
 const CAL_META_LOADING_ARIA = "Loading meeting details";
 const CAL_META_UNAVAILABLE_COPY = "Meeting details are temporarily unavailable.";
+// HYDRATION-CLOCK fix: fixed placeholder "today" for the deterministic first
+// render of the Calendar step (see the clock block in DateAndTimeInline).
+// Never rendered as content — it only anchors today-highlight/past-guard/
+// month-seed computations identically on server and client until the
+// isomorphic layout effect swaps in the real visitor-tz clock pre-paint.
+const HYDRATION_PLACEHOLDER_TODAY = new Date(2024, 0, 1);
 // Same freshness window as the slots cache — one cached GET per
 // key/eventType/baseURL combination keeps the panel in sync with Cal.com
 // edits within minutes without hammering the API.
@@ -7924,7 +7937,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	} = styles;
 	// Defensive fallback for instances created before the prop moved.
 	const colorMode: ColorMode = themeSetting || "light";
-	// Progress bar settings (grouped object control). Defaults keep
+	// Progress settings (grouped object control). Defaults keep
 	// previous instances behaving exactly as before.
 	const progressVisible = progressBar?.visible !== false;
 	const stepCountPosition: "top" | "bottom" =
@@ -11371,7 +11384,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                        informational status message — no error/red tones, no
                        role="alert" alarm. It simply occupies the same slot
                        the calendar widget would, so the step heading stays
-                       in its usual position directly under the progress bar.
+                       in its usual position directly under the Progress.
                        The heading is rendered by the parent above the form
                        regardless of which branch shows here. */
 					<div
@@ -13503,12 +13516,12 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
-	// ----- Progress Bar (grouped, like Buttons/Styles) -----
+	// ----- Progress (grouped, like Buttons/Styles) -----
 	progressBar: {
 		type: ControlType.Object,
-		title: "Progress Bar",
+		title: "Progress",
 		icon: "object",
-		buttonTitle: "Progress Bar",
+		buttonTitle: "Progress",
 		controls: {
 			visible: {
 				type: ControlType.Boolean,
