@@ -1675,6 +1675,7 @@ interface CalendarCellProps {
 	dateKey: string;
 	isUnavailable: boolean;
 	isSelected: boolean;
+	isInMonth: boolean;
 	isToday: boolean;
 	isTodayHighlighted: boolean;
 	isRingHover: boolean;
@@ -1711,6 +1712,7 @@ const CalendarCell = React.memo(function CalendarCell({
 	dateKey,
 	isUnavailable,
 	isSelected,
+	isInMonth,
 	isToday,
 	isTodayHighlighted,
 	isRingHover,
@@ -2035,6 +2037,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							dateKey={dateKey}
 							isUnavailable={isUnavailable}
 							isSelected={isSelected}
+							isInMonth={isInMonth}
 							isToday={isToday}
 							isTodayHighlighted={isTodayHighlighted}
 							isRingHover={isRingHover}
@@ -2374,6 +2377,7 @@ interface TimeSlotListProps {
 	selectedAccentText: string;
 	mutedText: string;
 	mutedSoftText: string;
+	backgroundColor: string;
 	loadingLabel: string;
 	dtInstanceId: string;
 	slotsLoading: boolean;
@@ -2578,6 +2582,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		selectedAccentText,
 		mutedText,
 		mutedSoftText,
+		backgroundColor,
 		loadingLabel,
 		dtInstanceId,
 		slotsLoading,
@@ -4838,6 +4843,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					selectedAccentText={selectedAccentText}
 					mutedText={mutedText}
 					mutedSoftText={mutedSoftText}
+					backgroundColor={backgroundColor}
 					// F-17-3 fix: radius token.
 					borderRadius={String(radius)}
 					loadingLabel={loadingLabel}
