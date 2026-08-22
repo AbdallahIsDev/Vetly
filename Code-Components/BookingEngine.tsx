@@ -1827,6 +1827,7 @@ const CalendarCell = React.memo(function CalendarCell({
 				}
 			}}
 			style={{
+				position: "relative",
 				minHeight: TOUCH_TARGET_MIN,
 				// W1-19-N1 fix: the F-01 grid tracks shrink to ~33–39px on
 				// ≤329px viewports; a hard 44px minWidth then overlaps the
@@ -1862,9 +1863,9 @@ const CalendarCell = React.memo(function CalendarCell({
 				// (selected / today / hover), never focus.
 				boxShadow:
 					isSelected || isTodayHighlighted
-						? `inset 0 0 0 1px ${accentColor}`
+						? `inset 0 0 0 2px ${accentColor}`
 						: isRingHover
-							? `inset 0 0 0 1px ${accentColor}`
+							? `inset 0 0 0 2px ${accentColor}`
 							: "none",
 				fontWeight: isTodayHighlighted && !isSelected ? 700 : 400,
 			}}
@@ -1874,7 +1875,31 @@ const CalendarCell = React.memo(function CalendarCell({
                 getDateKeyInTimeZone); with the browser >12h ahead/behind,
                 the old browser-local getDate() labeled "Dec 15" while
                 showing Dec 14 slots. slice(-2) = the zero-padded day. */}
-			{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
+			<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
+				{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
+				{!isInMonth ? (
+					<span
+						aria-hidden="true"
+						style={{
+							position: "absolute",
+							top: -6,
+							left: "50%",
+							transform: "translateX(-50%)",
+							fontSize: 8,
+							fontWeight: 700,
+							letterSpacing: "0.06em",
+							textTransform: "uppercase",
+							color: isRingHover ? accentColor : mutedSoftText,
+							opacity: isRingHover ? 1 : 0,
+							transition: "opacity 0.12s ease",
+							pointerEvents: "none",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{date.toLocaleDateString(pageLocale(), { month: "short" }).toUpperCase()}
+					</span>
+				) : null}
+			</span>
 		</button>
 	);
 });
@@ -2242,14 +2267,17 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							key={label}
 							style={{
 								textAlign: "center",
-								fontSize: 12,
-								opacity: 0.65,
-								color: mutedText,
+								fontSize: 11,
+								fontWeight: 600,
+								letterSpacing: "0.06em",
+								textTransform: "uppercase",
+								color: textColor,
+								opacity: 0.82,
 								padding: "4px 0",
 								marginBottom: 8,
 							}}
 						>
-							{label}
+							{label.toUpperCase()}
 						</div>
 					))}
 				</div>
@@ -2653,6 +2681,34 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				gap: isNarrow ? 8 : 10,
 			}}
 		>
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+				<div
+					style={{
+						fontSize: 12,
+						fontWeight: 700,
+						letterSpacing: "0.06em",
+						textTransform: "uppercase",
+						color: textColor,
+						whiteSpace: "nowrap",
+					}}
+				>
+					{selectedDate
+						? `${selectedDate.toLocaleDateString(pageLocale(), { weekday: "short" }).toUpperCase()} ${selectedDate.getDate()}${(() => {
+								const d = selectedDate.getDate();
+								if (d >= 11 && d <= 13) return "th";
+								switch (d % 10) {
+									case 1:
+										return "st";
+									case 2:
+										return "nd";
+									case 3:
+										return "rd";
+									default:
+										return "th";
+								}
+							})()}`
+						: ""}
+				</div>
 			{/* biome-ignore lint/a11y/useSemanticElements: a native <fieldset>
                         forces UA border chrome and min-inline-size: min-content, which
                         breaks this styled flex toggle. role="group" gives the same SR
@@ -2667,11 +2723,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				style={{
 					position: "relative",
 					display: "flex",
-					background: softerFill,
-					border: subtleBorder,
+					background: withAlpha(borderColor, 0.14),
+					border: `1px solid ${withAlpha(borderColor, 0.55)}`,
 					borderRadius: 999,
 					overflow: "hidden",
-					width: "100%",
+					width: "auto",
+					flex: "0 0 auto",
 					padding: 3,
 					minHeight: TOUCH_TARGET_MIN,
 					boxSizing: "border-box",
@@ -2696,8 +2753,9 @@ const TimeSlotList = React.memo(function TimeSlotList(
 									? "translateX(calc(100% + 3px))"
 									: "translateX(0)",
 							borderRadius: 999,
-							background: accentColor,
-							boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.12)",
+							background: backgroundColor,
+							border: `1px solid ${borderColor}`,
+							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
 							pointerEvents: "none",
 						}}
 					/>
@@ -2721,8 +2779,9 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							left: 3,
 							width: "calc(50% - 6px)",
 							borderRadius: 999,
-							background: accentColor,
-							boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.12)",
+							background: backgroundColor,
+							border: `1px solid ${borderColor}`,
+							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
 							pointerEvents: "none",
 						}}
 					/>
@@ -2798,6 +2857,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						</button>
 					);
 				})}
+			</div>
 			</div>
 
 			{/* W2-47 fix: the time list must stay CONTAINED within the
@@ -3373,9 +3433,14 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		if (slotsLoading) return; // don't judge an in-flight fetch as "empty"
 		if (availableDates.size > 0) return;
 		if (autoAdvancedMonthsRef.current >= 3) return;
+		// W2-49 fix: the initial current month must remain visible even when
+		// it has no slots — the visitor should see August when today is Aug 24,
+		// not an auto-advanced September. Only advance once the visitor has
+		// already left the initial month (or after a manual navigation).
+		if (visibleMonth.getTime() === currentMonthStart.getTime()) return;
 		autoAdvancedMonthsRef.current += 1;
 		goToNextMonth();
-	}, [availableDates, slotsLoading, goToNextMonth]);
+	}, [availableDates, slotsLoading, goToNextMonth, visibleMonth, currentMonthStart]);
 
 	const canGoPrev = visibleMonth.getTime() > currentMonthStart.getTime();
 	const canGoNext = visibleMonth.getTime() < maxMonthStart.getTime();
@@ -3551,7 +3616,25 @@ function useTimeGrid(options: UseTimeGridOptions): {
 			// Visible labels are now always just the time; slot identity
 			// (and any DST-fold distinction) lives in the ISO `value`,
 			// aria-labels, and the booking payload — never in the text.
-			return availableTimes.map((timeOption) => ({
+			// W2-48 fix: before a date is picked, `availableTimes`
+				// contains the whole month's slots — every day's 9:00 AM shares
+				// the same wall-clock minutes, so mapping directly produced the
+				// same 9:00→16:45 range repeated per day. Deduplicate
+				// deterministically by the slot's time-of-day identity (minutes
+				// + label) before mapping so the pre-selection list is a single
+				// clean range. Post-selection filtering already yields one day.
+				const seenMinutes = new Set<string>();
+				const deduped: typeof availableTimes = [];
+				for (const t of availableTimes) {
+					const key = `${t.minutes}|${t.value.slice(11, 16)}`;
+					if (!seenMinutes.has(key)) {
+						seenMinutes.add(key);
+						deduped.push(t);
+					}
+				}
+				// Fallback: if dedup somehow empties (should not), keep original
+				const source = deduped.length ? deduped : availableTimes;
+				return source.map((timeOption) => ({
 				value: timeOption.value,
 				end: timeOption.end,
 				label: formatTimeLabel(
@@ -3693,11 +3776,11 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<img
 							src={meta.avatarUrl}
 							alt=""
-							width={40}
-							height={40}
+							width={32}
+							height={32}
 							style={{
-								width: 40,
-								height: 40,
+								width: 32,
+								height: 32,
 								borderRadius: "50%",
 								objectFit: "cover",
 								flexShrink: 0,
@@ -3707,8 +3790,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<div
 							aria-hidden="true"
 							style={{
-								width: 40,
-								height: 40,
+								width: 32,
+								height: 32,
 								borderRadius: "50%",
 								background: withAlpha(accentColor, 0.14),
 								color: accentColor,
@@ -3716,7 +3799,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 								alignItems: "center",
 								justifyContent: "center",
 								fontWeight: 700,
-								fontSize: 16,
+								fontSize: 14,
 								flexShrink: 0,
 							}}
 						>
@@ -3726,6 +3809,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					<div
 						style={{
 							fontWeight: 600,
+							fontSize: 14,
 							color: textPrimaryColor,
 							minWidth: 0,
 							overflowWrap: "anywhere",
@@ -3738,10 +3822,12 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 			{meta.title ? (
 				<div
 					style={{
-						fontSize: 17,
-						fontWeight: 700,
+						fontSize: 16,
+						fontWeight: 600,
 						color: textPrimaryColor,
 						marginTop: meta.organizerName ? 10 : 0,
+						lineHeight: 1.35,
+						maxWidth: "22ch",
 					}}
 				>
 					{meta.title}
@@ -3751,7 +3837,9 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 				<div
 					style={{
 						marginTop: meta.title || meta.organizerName ? 8 : 0,
-						color: textSecondaryColor,
+						color: withAlpha(textPrimaryColor, 0.72),
+						fontSize: 14,
+						fontWeight: 500,
 						display: "flex",
 						alignItems: "center",
 						gap: 6,
@@ -3773,8 +3861,10 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 			{meta.locationLabel ? (
 				<div
 					style={{
-						marginTop: 4,
-						color: textSecondaryColor,
+						marginTop: 6,
+						color: withAlpha(textPrimaryColor, 0.72),
+						fontSize: 14,
+						fontWeight: 500,
 						display: "flex",
 						alignItems: "flex-start",
 						gap: 6,

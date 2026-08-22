@@ -320,6 +320,26 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **On wide layouts the available-times list is height-contained by the calendar-driven flex row (absolute-fill wrapper with internal overflow when many slots exist); on narrow widths it stacks with natural page flow.** It must never stretch the whole Booking Engine component downward. This refines rule 41's single-column requirement with bounded containment; do not reintroduce unbounded growth or fixed pixel caps like `maxHeight:220`.
 
+### 45. Calendar opens on the actual current month
+
+**When the visitor first enters the Calendar step without an explicitly selected date, the calendar must open on the actual current month (e.g., August 2026 when today is Aug 24, 2026, not September).** The initial month is derived from the current date via the visitor's timezone-aware clock, never hard-coded. Saved-state restoration (selected date's month) is preserved; the deterministic clock pattern of rule 42 still applies.
+
+### 46. Adjacent-month dates show a generic month indicator on hover
+
+**The calendar grid displays adjacent-month dates around the current month, and hovering (or focusing) a date that belongs to an adjacent month shows a compact month indicator (e.g., `SEP` for September) inside/above the cell.** The indicator is generic — it derives the month abbreviation from the hovered date's own month via `pageLocale()` — not a hard-coded September case. Dates in the currently displayed month never show this indicator.
+
+### 47. Weekday labels are uppercase and readable; date hover is 2px
+
+**Weekday labels (`SUN`–`SAT`) are rendered uppercase with increased visibility (higher contrast/weight) instead of the previous muted styling, while the month title remains strong but balanced.** Date-cell hover/focus rings use an approximately **2px** inset stroke (`inset 0 0 0 2px accentColor`) while preserving accessibility and the existing selected/today states.
+
+### 48. Time-section header follows the Cal.com pattern
+
+**The time-section header shows the currently selected day in a compact uppercase form (e.g., `MON 24th`) alongside a compact 12h/24h segmented control, not a full-width stretched control.** The outer control uses a slightly darker surface than the main white component background, while the active segment visually sits on the same white surface as the main component (white pill with soft shadow, muted inactive labels). Functionality and aria remain unchanged.
+
+### 49. Availability slots are deterministically deduplicated before rendering
+
+**Before date selection, the available-time list must never show the same daily range repeated per calendar day.** The time list is deduplicated deterministically by the slot's time-of-day identity (minutes/time value) so a `9:00 AM → 4:45 PM` range appears once, not many times. Selecting a date afterwards shows the correct single-day range. Do not hide duplicates visually; fix the source and deduplicate by slot identity.
+
 
 
 
