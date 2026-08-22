@@ -1534,8 +1534,16 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					style={{
 						...groupCommonStyle,
 						display: "flex",
-						border: `1px solid ${borderColor}`,
-						borderRadius: radius,
+						// SEGMENTED-UI refresh: iOS-style inset track — a soft,
+						// borderless gray bar derived from the theme border
+						// color (adapts to light/dark), with the selected
+						// option rendered as an elevated white pill. No
+						// dividers, no accent fill.
+						border: "none",
+						borderRadius: 16,
+						background: withAlpha(borderColor, 0.4),
+						padding: compact ? 4 : 5,
+						gap: 0,
 						// T10-L2 fix: 5+ options used to crush their labels
 						// into ellipsis on narrow screens — the group never
 						// scrolled. Now the row scrolls horizontally and the
@@ -1554,13 +1562,19 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 							index,
 							{
 								flex: "1 0 auto",
-								borderRadius: 0,
+								// Inset thumb radius sits inside the track radius.
+								borderRadius: 12,
 								border: "none",
-								borderRight:
-									index < parsedOptions.length - 1
-										? `1px solid ${selectedIndex === index ? accentColor : borderColor}`
+								background:
+									selectedIndex === index ? backgroundColor : "transparent",
+								color:
+									selectedIndex === index ? selectedTextColor : mutedTextColor,
+								fontWeight: selectedIndex === index ? 600 : 500,
+								boxShadow:
+									selectedIndex === index
+										? "0 1px 3px rgba(15, 23, 42, 0.10), 0 1px 2px rgba(15, 23, 42, 0.06)"
 										: "none",
-								padding: compact ? "10px 6px" : "10px 8px",
+								padding: compact ? "10px 6px" : "11px 10px",
 								display: "flex",
 								alignItems: "center",
 								justifyContent: "center",
