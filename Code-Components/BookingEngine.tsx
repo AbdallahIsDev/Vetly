@@ -1841,18 +1841,11 @@ const CalendarCell = React.memo(function CalendarCell({
 				// F-17-3 fix: was `6` — now the author's token.
 				borderRadius,
 				border: `1px solid ${isUnavailable ? "transparent" : borderColor}`,
-				background:
-					isSelected || isTodayHighlighted
-						? accentColor
-						: isUnavailable
-							? "transparent"
-							: subtleFill,
-				color:
-					isSelected || isTodayHighlighted
-						? selectedAccentText
-						: isUnavailable
-							? mutedSoftText
-							: textColor,
+				// W2-52 fix: ONLY the selected date gets the accent fill.
+				// Today is a separate state (dot indicator below) — selecting
+				// another date must never leave two highlighted cells.
+				background: isSelected ? accentColor : isUnavailable ? "transparent" : subtleFill,
+				color: isSelected ? selectedAccentText : isUnavailable ? mutedSoftText : textColor,
 				cursor: isUnavailable ? "default" : "pointer",
 				fontSize: 14,
 				// W1-18-F1 fix: gated on prefers-reduced-motion.
@@ -1862,15 +1855,22 @@ const CalendarCell = React.memo(function CalendarCell({
 				// W1-11-NEW-FIND-2 fix: focus indication is standardized on
 				// the CSS `:focus-visible` rule — the isKeyboardModality
 				// boxShadow focus branch is gone; these rings mark STATE
-				// (selected / today / hover), never focus.
+				// (selected / hover), never focus.
 				boxShadow:
-					isSelected || isTodayHighlighted
+					isSelected || isRingHover
 						? `inset 0 0 0 2px ${accentColor}`
-						: isRingHover
-							? `inset 0 0 0 2px ${accentColor}`
-							: "none",
-				fontWeight: isTodayHighlighted && !isSelected ? 700 : 400,
+						: "none",
+				fontWeight: isSelected ? 600 : 400,
 			}}
+			title={
+				!isInMonth
+					? date.toLocaleDateString(locale, {
+							month: "long",
+							year: "numeric",
+							...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+						})
+					: undefined
+			}
 		>
 			{/* W1-07-F4 fix: the visible day-of-month must match the
                 visitor-tz date the slots are bucketed under (CC-13
@@ -1880,6 +1880,10 @@ const CalendarCell = React.memo(function CalendarCell({
 			<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
 				{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
 				{!isInMonth ? (
+					/* W2-53 fix: adjacent-month dates always carry a compact
+                       month abbreviation above the number (generic — derived
+                       from the date's own month); the full-month tooltip is
+                       the native title on the button. */
 					<span
 						aria-hidden="true"
 						style={{
@@ -1892,14 +1896,32 @@ const CalendarCell = React.memo(function CalendarCell({
 							letterSpacing: "0.06em",
 							textTransform: "uppercase",
 							color: isRingHover ? accentColor : mutedSoftText,
-							opacity: isRingHover ? 1 : 0,
-							transition: "opacity 0.12s ease",
+							transition: "color 0.12s ease",
 							pointerEvents: "none",
 							whiteSpace: "nowrap",
 						}}
 					>
 						{date.toLocaleDateString(pageLocale(), { month: "short" }).toUpperCase()}
 					</span>
+				) : null}
+				{isToday && !isSelected ? (
+					/* W2-52 fix: today's marker is a small dot beneath the
+                       number — visually independent of the selected-date
+                       fill. currentColor keeps it legible in every state. */
+					<span
+						aria-hidden="true"
+						style={{
+							position: "absolute",
+							bottom: 3,
+							left: "50%",
+							transform: "translateX(-50%)",
+							width: 5,
+							height: 5,
+							borderRadius: "50%",
+							background: "currentColor",
+							pointerEvents: "none",
+						}}
+					/>
 				) : null}
 			</span>
 		</button>
@@ -2021,15 +2043,38 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					const dateKey = dateKeyOf(date);
 					const isInMonth = date.getMonth() === visibleMonth.getMonth();
 					const isPast = startOfDay(date).getTime() < today.getTime();
-					const isUnavailable = !isInMonth || isPast || !hasAvailability(date);
+					// W2-54 fix: adjacency is no longer a blanket
+					// unavailability. Next/previous-month days inside the
+					// visible grid behave like real dates — selectable when
+					// availability exists (the slots fetch already covers the
+					// month edges), disabled otherwise. `isInMonth` now only
+					// drives the month-abbreviation indicator.
+					const isUnavailable = isPast || !hasAvailability(date);
 					const isSelected = isSameDay(selectedDate, date);
 					const isToday = isSameDay(today, date);
-					const isTodayHighlighted = isToday;
+					const isTodayHighlighted = false;
+					// W2-55 fix: LEADING cells from the previous month that
+					// are past or have no availability render as EMPTY
+					// gridcells — matching Cal.com, where irrelevant leading
+					// days are blank while trailing next-month days continue
+					// into the grid. Alignment (7 columns) is preserved by
+					// keeping each placeholder in its track.
+					const isEmptyLeadingCell =
+						!isInMonth && date.getTime() < visibleMonth.getTime() && (isPast || !hasAvailability(date));
+					if (isEmptyLeadingCell) {
+						return (
+							<div
+								key={`empty-${dateKey}`}
+								role="gridcell"
+								aria-disabled="true"
+								style={{ minHeight: TOUCH_TARGET_MIN }}
+							/>
+						);
+					}
 					const isRingHover =
 						hoveredDateKey === dateKey &&
 						!isUnavailable &&
-						!isSelected &&
-						!isTodayHighlighted;
+						!isSelected;
 					return (
 						<CalendarCell
 							key={dateKey}
@@ -2156,7 +2201,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						alignItems: "center",
 						justifyContent: "center",
 						cursor: canGoPrev ? "pointer" : "not-allowed",
-						opacity: canGoPrev ? 1 : 0.55,
+						opacity: canGoPrev ? 0.8 : 0.4,
 					}}
 				>
 						<svg
@@ -2198,7 +2243,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							alignItems: "center",
 							justifyContent: "center",
 							cursor: canGoNext ? "pointer" : "not-allowed",
-							opacity: canGoNext ? 1 : 0.55,
+							opacity: canGoNext ? 0.8 : 0.4,
 						}}
 					>
 						<svg
@@ -2382,6 +2427,9 @@ interface TimeSlotListProps {
 	dtInstanceId: string;
 	slotsLoading: boolean;
 	selectedDate: Date | null;
+	/** W2-51: the default/active date when nothing is selected yet (today) —
+	 *  keeps the time header populated on first entry. */
+	fallbackDate: Date;
 	showTimesWithoutDate: boolean;
 	timeOptions: Array<{
 		value: string;
@@ -2587,6 +2635,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		dtInstanceId,
 		slotsLoading,
 		selectedDate,
+		fallbackDate,
 		showTimesWithoutDate,
 		timeOptions,
 		availableTimes,
@@ -2686,33 +2735,56 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				gap: isNarrow ? 8 : 10,
 			}}
 		>
-			<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+			{/* W2-57 fix: the time list stays scrollable but the browser
+                scrollbar itself is invisible (scrollbar-width:none +
+                ::-webkit-scrollbar width/height 0). Constant CSS text;
+                suppressHydrationWarning REQUIRED — canonical explanation at
+                the be-input <style> in RootShell (search "HYDRATION-AUDIT"). */}
+			<style suppressHydrationWarning>{`
+.be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+`}</style>
+			<div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+				{/* W2-51 fix: the header reflects the ACTIVE date immediately —
+                    today is the default selection, so the label is never
+                    empty on entry. Two-tone hierarchy matching the calendar
+                    header: weekday strong/full color like the month title,
+                    ordinal day muted like the year in "August 2026". */}
 				<div
 					style={{
-						fontSize: 12,
+						fontSize: 16,
 						fontWeight: 700,
-						letterSpacing: "0.06em",
-						textTransform: "uppercase",
 						color: textColor,
 						whiteSpace: "nowrap",
 					}}
 				>
-					{selectedDate
-						? `${selectedDate.toLocaleDateString(pageLocale(), { weekday: "short" }).toUpperCase()} ${selectedDate.getDate()}${(() => {
-								const d = selectedDate.getDate();
-								if (d >= 11 && d <= 13) return "th";
-								switch (d % 10) {
-									case 1:
-										return "st";
-									case 2:
-										return "nd";
-									case 3:
-										return "rd";
-									default:
-										return "th";
-								}
-							})()}`
-						: ""}
+					{(selectedDate ?? fallbackDate)
+						.toLocaleDateString(pageLocale(), { weekday: "short" })
+						.toUpperCase()}
+					<span
+						style={{
+							marginLeft: 6,
+							fontSize: 16,
+							fontWeight: 500,
+							color: mutedText,
+						}}
+					>
+						{(selectedDate ?? fallbackDate).getDate()}
+						{(() => {
+							const d = (selectedDate ?? fallbackDate).getDate();
+							if (d >= 11 && d <= 13) return "th";
+							switch (d % 10) {
+								case 1:
+									return "st";
+								case 2:
+									return "nd";
+								case 3:
+									return "rd";
+								default:
+									return "th";
+							}
+						})()}
+					</span>
 				</div>
 			{/* biome-ignore lint/a11y/useSemanticElements: a native <fieldset>
                         forces UA border chrome and min-inline-size: min-content, which
@@ -2735,7 +2807,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 					width: "auto",
 					flex: "0 0 auto",
 					padding: 3,
-					minHeight: TOUCH_TARGET_MIN,
+					minHeight: 32,
 					boxSizing: "border-box",
 					gap: 2,
 				}}
@@ -2831,32 +2903,35 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								React.startTransition(() => setFocusedKey(`format-${format}`))
 							}
 							onBlur={() => React.startTransition(() => setFocusedKey(null))}
-							style={{
-								flex: 1,
-								// T5-L1 fix: 38px was under the 44x44px minimum
-								// touch-target size.
-								minHeight: TOUCH_TARGET_MIN,
-								border: "none",
-								borderRadius: 999,
-								background: "transparent",
-								color: active ? selectedAccentText : textColor,
-								cursor: "pointer",
-								fontFamily: "inherit",
-								fontSize: 14,
-								fontWeight: 600,
-								// W1-18-F1 fix: gated on
-								// prefers-reduced-motion (the
-								// prop is already in scope).
-								transition: prefersReducedMotion
-									? "none"
-									: "color 0.18s ease, box-shadow 0.18s ease",
-								// W1-11-NEW-FIND-2 fix: focus ring comes from the
-								// CSS :focus-visible rule; the isFocus boxShadow
-								// indicator is gone.
-								boxShadow: "none",
-								position: "relative",
-								zIndex: 1,
-							}}
+						style={{
+							// W2-50 fix: content-sized compact segments — the
+							// control no longer stretches across the header, and
+							// the ACTIVE label uses the dark text color on the
+							// white pill (white-on-white was illegible).
+							flex: "1 1 auto",
+							padding: "0 14px",
+							border: "none",
+							borderRadius: 999,
+							background: "transparent",
+							color: active ? textColor : mutedText,
+							cursor: "pointer",
+							fontFamily: "inherit",
+							fontSize: 13,
+							fontWeight: active ? 700 : 500,
+							whiteSpace: "nowrap",
+							// W1-18-F1 fix: gated on
+							// prefers-reduced-motion (the
+							// prop is already in scope).
+							transition: prefersReducedMotion
+								? "none"
+								: "color 0.18s ease, box-shadow 0.18s ease",
+							// W1-11-NEW-FIND-2 fix: focus ring comes from the
+							// CSS :focus-visible rule; the isFocus boxShadow
+							// indicator is gone.
+							boxShadow: "none",
+							position: "relative",
+							zIndex: 1,
+						}}
 						>
 							{format}
 						</button>
@@ -3781,11 +3856,11 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<img
 							src={meta.avatarUrl}
 							alt=""
-							width={32}
-							height={32}
+							width={40}
+							height={40}
 							style={{
-								width: 32,
-								height: 32,
+								width: 40,
+								height: 40,
 								borderRadius: "50%",
 								objectFit: "cover",
 								flexShrink: 0,
@@ -3795,8 +3870,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<div
 							aria-hidden="true"
 							style={{
-								width: 32,
-								height: 32,
+								width: 40,
+								height: 40,
 								borderRadius: "50%",
 								background: withAlpha(accentColor, 0.14),
 								color: accentColor,
@@ -3804,7 +3879,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 								alignItems: "center",
 								justifyContent: "center",
 								fontWeight: 700,
-								fontSize: 14,
+								fontSize: 17,
 								flexShrink: 0,
 							}}
 						>
@@ -3842,16 +3917,16 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 				<div
 					style={{
 						marginTop: meta.title || meta.organizerName ? 8 : 0,
-						color: withAlpha(textPrimaryColor, 0.72),
+						color: textSecondaryColor,
 						fontSize: 14,
 						fontWeight: 500,
 						display: "flex",
 						alignItems: "center",
-						gap: 6,
+						gap: 7,
 					}}
 				>
-					<span aria-hidden="true" style={{ flexShrink: 0 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+					<span aria-hidden="true" style={{ flexShrink: 0, display: "inline-flex" }}>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
 							<circle cx="12" cy="12" r="9" />
 							<path d="M12 7v5l3 2" />
 						</svg>
@@ -3867,17 +3942,17 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 				<div
 					style={{
 						marginTop: 6,
-						color: withAlpha(textPrimaryColor, 0.72),
+						color: textSecondaryColor,
 						fontSize: 14,
 						fontWeight: 500,
 						display: "flex",
 						alignItems: "flex-start",
-						gap: 6,
+						gap: 7,
 						overflowWrap: "anywhere",
 					}}
 				>
-					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, display: "inline-flex" }}>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 							<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
 							<circle cx="12" cy="10" r="3" />
 						</svg>
@@ -4159,8 +4234,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
 	}, [clockReady, today, setVisibleMonth]);
 	const [selectedDate, setSelectedDate] = React.useState<Date | null>(
-		() => initialDate ?? null,
+		// W2-56 fix: deterministic placeholder selection — fresh visits
+		// start on the fixed placeholder day (identical server/client
+		// markup), then the clock layout effect below swaps in the real
+		// today pre-paint. A restored/saved date always wins.
+		() => initialDate ?? HYDRATION_PLACEHOLDER_TODAY,
 	);
+	const placeholderSelectedRef = React.useRef(!initialDate);
+	useIsomorphicLayoutEffect(() => {
+		if (!clockReady) return;
+		if (!placeholderSelectedRef.current) return;
+		placeholderSelectedRef.current = false;
+		setSelectedDate(today);
+	}, [clockReady, today, setSelectedDate]);
 	const {
 		selectedTime,
 		setSelectedTime,
@@ -4249,16 +4335,18 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 
 	// T9-M10 fix: these prop->state sync effects only write when the
 	// incoming value is genuinely different. The click path already
-	// updates local state, so an unconditional write just re-rendered
-	// the whole widget with identical state.
+	// updates local state, so an unconditional write just re-rendered the
+	// whole widget with identical state.
+	// W2-56 fix: `null` is the fresh-visit "no saved date" signal from the
+	// engine — it must NOT wipe the default today selection applied by the
+	// clock layout effect above. Only a REAL restored date syncs through.
 	React.useEffect(() => {
-		if (initialDate !== undefined) {
-			React.startTransition(() =>
-				setSelectedDate((prev) =>
-					prev && isSameDay(prev, initialDate) ? prev : initialDate,
-				),
-			);
-		}
+		if (!initialDate) return;
+		React.startTransition(() =>
+			setSelectedDate((prev) =>
+				prev && isSameDay(prev, initialDate) ? prev : initialDate,
+			),
+		);
 	}, [initialDate]);
 
 	const isNarrow = measuredWidth < COMPACT_BREAKPOINT;
@@ -4850,6 +4938,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					dtInstanceId={dtInstanceId}
 					slotsLoading={slotsLoading}
 					selectedDate={selectedDate}
+					fallbackDate={today}
 					showTimesWithoutDate={showTimesWithoutDate}
 					pickDateToSeeTimesLabel={pickDateToSeeTimesLabel}
 					noTimesFallbackLabel={noTimesFallbackLabel}

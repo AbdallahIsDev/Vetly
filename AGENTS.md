@@ -340,6 +340,22 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Before date selection, the available-time list must never show the same daily range repeated per calendar day.** The time list is deduplicated deterministically by the slot's time-of-day identity (minutes/time value) so a `9:00 AM → 4:45 PM` range appears once, not many times. Selecting a date afterwards shows the correct single-day range. Do not hide duplicates visually; fix the source and deduplicate by slot identity.
 
+### 50. Selected date and today are separate states — exactly one selection
+
+**Selected-date styling derives ONLY from dedicated selected-date state — never from `isToday`.** Exactly one date can be selected at a time; picking another date must immediately clear the previous accent fill (today reverts to an ordinary cell with its dot). Today's marker is a small independent dot beneath the number (`currentColor`, aria-hidden) that coexists with any selection. On a fresh visit today is the DEFAULT selection: the deterministic placeholder day renders on both sides' first markup, then the clock layout effect swaps in real today pre-paint; a restored/saved date always wins over the default, and an engine `null` initialDate must not wipe it.
+
+### 51. Adjacent-month grid behavior: aligned empties, live adjacent days, generic month identification
+
+**The 7-column grid stays perfectly aligned.** Leading previous-month cells that are past/unavailable render as EMPTY non-interactive gridcells (Cal.com-style blanks); trailing next-month cells stay in the grid and are selectable when availability exists (the widened slots fetch covers month edges) — adjacency alone must never disable a date. Every adjacent-month cell carries a compact uppercase month abbreviation above its number (derived generically from the date via `pageLocale()`), plus a native full-month tooltip (`title`); in-month cells get neither.
+
+### 52. Time header reflects the active date immediately; compact content-sized toggle
+
+**The time-section header shows the active/default date on first entry — never empty.** Format: `MON` in the month-title treatment (16/700 full text color) + `23rd` ordinal in the muted year treatment (16/500 `mutedText`), weekday exactly three uppercase letters, ordinal attached to the day, all derived dynamically from the active date. The 12h/24h segmented control sits beside it content-sized (never stretched): ~32px tall, compact padding, 13px labels, slightly-darker track surface, white active pill with **dark active text** (never white-on-white) and muted inactive labels.
+
+### 53. Time list scrolls but never shows a browser scrollbar
+
+**The available-times list remains scrollable inside its contained panel while the scrollbar itself is hidden** via `scrollbar-width: none` + `-ms-overflow-style: none` + `::-webkit-scrollbar { width:0; height:0; display:none }` on `.be-dt-scroll`. Do not replace the scroll area with unbounded growth and do not reintroduce a visible scrollbar; keep the scoped `<style suppressHydrationWarning>` pattern for this constant CSS.
+
 
 
 
