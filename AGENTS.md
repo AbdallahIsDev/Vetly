@@ -372,6 +372,14 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **The compact month abbreviation (`SEP`, `OCT`, …) appears only on the first visible date of each adjacent month, not on every adjacent cell.** It is positioned at `top: 1px; left: 50%; transform: translateX(-50%)` inside the date cell, uses a stable neutral/muted color (never the cell's hover/selected accent), and is removed entirely when that date becomes selected (selected styling takes over). It is generated dynamically from the date's own month (`pageLocale()`, `month:"short"` uppercase). Hovering an adjacent date shows a native `title` tooltip with the full month name + year; in-month dates get no tooltip. **Previewed adjacent-month availability must exactly match the real Cal.com source for that month:** never infer availability from visibility; if the adjacent month's slots have not been fetched yet, treat those dates as unavailable until the real data arrives, so `Sep 1` shows the same available/unavailable state while previewed in August and after navigating to September.
 
+### 58. Shared Radius 0–24px is the single source of truth
+
+**The `Radius` Property Control (Styles group) is limited to `0–24px` (min 0, max 24) and is the only radius token for the Booking Engine.** It drives the main container, the Time-Format segmented-control outer container, the active/highlighted segment, the calendar month-navigation buttons, and the progress-bar track/fill — all must read the same `radius` value. When `Radius` is `0`, every one of those surfaces becomes square (`border-radius: 0`), never retaining a pill radius. Do not hard-code separate `999`/`12px` radii for those elements and do not create another radius control.
+
+### 59. Calendar navigation buttons are content-sized; metadata icons are 20×20 contained
+
+**Previous/next month buttons have no fixed `24px × 24px` size — their dimensions come from the icon plus `6px` padding (`width: auto; height: auto; padding: 6px; display: inline-flex` centered).** Hover on an enabled button shows `background: <segmented-outer-background>` at `100%` opacity and `border: 1px solid <segmented-border>` at `100%` opacity; disabled buttons never show hover. **Event metadata icons (duration/location) are exactly `20px × 20px`, never overflowing:** each SVG sits in a stable `20px` wrapper (`width:20; height:20; flex-shrink:0; display:flex; alignItems:center; justifyContent:center`) that is vertically centered with the `16px` metadata text.
+
 
 
 

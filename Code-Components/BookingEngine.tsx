@@ -2204,15 +2204,15 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					tabIndex={0}
 					style={{
 						appearance: "none",
-						background: hoveredNav === "prev" && canGoPrev ? "rgba(229, 231, 235, 0.5)" : "transparent",
+						background: hoveredNav === "prev" && canGoPrev ? borderColor : "transparent",
 						// W2-46 fix: muted tone (60% text) so the arrows stay
 						// secondary to the month title; disabled stays softer.
 						color: canGoPrev ? mutedText : mutedSoftText,
 						border: "none",
 						borderRadius,
-						width: 24,
-						height: 24,
-						padding: 0,
+						width: "auto",
+						height: "auto",
+						padding: "6px",
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
@@ -2249,14 +2249,14 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						tabIndex={0}
 						style={{
 							appearance: "none",
-							background: hoveredNav === "next" && canGoNext ? "rgba(229, 231, 235, 0.5)" : "transparent",
+							background: hoveredNav === "next" && canGoNext ? borderColor : "transparent",
 						// W2-46 fix: muted tone — matches the prev button.
 						color: canGoNext ? mutedText : mutedSoftText,
 							border: "none",
 							borderRadius,
-							width: 24,
-							height: 24,
-							padding: 0,
+							width: "auto",
+							height: "auto",
+							padding: "6px",
 							display: "inline-flex",
 							alignItems: "center",
 							justifyContent: "center",
@@ -2833,8 +2833,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				display: "grid",
 				gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
 				background: withAlpha(borderColor, 0.14),
-				border: `1px solid ${withAlpha(borderColor, 0.55)}`,
-				borderRadius: 999,
+				border: `1px solid ${borderColor}`,
+				borderRadius: borderRadius,
 				overflow: "hidden",
 				width: "auto",
 				flex: "0 0 auto",
@@ -2859,7 +2859,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								activeTimeFormat === "24h"
 									? "translateX(100%)"
 									: "translateX(0)",
-							borderRadius: 999,
+							borderRadius: borderRadius,
 							background: backgroundColor,
 							border: `1px solid ${borderColor}`,
 							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
@@ -2885,7 +2885,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							bottom: 3,
 							left: 3,
 							width: "calc(50% - 3px)",
-							borderRadius: 999,
+							borderRadius: borderRadius,
 							background: backgroundColor,
 							border: `1px solid ${borderColor}`,
 							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
@@ -3956,8 +3956,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						gap: 7,
 					}}
 				>
-					<span aria-hidden="true" style={{ flexShrink: 0, display: "inline-flex" }}>
-						<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+					<span aria-hidden="true" style={{ width: 20, height: 20, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
 							<circle cx="12" cy="12" r="9" />
 							<path d="M12 7v5l3 2" />
 						</svg>
@@ -3982,8 +3982,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						overflowWrap: "anywhere",
 					}}
 				>
-					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, display: "inline-flex" }}>
-						<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+					<span aria-hidden="true" style={{ width: 20, height: 20, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 2 }}>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 							<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
 							<circle cx="12" cy="10" r="3" />
 						</svg>
@@ -8375,7 +8375,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			? {
 					accentColor: pick(
 						accentColor,
-						"#0066BB",
+						"#0080FF",
 						DEFAULT_DARK_THEME.accentColor,
 					),
 					backgroundColor: pick(
@@ -10700,7 +10700,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 									style={{
 										flex: 1,
 										height: PROGRESS_BAR_HEIGHT,
-										borderRadius: 999,
+										borderRadius: borderRadius,
 										background:
 											i <= safeCurrentIndex
 												? theme.accentColor
@@ -10720,7 +10720,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								width: "100%",
 								height: PROGRESS_BAR_HEIGHT,
 								background: theme.surfaceColor,
-								borderRadius: 999,
+								borderRadius: borderRadius,
 								overflow: "hidden",
 							}}
 							role="progressbar"
@@ -10735,7 +10735,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										width: "100%",
 										height: "100%",
 										background: theme.accentColor,
-										borderRadius: 999,
+										borderRadius: borderRadius,
 										transform: `scaleX(${progressPct / 100})`,
 										transformOrigin: "left center",
 									}}
@@ -10754,7 +10754,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										width: "100%",
 										height: "100%",
 										background: theme.accentColor,
-										borderRadius: 999,
+										borderRadius: borderRadius,
 										transformOrigin: "left center",
 									}}
 									aria-hidden="true"
@@ -13851,6 +13851,8 @@ addPropertyControls(BookingEngine, {
 				type: ControlType.BorderRadius,
 				title: "Radius",
 				defaultValue: "12px",
+				min: 0,
+				max: 24,
 			},
 		},
 	},
