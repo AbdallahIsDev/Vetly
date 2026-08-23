@@ -416,6 +416,23 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Previous-month and next-month indicators use one shared helper (`getAdjacentMonthAbbreviation`) — never two hard-coded implementations — showing the abbreviation only on the first visible adjacent-month date of each month, removed when selected.** The custom hover tooltip shows ONLY the full month name (no year), 12px/600, on the Accent token background with the fixed on-accent foreground, positioned above the cell, `pointer-events: none`, `aria-hidden`, and appears exclusively on selectable/available adjacent dates — unavailable adjacent dates get no tooltip and no hover treatment. Previewed adjacent availability always equals the same normalized Cal.com source used inside that month.
 
+### 69. Desktop Calendar columns are a proportional 1:2:1 grid
+
+**The wide-layout Calendar step uses an intentional proportional width relationship — event information : calendar : time slots = 1 : 2 : 1 — implemented as `grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)`.** All three columns grow and shrink proportionally with the container; when the event panel is hidden (no Cal.com config) the template drops to a proportional 2:1 calendar|times grid so auto-placement never leaves an empty track. Do not reintroduce fixed pixel flex bases (`232px`/`220px`) or a center-column-only `flex: 1` as the primary desktop sizing model. Narrow widths (< COMPACT_BREAKPOINT) keep the stacked reflow; every column keeps `minWidth: 0` and `minmax(0, …)` tracks so children can never force horizontal overflow.
+
+### 70. Primary-colored surfaces use a semantic Primary Foreground token — never a hard-coded white
+
+**Every surface rendered on the Primary/Accent color (selected date, selected time slot, selected choice options, Continue/submit button + its spinner, "Book another", error "Retry", adjacent-month tooltip) takes its foreground from the semantic `Primary Foreground` (`accentForegroundColor`) Styles control — an independent author-configured value, not a contrast calculation and not a constant white assumption.** `TEXT_ON_ACCENT` remains only as the control's default/fallback value. The success-screen checkmark sits on the Success color and is exempt until a Success-foreground pairing is ever introduced.
+
+### 71. No automatic contrast logic — restated for the token system
+
+**Never introduce WCAG contrast computation, automatic foreground switching, auto color correction, color restrictions, validation, or warnings in connection with the Primary/Primary-Foreground tokens (or any other colors).** This restates hard rules 1–3 at the token level: choosing incompatible combinations (e.g., white on white) is the Framer author's deliberate choice and outcome; the component renders exactly what is configured.
+
+### 72. Time Format labels always use font-weight 600
+
+**Both segments of the 12h/24h Time Format segmented control render `font-weight: 600` in every state** — active and inactive are distinguished by colour treatment only, never by weight. Do not reintroduce 700/500 state-dependent weights.
+
+
 
 
 

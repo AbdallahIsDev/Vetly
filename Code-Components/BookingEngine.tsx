@@ -838,6 +838,9 @@ interface ChoiceGroupInlineProps {
 	 *  the comma-round-trip split bug (fix #22). */
 	options?: ChoiceOption[];
 	accentColor: string;
+	// PRIMARY-FOREGROUND: semantic On-Primary for selected options rendered
+	// on the Primary surface. Falls back to the legacy constant.
+	accentForegroundColor?: string;
 	textColor: string;
 	mutedTextColor: string;
 	backgroundColor: string;
@@ -934,6 +937,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		optionsText,
 		options: directOptions,
 		accentColor,
+		accentForegroundColor,
 		textColor,
 		mutedTextColor,
 		backgroundColor,
@@ -1151,9 +1155,9 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	// the per-component inline boxShadow focus rings (this one keyed on
 	// isKeyboardModality) were removed. The selection ring below stays:
 	// it marks SELECTED state, not focus.
-	// Fixed foreground for the selected option (rendered on the accent
-	// background). A constant — never derived from the configured colours.
-	const selectedTextColor = TEXT_ON_ACCENT;
+	// PRIMARY-FOREGROUND: foreground for options rendered on the Primary
+	// (Accent) surface — semantic token, not a hard-coded white assumption.
+	const selectedTextColor = accentForegroundColor ?? TEXT_ON_ACCENT;
 	const compact = measuredWidth < COMPACT_BREAKPOINT;
 	const effectiveFontSize = Math.max(14, fontSize);
 	const columns = React.useMemo(() => {
@@ -2006,8 +2010,10 @@ const CalendarCell = React.memo(function CalendarCell({
 							left: "50%",
 							transform: "translateX(-50%)",
 							marginBottom: 6,
+							// PRIMARY-FOREGROUND: tooltip sits on the Primary
+							// (Accent) surface — semantic On-Primary token.
 							background: accentColor,
-							color: TEXT_ON_ACCENT,
+							color: selectedAccentText,
 							padding: "4px 8px",
 							borderRadius: 4,
 							fontSize: 12,
@@ -2857,7 +2863,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			aria-label={timeSlotsAriaLabel}
 			style={{
 				width: isNarrow ? "100%" : undefined,
-				flex: isNarrow ? "none" : "0 1 220px",
+				// CAL-GRID-121: third track of the wide 1:2:1 grid (full
+				// height via grid stretch); narrow mode stacks in flow.
 				minWidth: 0,
 				borderLeft: isNarrow ? "none" : subtleBorder,
 				borderTop: isNarrow ? subtleBorder : "none",
@@ -3056,7 +3063,9 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							cursor: "pointer",
 							fontFamily: "inherit",
 							fontSize: 13,
-							fontWeight: active ? 700 : 500,
+							// TIME-FORMAT-WEIGHT: both segments use 600 — the
+							// active/inactive distinction is colour-only.
+							fontWeight: 600,
 							whiteSpace: "nowrap",
 							overflow: "hidden",
 							textOverflow: "ellipsis",
@@ -4127,6 +4136,11 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 
 interface DateAndTimeInlineProps {
 	accentColor: string;
+	// PRIMARY-FOREGROUND: semantic On-Primary colour for the selected date
+	// and the adjacent-month tooltip (both render on Primary surfaces).
+	// Falls back to the legacy constant for instances/paths that don't
+	// pass it yet.
+	accentForegroundColor?: string;
 	backgroundColor: string;
 	textColor: string;
 	borderColor: string;
@@ -4220,6 +4234,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 ) {
 	const {
 		accentColor,
+		// PRIMARY-FOREGROUND: On-Primary token (legacy constant fallback).
+		accentForegroundColor = TEXT_ON_ACCENT,
 		backgroundColor,
 		textColor,
 		borderColor,
@@ -4493,9 +4509,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	}, [initialDate]);
 
 	const isNarrow = measuredWidth < COMPACT_BREAKPOINT;
-	// Fixed foreground for the selected date/slot (rendered on the accent
-	// background). A constant — never derived from the configured colours.
-	const selectedAccentText = TEXT_ON_ACCENT;
+	// PRIMARY-FOREGROUND: foreground for the selected date/slot and the
+	// adjacent-month tooltip — all render on the author's Primary surface.
+	// Semantic token, not a hard-coded white assumption.
+	const selectedAccentText = accentForegroundColor;
 	const mutedText = React.useMemo(() => withAlpha(textColor, 0.6), [textColor]);
 	const mutedSoftText = React.useMemo(
 		() => withAlpha(textColor, 0.42),
@@ -4845,13 +4862,36 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				fontFamily: "inherit",
 			}}
 		>
+			{/* CAL-GRID-121: wide layouts are an intentional proportional
+                    1:2:1 grid — event information | calendar | time slots —
+                    via `minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)`. All
+                    three columns grow and shrink proportionally with the
+                    container; the minmax(0, …) floors (plus minWidth: 0 on
+                    every child) stop content from forcing horizontal
+                    overflow. Narrow (< COMPACT_BREAKPOINT) keeps the existing
+                    stacked flex-column reflow. When the event panel is
+                    hidden (no Cal.com config), the template drops to a 2:1
+                    calendar|times grid so auto-placement never leaves an
+                    empty first track. */}
 			<div
-				style={{
-					display: "flex",
-					flexDirection: isNarrow ? "column" : "row",
-					minHeight: 0,
-					flex: 1,
-				}}
+				style={
+					isNarrow
+						? {
+								display: "flex",
+								flexDirection: "column",
+								minHeight: 0,
+								flex: 1,
+							}
+						: {
+								display: "grid",
+								minHeight: 0,
+								flex: 1,
+								gridTemplateColumns:
+									eventMetaStatus !== "disabled"
+										? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
+										: "minmax(0, 2fr) minmax(0, 1fr)",
+							}
+				}
 			>
 				{/* CAL-EVENT-META: event information panel — first column on
                     wide layouts, stacked above the calendar when narrow
@@ -4872,7 +4912,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						aria-busy={eventMetaStatus === "loading" || undefined}
 						style={{
 							width: isNarrow ? "100%" : undefined,
-							flex: isNarrow ? "none" : "0 1 232px",
 							minWidth: 0,
 							boxSizing: "border-box",
 							padding: isNarrow ? "12px 16px 14px" : "16px",
@@ -4977,7 +5016,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				<section
 					aria-label={datePickerAriaLabel}
 					style={{
-						flex: "1 1 0",
+						// CAL-GRID-121: middle track of the 1:2:1 grid — the
+						// calendar column is sized by the template, not flex.
 						minWidth: 0,
 						padding: isNarrow ? "12px 12px 10px" : "16px",
 						boxSizing: "border-box",
@@ -5224,6 +5264,12 @@ interface BookingEngineStyleProps {
 		// Theme (formerly the top-level "Color Mode") - first entry in Styles.
 		theme: ColorMode;
 		accentColor: string;
+		// PRIMARY-FOREGROUND: semantic On-Primary token for text/icons
+		// rendered directly on Primary/Accent-colored surfaces (selected
+		// date/slot, primary buttons, adjacent-month tooltip). An independent
+		// author-configured value — never derived from or validated against
+		// the Primary colour (see AGENTS.md hard rules).
+		accentForegroundColor: string;
 		backgroundColor: string;
 		surfaceColor: string;
 		textPrimaryColor: string;
@@ -5563,6 +5609,9 @@ const DEFAULT_DARK_THEME = {
 	// every colour here, and the component renders exactly what is
 	// configured. No colour is derived from or judged against another.
 	accentColor: "#4F8EF7",
+	// PRIMARY-FOREGROUND: On-Primary stays white on the dark default accent —
+	// an independent semantic value, never derived from the accent colour.
+	accentForegroundColor: "#FFFFFF",
 	backgroundColor: "#0F1115",
 	surfaceColor: "#1A1D23",
 	textPrimaryColor: "#FFFFFF",
@@ -8234,6 +8283,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const {
 		theme: themeSetting,
 		accentColor,
+		// PRIMARY-FOREGROUND: independent On-Primary token (see Styles control).
+		accentForegroundColor,
 		backgroundColor,
 		surfaceColor,
 		textPrimaryColor,
@@ -8468,6 +8519,14 @@ function useBookingEngineState(props: BookingEngineProps) {
 						"#0080FF",
 						DEFAULT_DARK_THEME.accentColor,
 					),
+					// PRIMARY-FOREGROUND: the white default is correct on both
+					// default accents, so both pick() defaults match — an
+					// author-set non-default value always passes through.
+					accentForegroundColor: pick(
+						accentForegroundColor,
+						"#FFFFFF",
+						DEFAULT_DARK_THEME.accentForegroundColor,
+					),
 					backgroundColor: pick(
 						backgroundColor,
 						"#FFFFFF",
@@ -8515,6 +8574,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 				}
 			: {
 					accentColor,
+					// PRIMARY-FOREGROUND: rendered verbatim — no derivation.
+					accentForegroundColor,
 					backgroundColor,
 					surfaceColor,
 					textPrimaryColor,
@@ -8528,6 +8589,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		colorMode,
 		systemDark,
 		accentColor,
+		accentForegroundColor,
 		backgroundColor,
 		surfaceColor,
 		textPrimaryColor,
@@ -10321,9 +10383,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const cancelSubmitLabel =
 		buttonLabels?.cancelSubmitLabel ?? DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL;
 
-	// Fixed foreground for the accent-filled submit button and its spinner.
-	// A constant — never derived from the configured colours.
-	const accentTextOnSurface = TEXT_ON_ACCENT;
+	// PRIMARY-FOREGROUND: the submit button and its spinner render directly
+	// on the author's Primary/Accent surface, so their colour comes from the
+	// semantic On-Primary token — never a hard-coded white assumption.
+	const accentTextOnSurface = theme.accentForegroundColor;
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
 	// rule — embeds in narrow desktop sidebars stayed 2-col (cramped,
@@ -10490,6 +10553,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 					values={values}
 					bookingResult={bookingResult}
 					accentColor={theme.accentColor}
+					// PRIMARY-FOREGROUND: semantic On-Primary for the accent-
+					// filled "Book another" button.
+					accentForegroundColor={theme.accentForegroundColor}
 					textPrimaryColor={theme.textPrimaryColor}
 					textSecondaryColor={theme.textSecondaryColor}
 					surfaceColor={theme.surfaceColor}
@@ -10545,6 +10611,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 					borderColor={theme.borderColor}
 					borderRadius={borderRadius}
 					accentColor={theme.accentColor}
+					// PRIMARY-FOREGROUND: semantic On-Primary for the accent-
+					// filled retry button.
+					accentForegroundColor={theme.accentForegroundColor}
 					onRetry={handleRetry}
 					errorTitle={copy.errorTitle}
 					errorSubtitle={copy.errorSubtitle}
@@ -11421,6 +11490,8 @@ interface StepBodyProps {
 	touched: Record<string, boolean>;
 	theme: {
 		accentColor: string;
+		// PRIMARY-FOREGROUND: semantic On-Primary token (see Styles control).
+		accentForegroundColor: string;
 		backgroundColor: string;
 		surfaceColor: string;
 		textPrimaryColor: string;
@@ -11749,6 +11820,9 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 				) : (
 						<DateAndTimeInline
 							accentColor={theme.accentColor}
+							// PRIMARY-FOREGROUND: semantic On-Primary for the
+							// selected date + adjacent-month tooltip.
+							accentForegroundColor={theme.accentForegroundColor}
 							backgroundColor={theme.backgroundColor}
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
@@ -12435,6 +12509,8 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						optionsText=""
 						options={opts}
 						accentColor={theme.accentColor}
+						// PRIMARY-FOREGROUND: On-Primary for selected options.
+						accentForegroundColor={theme.accentForegroundColor}
 						textColor={theme.textPrimaryColor}
 						mutedTextColor={theme.textSecondaryColor}
 						backgroundColor={theme.surfaceColor}
@@ -12585,6 +12661,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	values: BookingValues;
 	bookingResult: BookingConfirmation | null;
 	accentColor: string;
+	// PRIMARY-FOREGROUND: On-Primary for accent-filled buttons on this screen.
+	accentForegroundColor: string;
 	textPrimaryColor: string;
 	textSecondaryColor: string;
 	surfaceColor: string;
@@ -12633,6 +12711,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		values,
 		bookingResult,
 		accentColor,
+		accentForegroundColor,
 		textPrimaryColor,
 		textSecondaryColor,
 		surfaceColor,
@@ -13155,10 +13234,9 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						// Fixed foreground for the accent-filled button.
-						// A constant — never derived from the configured
-						// colours.
-						color: TEXT_ON_ACCENT,
+						// PRIMARY-FOREGROUND: semantic On-Primary token for the
+						// accent-filled button — never a hard-coded white.
+						color: accentForegroundColor,
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -13204,6 +13282,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	borderColor: string;
 	borderRadius: string | number;
 	accentColor: string;
+	// PRIMARY-FOREGROUND: On-Primary for the accent-filled retry button.
+	accentForegroundColor: string;
 	onRetry: () => void;
 	errorTitle: string;
 	errorSubtitle: string;
@@ -13223,6 +13303,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		borderColor,
 		borderRadius,
 		accentColor,
+		accentForegroundColor,
 		onRetry,
 		errorTitle,
 		errorSubtitle,
@@ -13325,10 +13406,9 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						borderRadius: borderRadius,
 						border: "none",
 						background: accentColor,
-						// Fixed foreground for the accent-filled button.
-						// A constant — never derived from the configured
-						// colours.
-						color: TEXT_ON_ACCENT,
+						// PRIMARY-FOREGROUND: semantic On-Primary token for the
+						// accent-filled retry button — never a hard-coded white.
+						color: accentForegroundColor,
 						fontFamily: "inherit",
 						fontSize: 14,
 						fontWeight: 600,
@@ -13918,6 +13998,15 @@ addPropertyControls(BookingEngine, {
 				// in dark mode the pick() override swaps this light default
 				// for DEFAULT_DARK_THEME.accentColor.
 				defaultValue: "#0066BB",
+			},
+			// PRIMARY-FOREGROUND: semantic On-Primary token. Independent of
+			// Accent — no contrast math, no auto-correction, no validation
+			// (AGENTS.md hard rules). Pairing Primary + Primary Foreground is
+			// the author's choice; the component renders both verbatim.
+			accentForegroundColor: {
+				type: ControlType.Color,
+				title: "Primary Foreground",
+				defaultValue: "#FFFFFF",
 			},
 			backgroundColor: {
 				type: ControlType.Color,
