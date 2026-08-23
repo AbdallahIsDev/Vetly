@@ -1864,15 +1864,7 @@ const CalendarCell = React.memo(function CalendarCell({
 						: "none",
 				fontWeight: 500,
 			}}
-			title={
-				!isInMonth
-					? date.toLocaleDateString(locale, {
-							month: "long",
-							year: "numeric",
-							...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-						})
-					: undefined
-			}
+
 		>
 			{/* W1-07-F4 fix: the visible day-of-month must match the
                 visitor-tz date the slots are bucketed under (CC-13
@@ -1927,6 +1919,37 @@ const CalendarCell = React.memo(function CalendarCell({
 					/>
 				) : null}
 			</span>
+			{!isInMonth ? (
+				<span
+					className="be-adj-tooltip"
+					role="tooltip"
+					aria-hidden="true"
+					style={{
+						position: "absolute",
+						bottom: "100%",
+						left: "50%",
+						transform: "translateX(-50%)",
+						marginBottom: 6,
+						background: "#1F2937",
+						color: "#FFFFFF",
+						padding: "4px 8px",
+						borderRadius: 4,
+						fontSize: 11,
+						fontWeight: 500,
+						whiteSpace: "nowrap",
+						pointerEvents: "none",
+						opacity: 0,
+						transition: "opacity 0.15s ease",
+						zIndex: 10,
+					}}
+				>
+					{date.toLocaleDateString(locale, {
+						month: "long",
+						year: "numeric",
+						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+					})}
+				</span>
+			) : null}
 		</button>
 	);
 });
@@ -2131,6 +2154,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	}
 	return (
 		<>
+			<style suppressHydrationWarning>{`button:hover .be-adj-tooltip, button:focus .be-adj-tooltip, button:focus-visible .be-adj-tooltip { opacity: 1 !important; }`}</style>
 			<div
 				style={{
 					display: "flex",
@@ -2747,7 +2771,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		<aside
 			aria-label={timeSlotsAriaLabel}
 			style={{
-				width: isNarrow ? "100%" : 220,
+				width: isNarrow ? "100%" : undefined,
+				flex: isNarrow ? "none" : "0 1 220px",
 				minWidth: 0,
 				borderLeft: isNarrow ? "none" : subtleBorder,
 				borderTop: isNarrow ? subtleBorder : "none",
@@ -4793,8 +4818,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						}
 						aria-busy={eventMetaStatus === "loading" || undefined}
 						style={{
-							width: isNarrow ? "100%" : 232,
-							flexShrink: 0,
+							width: isNarrow ? "100%" : undefined,
+							flex: isNarrow ? "none" : "0 1 232px",
+							minWidth: 0,
 							boxSizing: "border-box",
 							padding: isNarrow ? "12px 16px 14px" : "16px",
 							borderBottom: isNarrow
@@ -4898,7 +4924,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				<section
 					aria-label={datePickerAriaLabel}
 					style={{
-						flex: 1,
+						flex: "1 1 0",
 						minWidth: 0,
 						padding: isNarrow ? "12px 12px 10px" : "16px",
 						boxSizing: "border-box",
@@ -8165,6 +8191,18 @@ function useBookingEngineState(props: BookingEngineProps) {
 		successColor,
 		borderRadius,
 	} = styles;
+	// Radius clamp: the Framer control (now Number) enforces 0–24 in the UI,
+	// but runtime must also sanitize — a value outside the range must never
+	// reach the rendered component even if passed programmatically.
+	const sanitizedRadiusValue = React.useMemo(() => {
+		const raw =
+			typeof borderRadius === "number"
+				? borderRadius
+				: parseInt(String(borderRadius ?? "12"), 10);
+		const n = Number.isFinite(raw) ? raw : 12;
+		return Math.max(0, Math.min(24, Math.round(n)));
+	}, [borderRadius]);
+	const sanitizedRadius = `${sanitizedRadiusValue}px`;
 	// Defensive fallback for instances created before the prop moved.
 	const colorMode: ColorMode = themeSetting || "light";
 	// Progress settings (grouped object control). Defaults keep
@@ -8421,7 +8459,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 					// latent footgun (a future dark-radius change would only hit
 					// the canvas banner). Both branches now carry the raw prop;
 					// borderRadius is documented as NOT theme-aware.
-					borderRadius,
+					borderRadius: sanitizedRadius,
 				}
 			: {
 					accentColor,
@@ -8432,7 +8470,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 					borderColor,
 					errorColor,
 					successColor,
-					borderRadius,
+					borderRadius: sanitizedRadius,
 				};
 	}, [
 		colorMode,
@@ -8445,7 +8483,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		borderColor,
 		errorColor,
 		successColor,
-		borderRadius,
+		sanitizedRadius,
 	]);
 
 	// Assemble the active steps from the ten fixed slots, in order, truncated
@@ -10005,6 +10043,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		bookingResult,
 		borderColor,
 		borderRadius,
+		sanitizedRadius,
 		buttonLabels,
 		calApiKey,
 		calEventTypeId,
@@ -10155,6 +10194,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		backLabel,
 		bookingResult,
 		borderRadius,
+		sanitizedRadius,
 		buttonLabels,
 		completePct,
 		copy,
@@ -10700,7 +10740,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 									style={{
 										flex: 1,
 										height: PROGRESS_BAR_HEIGHT,
-										borderRadius: borderRadius,
+										borderRadius: sanitizedRadius,
 										background:
 											i <= safeCurrentIndex
 												? theme.accentColor
@@ -10720,7 +10760,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								width: "100%",
 								height: PROGRESS_BAR_HEIGHT,
 								background: theme.surfaceColor,
-								borderRadius: borderRadius,
+								borderRadius: sanitizedRadius,
 								overflow: "hidden",
 							}}
 							role="progressbar"
@@ -10735,7 +10775,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										width: "100%",
 										height: "100%",
 										background: theme.accentColor,
-										borderRadius: borderRadius,
+										borderRadius: sanitizedRadius,
 										transform: `scaleX(${progressPct / 100})`,
 										transformOrigin: "left center",
 									}}
@@ -10754,7 +10794,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										width: "100%",
 										height: "100%",
 										background: theme.accentColor,
-										borderRadius: borderRadius,
+										borderRadius: sanitizedRadius,
 										transformOrigin: "left center",
 									}}
 									aria-hidden="true"
@@ -10886,7 +10926,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								errors={errors}
 								touched={touched}
 								theme={theme}
-								borderRadius={borderRadius}
+								borderRadius={sanitizedRadius}
 								hasCalConfig={hasCalConfig}
 								slotsLoading={slotsLoading}
 								slotsError={slotsError}
@@ -11268,6 +11308,8 @@ const RootShell = React.memo(function RootShell(props: {
 				style={{
 					position: "relative",
 					width: "100%",
+					maxWidth: "100%",
+					minWidth: 0,
 					height: "auto",
 					boxSizing: "border-box",
 					display: "flex",
@@ -13848,11 +13890,14 @@ addPropertyControls(BookingEngine, {
 				defaultValue: "#15803D",
 			},
 			borderRadius: {
-				type: ControlType.BorderRadius,
+				type: ControlType.Number,
 				title: "Radius",
-				defaultValue: "12px",
+				defaultValue: 12,
 				min: 0,
 				max: 24,
+				step: 1,
+				unit: "px",
+				displayStepper: true,
 			},
 		},
 	},

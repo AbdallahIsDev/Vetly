@@ -380,6 +380,18 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Previous/next month buttons have no fixed `24px × 24px` size — their dimensions come from the icon plus `6px` padding (`width: auto; height: auto; padding: 6px; display: inline-flex` centered).** Hover on an enabled button shows `background: <segmented-outer-background>` at `100%` opacity and `border: 1px solid <segmented-border>` at `100%` opacity; disabled buttons never show hover. **Event metadata icons (duration/location) are exactly `20px × 20px`, never overflowing:** each SVG sits in a stable `20px` wrapper (`width:20; height:20; flex-shrink:0; display:flex; alignItems:center; justifyContent:center`) that is vertically centered with the `16px` metadata text.
 
+### 60. Radius control and runtime clamp
+
+**`Radius` is a `ControlType.Number` (not `BorderRadius`) with `min: 0, max: 24, step: 1, unit: "px"` and `defaultValue: 12`.** Runtime styling also clamps the value to `0–24` before applying, so a programmatic value outside the range never reaches the DOM. This dual enforcement (control + runtime) keeps the Framer UI and the rendered component consistent.
+
+### 61. Adjacent-month indicators and custom tooltips
+
+**The 3-letter month abbreviation appears only on the first visible date of each adjacent month — both the next month (e.g., `OCT` above Oct 1 when viewing September) and the previous month (e.g., `AUG` above Aug 31 when viewing September).** It is generated dynamically, centered with `left: 50% + translateX(-50%)`, stable muted color, and removed when that cell becomes selected. **Hovering or focusing an adjacent-month date shows a single custom tooltip (not a native `title` browser tooltip) positioned above the cell with the full month name (e.g., `August`); it has `pointer-events: none`, does not affect layout, and disappears on leave/blur while the `aria-label` remains for accessibility.
+
+### 62. Booking Engine is fluidly responsive at 850px default
+
+**The Booking Engine's Framer default/design width remains `850px` (`@framerIntrinsicWidth 850`), but the rendered component is fluid: `width: 100%`, `maxWidth: 100%`, `minWidth: 0`, never `width: 850px` in runtime.** The root and all flex/grid children use `minWidth: 0` and `flex` shrinkability so the 3-column Calendar layout (event info | calendar | times) can reduce gaps/column widths at medium widths and reflow to a vertical stack (event info → calendar → times) at small widths without horizontal overflow, clipping, or unusable cells. Every state (calendar, time list, form, confirmation) participates.
+
 
 
 
