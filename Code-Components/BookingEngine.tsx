@@ -1888,10 +1888,10 @@ const CalendarCell = React.memo(function CalendarCell({
 						aria-hidden="true"
 						style={{
 							position: "absolute",
-							top: -6,
-							left: "50%",
+							top: 0,
+							left: 8,
 							transform: "translateX(-50%)",
-							fontSize: 8,
+							fontSize: 10,
 							fontWeight: 700,
 							letterSpacing: "0.06em",
 							textTransform: "uppercase",
@@ -2795,39 +2795,42 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				// group — without role="group" + aria-label, SR users
 				// heard bare "12h, toggle button, pressed" with no
 				// clue what the buttons switch.
-				role="group"
-				aria-label={timeFormatLabel}
-				style={{
-					position: "relative",
-					display: "flex",
-					background: withAlpha(borderColor, 0.14),
-					border: `1px solid ${withAlpha(borderColor, 0.55)}`,
-					borderRadius: 999,
-					overflow: "hidden",
-					width: "auto",
-					flex: "0 0 auto",
-					padding: 3,
-					minHeight: 32,
-					boxSizing: "border-box",
-					gap: 2,
-				}}
-			>
+			role="group"
+			aria-label={timeFormatLabel}
+			style={{
+				position: "relative",
+				// W2-58 fix: EQUAL segments — a 2-track grid sizes both
+				// buttons to the same width (the wider label's), which is
+				// exactly what the absolutely-positioned active-thumb
+				// geometry assumes (each segment = 50% − 3px inset).
+				display: "grid",
+				gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+				background: withAlpha(borderColor, 0.14),
+				border: `1px solid ${withAlpha(borderColor, 0.55)}`,
+				borderRadius: 999,
+				overflow: "hidden",
+				width: "auto",
+				flex: "0 0 auto",
+				padding: 3,
+				minHeight: 32,
+				boxSizing: "border-box",
+			}}
+		>
 				{isStaticRender ? (
 					<div
 						style={{
 							position: "absolute",
 							top: 3,
 							bottom: 3,
-							// W1-18-F1 fix: position is the constant
-							// `left: 3` baseline; the format switch is a
-							// GPU-composited transform (translateX by one
-							// thumb-width + 2px gap) instead of animating
-							// `left`, which costs layout every frame.
+							// W2-58 fix: exact thumb geometry — left inset 3px,
+							// width = one segment (50% of the padding box minus
+							// the 3px left+right insets); the inactive position
+							// slides exactly one segment (translateX(100%)).
 							left: 3,
-							width: "calc(50% - 6px)",
+							width: "calc(50% - 3px)",
 							transform:
 								activeTimeFormat === "24h"
-									? "translateX(calc(100% + 3px))"
+									? "translateX(100%)"
 									: "translateX(0)",
 							borderRadius: 999,
 							background: backgroundColor,
@@ -2839,12 +2842,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				) : (
 					<motion.div
 						initial={false}
-						// W1-18-F1 fix: the slide animates a composited
-						// transform (x = one thumb width + 3px gap) instead
-						// of the layout property `left` — springs over
-						// `left` re-layout every frame.
+						// W2-58 fix: the slide animates a composited transform
+						// of exactly one segment width instead of the layout
+						// property `left` — springs over `left` re-layout
+						// every frame.
 						animate={{
-							x: activeTimeFormat === "24h" ? "calc(100% + 3px)" : 0,
+							x: activeTimeFormat === "24h" ? "100%" : 0,
 						}}
 						transition={
 							prefersReducedMotion ? INSTANT_TRANSITION : TIME_TOGGLE_TRANSITION
@@ -2854,7 +2857,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							top: 3,
 							bottom: 3,
 							left: 3,
-							width: "calc(50% - 6px)",
+							width: "calc(50% - 3px)",
 							borderRadius: 999,
 							background: backgroundColor,
 							border: `1px solid ${borderColor}`,
@@ -2904,12 +2907,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							}
 							onBlur={() => React.startTransition(() => setFocusedKey(null))}
 						style={{
-							// W2-50 fix: content-sized compact segments — the
-							// control no longer stretches across the header, and
-							// the ACTIVE label uses the dark text color on the
-							// white pill (white-on-white was illegible).
-							flex: "1 1 auto",
-							padding: "0 14px",
+							// W2-58 fix: grid tracks make both segments EQUAL
+							// width (matched to the absolute thumb); the ACTIVE
+							// label uses dark text on the white pill.
+							width: "100%",
+							padding: "0 8px",
 							border: "none",
 							borderRadius: 999,
 							background: "transparent",
@@ -2919,6 +2921,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							fontSize: 13,
 							fontWeight: active ? 700 : 500,
 							whiteSpace: "nowrap",
+							overflow: "hidden",
+							textOverflow: "ellipsis",
 							// W1-18-F1 fix: gated on
 							// prefers-reduced-motion (the
 							// prop is already in scope).
@@ -3873,7 +3877,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 								width: 40,
 								height: 40,
 								borderRadius: "50%",
-								background: withAlpha(accentColor, 0.14),
+								background: withAlpha(accentColor, 0.5),
 								color: accentColor,
 								display: "inline-flex",
 								alignItems: "center",
@@ -4765,7 +4769,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							width: isNarrow ? "100%" : 232,
 							flexShrink: 0,
 							boxSizing: "border-box",
-							padding: isNarrow ? "12px 16px 14px" : "16px 16px 16px 20px",
+							padding: isNarrow ? "12px 16px 14px" : "16px",
 							borderBottom: isNarrow
 								? `1px solid ${withAlpha(borderColor, 0.6)}`
 								: undefined,
