@@ -1892,7 +1892,7 @@ const CalendarCell = React.memo(function CalendarCell({
 						aria-hidden="true"
 						style={{
 							position: "absolute",
-							top: 1,
+							top: 2,
 							left: "50%",
 							transform: "translateX(-50%)",
 							fontSize: 8,
@@ -3957,7 +3957,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					}}
 				>
 					<span aria-hidden="true" style={{ flexShrink: 0, display: "inline-flex" }}>
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+						<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
 							<circle cx="12" cy="12" r="9" />
 							<path d="M12 7v5l3 2" />
 						</svg>
@@ -3983,7 +3983,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					}}
 				>
 					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, display: "inline-flex" }}>
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 							<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
 							<circle cx="12" cy="10" r="3" />
 						</svg>
