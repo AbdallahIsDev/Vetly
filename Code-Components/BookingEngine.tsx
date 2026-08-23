@@ -1676,6 +1676,7 @@ interface CalendarCellProps {
 	isUnavailable: boolean;
 	isSelected: boolean;
 	isInMonth: boolean;
+	isFirstOfAdjacentMonth?: boolean;
 	isToday: boolean;
 	isTodayHighlighted: boolean;
 	isRingHover: boolean;
@@ -1713,6 +1714,7 @@ const CalendarCell = React.memo(function CalendarCell({
 	isUnavailable,
 	isSelected,
 	isInMonth,
+	isFirstOfAdjacentMonth,
 	isToday,
 	isTodayHighlighted,
 	isRingHover,
@@ -1860,7 +1862,7 @@ const CalendarCell = React.memo(function CalendarCell({
 					isSelected || isRingHover
 						? `inset 0 0 0 2px ${accentColor}`
 						: "none",
-				fontWeight: isSelected ? 600 : 400,
+				fontWeight: 500,
 			}}
 			title={
 				!isInMonth
@@ -1879,24 +1881,25 @@ const CalendarCell = React.memo(function CalendarCell({
                 showing Dec 14 slots. slice(-2) = the zero-padded day. */}
 			<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
 				{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
-				{!isInMonth ? (
+				{isFirstOfAdjacentMonth && !isSelected ? (
 					/* W2-53 fix: adjacent-month dates always carry a compact
                        month abbreviation above the number (generic — derived
                        from the date's own month); the full-month tooltip is
-                       the native title on the button. */
+                       the native title on the button. Shown only on the
+                       first visible date of each adjacent month (e.g. SEP
+                       above 1, not above 2-5). */
 					<span
 						aria-hidden="true"
 						style={{
 							position: "absolute",
-							top: 0,
-							left: 8,
+							top: 1,
+							left: "50%",
 							transform: "translateX(-50%)",
-							fontSize: 10,
+							fontSize: 8,
 							fontWeight: 700,
 							letterSpacing: "0.06em",
 							textTransform: "uppercase",
-							color: isRingHover ? accentColor : mutedSoftText,
-							transition: "color 0.12s ease",
+							color: mutedSoftText,
 							pointerEvents: "none",
 							whiteSpace: "nowrap",
 						}}
@@ -2024,6 +2027,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// same in the prerender, in renderToString, and on the first client
 	// render — so nothing derived from it can ever mismatch.
 	const gridLabelId = "be-calendar-grid-label";
+	const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null);
 	useIsomorphicLayoutEffect(() => {
 		if (prevMonthLabelRef.current !== monthLabel) {
 			prevMonthLabelRef.current = monthLabel;
@@ -2039,7 +2043,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
                add a dead stop. */
 			// biome-ignore lint/a11y/useSemanticElements: see CSS-grid calendar note above.
 			<div role="row" key={`row-${r}`} style={{ display: "contents" }}>
-				{cells.slice(r * 7, r * 7 + 7).map((date) => {
+				{cells.slice(r * 7, r * 7 + 7).map((date, cIdx) => {
+					const globalIdx = r * 7 + cIdx;
 					const dateKey = dateKeyOf(date);
 					const isInMonth = date.getMonth() === visibleMonth.getMonth();
 					const isPast = startOfDay(date).getTime() < today.getTime();
@@ -2071,6 +2076,14 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							/>
 						);
 					}
+					// W2-59 fix: month abbreviation shows ONLY on the first
+					// visible date of each adjacent month (e.g. SEP above 1,
+					// not above 2-5). Generic via the date's own month.
+					const isFirstOfAdjacentMonth =
+						!isInMonth &&
+						!isEmptyLeadingCell &&
+						(globalIdx === 0 ||
+							cells[globalIdx - 1].getMonth() !== date.getMonth());
 					const isRingHover =
 						hoveredDateKey === dateKey &&
 						!isUnavailable &&
@@ -2083,6 +2096,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							isUnavailable={isUnavailable}
 							isSelected={isSelected}
 							isInMonth={isInMonth}
+							isFirstOfAdjacentMonth={isFirstOfAdjacentMonth}
 							isToday={isToday}
 							isTodayHighlighted={isTodayHighlighted}
 							isRingHover={isRingHover}
@@ -2184,11 +2198,13 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						prevMonthLabel,
 					)}
 					onClick={() => onPrevMonth()}
+					onMouseEnter={() => canGoPrev && setHoveredNav("prev")}
+					onMouseLeave={() => setHoveredNav((v) => (v === "prev" ? null : v))}
 					disabled={!canGoPrev}
 					tabIndex={0}
 					style={{
 						appearance: "none",
-						background: "transparent",
+						background: hoveredNav === "prev" && canGoPrev ? "rgba(229, 231, 235, 0.5)" : "transparent",
 						// W2-46 fix: muted tone (60% text) so the arrows stay
 						// secondary to the month title; disabled stays softer.
 						color: canGoPrev ? mutedText : mutedSoftText,
@@ -2227,13 +2243,15 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							nextMonthLabel,
 						)}
 						onClick={() => onNextMonth()}
+						onMouseEnter={() => canGoNext && setHoveredNav("next")}
+						onMouseLeave={() => setHoveredNav((v) => (v === "next" ? null : v))}
 						disabled={!canGoNext}
 						tabIndex={0}
 						style={{
 							appearance: "none",
-							background: "transparent",
-							// W2-46 fix: muted tone — matches the prev button.
-							color: canGoNext ? mutedText : mutedSoftText,
+							background: hoveredNav === "next" && canGoNext ? "rgba(229, 231, 235, 0.5)" : "transparent",
+						// W2-46 fix: muted tone — matches the prev button.
+						color: canGoNext ? mutedText : mutedSoftText,
 							border: "none",
 							borderRadius,
 							width: 24,
@@ -2315,8 +2333,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							key={label}
 							style={{
 								textAlign: "center",
-								fontSize: 11,
-								fontWeight: 600,
+								fontSize: 12,
+								fontWeight: 700,
 								letterSpacing: "0.06em",
 								textTransform: "uppercase",
 								color: textColor,
@@ -2572,23 +2590,28 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 				onSelect(value);
 			}}
 			style={{
-				minHeight: TOUCH_TARGET_MIN,
+				height: 36,
+				minHeight: 36,
 				border: `1px solid ${hovered ? accentColor : borderColor}`,
 				// F-17-3 fix: was `6` — now the author's token.
 				borderRadius: radius,
-				padding: isNarrow ? "10px 10px" : "10px 12px",
+				padding: isNarrow ? "0 10px" : "0 12px",
 				background: selected ? accentColor : "transparent",
 				color: elapsed
 					? mutedSoftText
 					: selected
 						? selectedAccentText
-						: textColor,
+						: withAlpha(textColor, 0.75),
 				fontSize: 14,
+				fontWeight: 600,
 				cursor: elapsed ? "not-allowed" : "pointer",
 				opacity: elapsed ? 0.5 : 1,
 				whiteSpace: "nowrap",
 				overflow: "hidden",
 				textOverflow: "ellipsis",
+				display: "inline-flex",
+				alignItems: "center",
+				justifyContent: "center",
 				// W1-18-F1 fix: gated on prefers-reduced-motion.
 				transition: reducedMotion
 					? "none"
@@ -2728,11 +2751,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				minWidth: 0,
 				borderLeft: isNarrow ? "none" : subtleBorder,
 				borderTop: isNarrow ? subtleBorder : "none",
-				padding: isNarrow ? "10px 12px 12px" : 12,
+				padding: isNarrow ? "10px 16px 0 16px" : "12px 16px 0 16px",
 				boxSizing: "border-box",
 				display: "flex",
 				flexDirection: "column",
-				gap: isNarrow ? 8 : 10,
+				gap: 12,
 			}}
 		>
 			{/* W2-57 fix: the time list stays scrollable but the browser
@@ -2758,9 +2781,13 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						whiteSpace: "nowrap",
 					}}
 				>
-					{(selectedDate ?? fallbackDate)
-						.toLocaleDateString(pageLocale(), { weekday: "short" })
-						.toUpperCase()}
+					{(() => {
+						const w = (selectedDate ?? fallbackDate).toLocaleDateString(
+							pageLocale(),
+							{ weekday: "short" },
+						);
+						return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+					})()}
 					<span
 						style={{
 							marginLeft: 6,
@@ -3860,11 +3887,11 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<img
 							src={meta.avatarUrl}
 							alt=""
-							width={40}
-							height={40}
+							width={32}
+							height={32}
 							style={{
-								width: 40,
-								height: 40,
+								width: 32,
+								height: 32,
 								borderRadius: "50%",
 								objectFit: "cover",
 								flexShrink: 0,
@@ -3874,16 +3901,16 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 						<div
 							aria-hidden="true"
 							style={{
-								width: 40,
-								height: 40,
+								width: 32,
+								height: 32,
 								borderRadius: "50%",
-								background: withAlpha(accentColor, 0.5),
+								background: withAlpha(accentColor, 0.14),
 								color: accentColor,
 								display: "inline-flex",
 								alignItems: "center",
 								justifyContent: "center",
 								fontWeight: 700,
-								fontSize: 17,
+								fontSize: 14,
 								flexShrink: 0,
 							}}
 						>
@@ -3922,7 +3949,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					style={{
 						marginTop: meta.title || meta.organizerName ? 8 : 0,
 						color: textSecondaryColor,
-						fontSize: 14,
+						fontSize: 16,
 						fontWeight: 500,
 						display: "flex",
 						alignItems: "center",
@@ -3930,7 +3957,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					}}
 				>
 					<span aria-hidden="true" style={{ flexShrink: 0, display: "inline-flex" }}>
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
 							<circle cx="12" cy="12" r="9" />
 							<path d="M12 7v5l3 2" />
 						</svg>
@@ -3947,7 +3974,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					style={{
 						marginTop: 6,
 						color: textSecondaryColor,
-						fontSize: 14,
+						fontSize: 16,
 						fontWeight: 500,
 						display: "flex",
 						alignItems: "flex-start",
@@ -3956,7 +3983,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 					}}
 				>
 					<span aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, display: "inline-flex" }}>
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 							<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
 							<circle cx="12" cy="10" r="3" />
 						</svg>
@@ -6325,7 +6352,7 @@ function useCalcomSlots(
 		// full drift harmlessly — the calendar grid only renders visible
 		// dates, so neighboring-day slots are extra data, never orphaned UI.
 		const start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
-		start.setDate(start.getDate() - 2);
+		start.setDate(start.getDate() - 12);
 		const end = new Date(
 			monthStart.getFullYear(),
 			monthStart.getMonth() + 1,
@@ -6334,7 +6361,7 @@ function useCalcomSlots(
 			59,
 			59,
 		);
-		end.setDate(end.getDate() + 2);
+		end.setDate(end.getDate() + 12);
 		const startStr = start.toISOString();
 		const endStr = end.toISOString();
 		const url = `${apiBase}/v2/slots?eventTypeId=${encodeURIComponent(

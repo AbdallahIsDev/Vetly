@@ -356,6 +356,22 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **The available-times list remains scrollable inside its contained panel while the scrollbar itself is hidden** via `scrollbar-width: none` + `-ms-overflow-style: none` + `::-webkit-scrollbar { width:0; height:0; display:none }` on `.be-dt-scroll`. Do not replace the scroll area with unbounded growth and do not reintroduce a visible scrollbar; keep the scoped `<style suppressHydrationWarning>` pattern for this constant CSS.
 
+### 54. Precise event-avatar and metadata sizing
+
+**The Calendar-step event-information avatar is exactly `32px × 32px` (image and fallback circle, `fontSize 14` initial) kept beside the organizer name in the horizontal layout.** Duration and location rows are `16px` text (weight 500, readable secondary color) with `24px × 24px` icons, visually secondary to the title but more readable than the previous muted/small treatment. Keep icons aligned with text via `inline-flex`.
+
+### 55. Calendar navigation, weekday, and date-number typography
+
+**Previous/next month buttons are `24px × 24px` with an `8px` gap between them; on hover an enabled button shows `rgba(229, 231, 235, 0.5)` (the same surface as the segmented control outer background), disabled buttons never gain hover styling.** Weekday labels are `12px` / `700` uppercase, column-aligned. Every calendar date number is `500` weight in every state (selected today vs adjacent vs disabled all share `500`; never use a heavier/lighter weight for selected).
+
+### 56. Time slots, Time section layout, and time-header formatting
+
+**Every available-time button is `36px` tall, `600` weight, centered, with text color at `75%` opacity of the base `textColor` token (elapsed/disabled stay muted).** The Time section header sits in the same horizontal row as the compact content-sized 12h/24h control (`12h 24h` side-by-side, outer darker surface than white, active white pill with dark text). The header's day label uses title-case `Mon 24th` (weekday short with first letter uppercase, rest lowercase, ordinal attached) at `16px`: weekday `700` full color like the month title, numeric + ordinal `500` muted like the year in `August 2026`, derived dynamically from the active/default date and visible immediately on first render (placeholder → real today pre-paint).
+
+### 57. Adjacent-month labels: first date only, neutral, and availability-consistent
+
+**The compact month abbreviation (`SEP`, `OCT`, …) appears only on the first visible date of each adjacent month, not on every adjacent cell.** It is positioned at `top: 1px; left: 50%; transform: translateX(-50%)` inside the date cell, uses a stable neutral/muted color (never the cell's hover/selected accent), and is removed entirely when that date becomes selected (selected styling takes over). It is generated dynamically from the date's own month (`pageLocale()`, `month:"short"` uppercase). Hovering an adjacent date shows a native `title` tooltip with the full month name + year; in-month dates get no tooltip. **Previewed adjacent-month availability must exactly match the real Cal.com source for that month:** never infer availability from visibility; if the adjacent month's slots have not been fetched yet, treat those dates as unavailable until the real data arrives, so `Sep 1` shows the same available/unavailable state while previewed in August and after navigating to September.
+
 
 
 
