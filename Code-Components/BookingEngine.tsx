@@ -722,7 +722,7 @@ function startOfDay(d: Date): Date {
 // visitor-tz key — i.e. it lives in exactly the same coordinate system as
 // the grid cells, so isSameDay/startOfDay comparisons (CalendarGrid
 // isToday/isPast, isTimeElapsed, moveFocus / handleDateSelect past-guards,
-// firstAvailableDate, dateTabIndexByKey) are all correct for any
+// firstAvailableDate, activeDateKey) are all correct for any
 // browser/visitor tz pair.
 function getTodayInTimeZone(timeZone: string | undefined): Date {
 	const tz = timeZone || "";
@@ -746,6 +746,54 @@ function getTodayInTimeZone(timeZone: string | undefined): Date {
 				: new Date(candidate.getFullYear(), candidate.getMonth(), day - 1);
 	}
 	return candidate;
+}
+
+// CAL-ADJ-INDICATOR: single shared source for the adjacent-month indicator in
+// BOTH directions (leading previous-month cells AND trailing next-month
+// cells). Returns the compact uppercase month abbreviation ONLY for the
+// first RENDERED date of an adjacent month (grid index 0, the first cell
+// after a month boundary, or the first non-placeholder cell after skipping
+// same-month empty leading blanks); null everywhere else, so in-month dates
+// never carry it. Callers gate on eligibility themselves: already-selected
+// dates must not show it.
+function getAdjacentMonthAbbreviation(
+	cells: Date[],
+	index: number,
+	isPlaceholder: (date: Date) => boolean,
+): string | null {
+	const date = cells[index];
+	if (!date) return null;
+	let i = index - 1;
+	while (
+		i >= 0 &&
+		cells[i] &&
+		cells[i].getMonth() === date.getMonth() &&
+		isPlaceholder(cells[i])
+	) {
+		i -= 1;
+	}
+	const prev = i >= 0 ? cells[i] : undefined;
+	if (prev && prev.getMonth() === date.getMonth()) return null;
+	return date
+		.toLocaleDateString(pageLocale(), { month: "short" })
+		.toUpperCase();
+}
+
+// RADIUS-INNER: numeric px value of the shared Radius token (the engine
+// sanitizes to "0px".."24px" strings; parse defensively).
+function parseRadiusNumber(value: string | number | undefined): number {
+	const raw = typeof value === "number" ? value : parseFloat(String(value ?? ""));
+	return Number.isFinite(raw) ? raw : 0;
+}
+
+// RADIUS-INNER: geometric rule — a surface inset by a known padding inside an
+// outer radius must derive its own radius as outerRadius − inset (never
+// negative). Used by the 12h/24h segmented control (3px outer padding).
+function innerRadiusValue(
+	value: string | number | undefined,
+	inset: number,
+): string {
+	return `${Math.max(0, parseRadiusNumber(value) - inset)}px`;
 }
 
 // =============================================================================
@@ -1676,11 +1724,17 @@ interface CalendarCellProps {
 	isUnavailable: boolean;
 	isSelected: boolean;
 	isInMonth: boolean;
-	isFirstOfAdjacentMonth?: boolean;
+	// CAL-ADJ-INDICATOR: compact month abbreviation when this cell is the
+	// first visible date of an adjacent month (either direction); null/absent
+	// otherwise. Computed by the shared getAdjacentMonthAbbreviation helper.
+	adjacentMonthLabel?: string | null;
 	isToday: boolean;
-	isTodayHighlighted: boolean;
 	isRingHover: boolean;
-	tabIndex: number;
+	// ROVING-TABINDEX: exactly ONE selectable date per visible grid is the
+	// roving tab stop (tabIndex 0); every other cell renders tabIndex -1.
+	// Arrow/Home/End/PageUp/PageDown navigation moves focus between cells
+	// without changing Tab order.
+	isActive: boolean;
 	firstDayOfWeek: number;
 	locale?: string;
 	// W1-19-N1 fix: narrow containers (≤~329px effective width) get
@@ -1714,11 +1768,10 @@ const CalendarCell = React.memo(function CalendarCell({
 	isUnavailable,
 	isSelected,
 	isInMonth,
-	isFirstOfAdjacentMonth,
+	adjacentMonthLabel,
 	isToday,
-	isTodayHighlighted,
 	isRingHover,
-	tabIndex,
+	isActive,
 	firstDayOfWeek,
 	locale,
 	isNarrow,
@@ -1747,91 +1800,11 @@ const CalendarCell = React.memo(function CalendarCell({
            W3C datepicker pattern (grid/row/gridcell + roving tabindex) is the
            contract here; a native <td> cannot participate in the display:grid
            layout this component renders. */
-		<button
-			type="button"
+		<div
 			role="gridcell"
-			disabled={isUnavailable}
-			// W1-10-OBS-5 fix: the parallel aria-disabled was redundant
-			// with the native disabled attribute; removed.
 			aria-selected={isSelected}
-			// W1-10-A7 fix: mark the current date the machine-readable way
-			// (aria-current="date") instead of only a textual suffix; the
-			// "(Today)" suffix stays for the audible benefit.
 			aria-current={isToday ? "date" : undefined}
-			aria-label={
-				date.toLocaleDateString(locale, {
-					weekday: "long",
-					year: "numeric",
-					month: "long",
-					day: "numeric",
-					// W1-07-F4 fix: announce the date in the visitor's tz —
-					// otherwise the aria label can still disagree with the
-					// slots the cell shows. Invalid tz strings are already
-					// filtered by isValidTimeZone (browser-local fallback).
-					...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-				}) + (isToday ? " (Today)" : "")
-			}
-			data-date-key={dateKey}
-			tabIndex={isUnavailable ? -1 : tabIndex}
-			onMouseEnter={() => {
-				if (!isUnavailable) React.startTransition(() => onHoverChange(dateKey));
-			}}
-			onMouseLeave={() => {
-				if (!isUnavailable) React.startTransition(() => onHoverChange(null));
-			}}
-			onFocus={() =>
-				React.startTransition(() => onFocusChange(`date-${dateKey}`))
-			}
-			onBlur={() => React.startTransition(() => onFocusChange(null))}
-			onClick={() => onSelect(date)}
-			onKeyDown={(e) => {
-				if (e.key === "ArrowRight") {
-					e.preventDefault();
-					const target = new Date(date);
-					target.setDate(date.getDate() + 1);
-					onMoveFocus(target);
-				} else if (e.key === "ArrowLeft") {
-					e.preventDefault();
-					const target = new Date(date);
-					target.setDate(date.getDate() - 1);
-					onMoveFocus(target);
-				} else if (e.key === "ArrowDown") {
-					e.preventDefault();
-					const target = new Date(date);
-					target.setDate(date.getDate() + 7);
-					onMoveFocus(target);
-				} else if (e.key === "ArrowUp") {
-					e.preventDefault();
-					const target = new Date(date);
-					target.setDate(date.getDate() - 7);
-					onMoveFocus(target);
-				} else if (e.key === "Home") {
-					e.preventDefault();
-					const offset = (date.getDay() - firstDayOfWeek + 7) % 7;
-					const target = new Date(date);
-					target.setDate(date.getDate() - offset);
-					onMoveFocus(target);
-				} else if (e.key === "End") {
-					e.preventDefault();
-					const offset = (date.getDay() - firstDayOfWeek + 7) % 7;
-					const target = new Date(date);
-					target.setDate(date.getDate() + (6 - offset));
-					onMoveFocus(target);
-				} else if (e.key === "PageDown") {
-					e.preventDefault();
-					// W1-11-A2 fix: pass focusAfter=true so the
-					// pendingMonthFocusRef effect re-focuses the new month's
-					// active cell — previously focus fell to document.body
-					// when the focused date button unmounted with the old
-					// grid.
-					onGoToNextMonth(true);
-				} else if (e.key === "PageUp") {
-					e.preventDefault();
-					onGoToPreviousMonth(true);
-				}
-			}}
 			style={{
-				position: "relative",
 				minHeight: TOUCH_TARGET_MIN,
 				// W1-19-N1 fix: the F-01 grid tracks shrink to ~33–39px on
 				// ≤329px viewports; a hard 44px minWidth then overlaps the
@@ -1840,117 +1813,220 @@ const CalendarCell = React.memo(function CalendarCell({
 				// the honest target — drop the floor so cells stay their
 				// real size and nothing is covered.
 				minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
-				// F-17-3 fix: was `6` — now the author's token.
-				borderRadius,
-				border: `1px solid ${isUnavailable ? "transparent" : borderColor}`,
-				// W2-52 fix: ONLY the selected date gets the accent fill.
-				// Today is a separate state (dot indicator below) — selecting
-				// another date must never leave two highlighted cells.
-				background: isSelected ? accentColor : isUnavailable ? "transparent" : subtleFill,
-				color: isSelected ? selectedAccentText : isUnavailable ? mutedSoftText : textColor,
-				cursor: isUnavailable ? "default" : "pointer",
-				fontSize: 14,
-				// W1-18-F1 fix: gated on prefers-reduced-motion.
-				transition: reducedMotion
-					? "none"
-					: "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
-				// W1-11-NEW-FIND-2 fix: focus indication is standardized on
-				// the CSS `:focus-visible` rule — the isKeyboardModality
-				// boxShadow focus branch is gone; these rings mark STATE
-				// (selected / hover), never focus.
-				boxShadow:
-					isSelected || isRingHover
-						? `inset 0 0 0 2px ${accentColor}`
-						: "none",
-				fontWeight: 500,
 			}}
-
 		>
-			{/* W1-07-F4 fix: the visible day-of-month must match the
-                visitor-tz date the slots are bucketed under (CC-13
-                getDateKeyInTimeZone); with the browser >12h ahead/behind,
-                the old browser-local getDate() labeled "Dec 15" while
-                showing Dec 14 slots. slice(-2) = the zero-padded day. */}
-			<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
-				{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
-				{isFirstOfAdjacentMonth && !isSelected ? (
-					/* W2-53 fix: adjacent-month dates always carry a compact
-                       month abbreviation above the number (generic — derived
-                       from the date's own month); the full-month tooltip is
-                       the native title on the button. Shown only on the
-                       first visible date of each adjacent month (e.g. SEP
-                       above 1, not above 2-5). */
+			<button
+				type="button"
+				disabled={isUnavailable}
+				// W1-10-OBS-5 fix: the parallel aria-disabled was redundant
+				// with the native disabled attribute; removed.
+				// ROVING-TABINDEX: the native button keeps its own semantics
+				// (no role override); the grid-cell state lives on the
+				// wrapping div above, the interactive control stays a real
+				// <button>. Exactly one selectable cell per grid exposes
+				// tabIndex 0; the rest are -1 and reached via arrow keys.
+				tabIndex={isUnavailable || !isActive ? -1 : 0}
+				data-date-key={dateKey}
+				// Focus-restore hooks live HERE on the focusable element —
+				// moveFocus and the post-commit month-change effect call
+				// .focus() directly on what they query.
+				data-be-active-date={!isUnavailable && isActive ? "true" : undefined}
+				aria-label={
+					date.toLocaleDateString(locale, {
+						weekday: "long",
+						year: "numeric",
+						month: "long",
+						day: "numeric",
+						// W1-07-F4 fix: announce the date in the visitor's tz —
+						// otherwise the aria label can still disagree with the
+						// slots the cell shows. Invalid tz strings are already
+						// filtered by isValidTimeZone (browser-local fallback).
+						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+					}) + (isToday ? " (Today)" : "")
+				}
+				onMouseEnter={() => {
+					if (!isUnavailable) React.startTransition(() => onHoverChange(dateKey));
+				}}
+				onMouseLeave={() => {
+					if (!isUnavailable) React.startTransition(() => onHoverChange(null));
+				}}
+				onFocus={() =>
+					React.startTransition(() => onFocusChange(`date-${dateKey}`))
+				}
+				onBlur={() => React.startTransition(() => onFocusChange(null))}
+				onClick={() => onSelect(date)}
+				onKeyDown={(e) => {
+					if (e.key === "ArrowRight") {
+						e.preventDefault();
+						const target = new Date(date);
+						target.setDate(date.getDate() + 1);
+						onMoveFocus(target);
+					} else if (e.key === "ArrowLeft") {
+						e.preventDefault();
+						const target = new Date(date);
+						target.setDate(date.getDate() - 1);
+						onMoveFocus(target);
+					} else if (e.key === "ArrowDown") {
+						e.preventDefault();
+						const target = new Date(date);
+						target.setDate(date.getDate() + 7);
+						onMoveFocus(target);
+					} else if (e.key === "ArrowUp") {
+						e.preventDefault();
+						const target = new Date(date);
+						target.setDate(date.getDate() - 7);
+						onMoveFocus(target);
+					} else if (e.key === "Home") {
+						e.preventDefault();
+						const offset = (date.getDay() - firstDayOfWeek + 7) % 7;
+						const target = new Date(date);
+						target.setDate(date.getDate() - offset);
+						onMoveFocus(target);
+					} else if (e.key === "End") {
+						e.preventDefault();
+						const offset = (date.getDay() - firstDayOfWeek + 7) % 7;
+						const target = new Date(date);
+						target.setDate(date.getDate() + (6 - offset));
+						onMoveFocus(target);
+					} else if (e.key === "PageDown") {
+						e.preventDefault();
+						// W1-11-A2 fix: pass focusAfter=true so the
+						// pendingMonthFocusRef effect re-focuses the new month's
+						// active cell — previously focus fell to document.body
+						// when the focused date button unmounted with the old
+						// grid.
+						onGoToNextMonth(true);
+					} else if (e.key === "PageUp") {
+						e.preventDefault();
+						onGoToPreviousMonth(true);
+					}
+				}}
+				style={{
+					position: "relative",
+					width: "100%",
+					height: "100%",
+					// F-17-3 fix: was `6` — now the author's token.
+					borderRadius,
+					border: `1px solid ${isUnavailable ? "transparent" : borderColor}`,
+					// W2-52 fix: ONLY the selected date gets the accent fill.
+					// Today is a separate state (dot indicator below) — selecting
+					// another date must never leave two highlighted cells.
+					background: isSelected ? accentColor : isUnavailable ? "transparent" : subtleFill,
+					color: isSelected ? selectedAccentText : isUnavailable ? mutedSoftText : textColor,
+					cursor: isUnavailable ? "default" : "pointer",
+					fontSize: 14,
+					// W1-18-F1 fix: gated on prefers-reduced-motion.
+					transition: reducedMotion
+						? "none"
+						: "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
+					// W1-11-NEW-FIND-2 fix: focus indication is standardized on
+					// the CSS `:focus-visible` rule — the isKeyboardModality
+					// boxShadow focus branch is gone; these rings mark STATE
+					// (selected / hover), never focus.
+					boxShadow:
+						isSelected || isRingHover
+							? `inset 0 0 0 2px ${accentColor}`
+							: "none",
+					fontWeight: 500,
+				}}
+
+			>
+				{/* W1-07-F4 fix: the visible day-of-month must match the
+                    visitor-tz date the slots are bucketed under (CC-13
+                    getDateKeyInTimeZone); with the browser >12h ahead/behind,
+                    the old browser-local getDate() labeled "Dec 15" while
+                    showing Dec 14 slots. slice(-2) = the zero-padded day. */}
+				<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
+					{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
+					{adjacentMonthLabel && !isSelected ? (
+						/* CAL-ADJ-INDICATOR: adjacent-month dates carry a
+                           compact month abbreviation above the number (generic
+                           — derived from the date's own month by the shared
+                           helper, shown only on the first visible date of each
+                           adjacent month in EITHER direction). */
+						<span
+							aria-hidden="true"
+							style={{
+								position: "absolute",
+								top: 2,
+								left: "50%",
+								transform: "translateX(-50%)",
+								fontSize: 8,
+								fontWeight: 700,
+								letterSpacing: "0.06em",
+								textTransform: "uppercase",
+								color: mutedSoftText,
+								pointerEvents: "none",
+								whiteSpace: "nowrap",
+							}}
+						>
+							{adjacentMonthLabel}
+						</span>
+					) : null}
+					{isToday && !isSelected ? (
+						/* W2-52 fix: today's marker is a small dot beneath the
+                           number — visually independent of the selected-date
+                           fill AND of availability (TODAY-INDEPENDENT: today
+                           stays on the real current date even when that day is
+                           unavailable; Today / Selected / Available /
+                           Unavailable are independent states). currentColor
+                           keeps it legible in every state. */
+						<span
+							aria-hidden="true"
+							style={{
+								position: "absolute",
+								bottom: 3,
+								left: "50%",
+								transform: "translateX(-50%)",
+								width: 5,
+								height: 5,
+								borderRadius: "50%",
+								background: "currentColor",
+								pointerEvents: "none",
+							}}
+						/>
+					) : null}
+				</span>
+				{/* CAL-ADJ-TOOLTIP: custom hover tooltip for AVAILABLE
+                    adjacent-month dates only — unavailable/disabled adjacent
+                    cells render no tooltip and receive no hover treatment at
+                    all (the mouse handlers above already gate on
+                    !isUnavailable). Purely decorative: aria-hidden, the
+                    button's aria-label remains the screen-reader surface.
+                    Text is the full month name only (never the year);
+                    background follows the author's Accent token with the
+                    component's fixed on-accent foreground. */}
+				{!isInMonth && !isUnavailable ? (
 					<span
+						className="be-adj-tooltip"
 						aria-hidden="true"
 						style={{
 							position: "absolute",
-							top: 2,
+							bottom: "100%",
 							left: "50%",
 							transform: "translateX(-50%)",
-							fontSize: 8,
-							fontWeight: 700,
-							letterSpacing: "0.06em",
-							textTransform: "uppercase",
-							color: mutedSoftText,
-							pointerEvents: "none",
+							marginBottom: 6,
+							background: accentColor,
+							color: TEXT_ON_ACCENT,
+							padding: "4px 8px",
+							borderRadius: 4,
+							fontSize: 12,
+							fontWeight: 600,
 							whiteSpace: "nowrap",
+							pointerEvents: "none",
+							opacity: 0,
+							transition: reducedMotion ? "none" : "opacity 0.15s ease",
+							zIndex: 10,
 						}}
 					>
-						{date.toLocaleDateString(pageLocale(), { month: "short" }).toUpperCase()}
+						{date.toLocaleDateString(locale, {
+							month: "long",
+							...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+						})}
 					</span>
 				) : null}
-				{isToday && !isSelected ? (
-					/* W2-52 fix: today's marker is a small dot beneath the
-                       number — visually independent of the selected-date
-                       fill. currentColor keeps it legible in every state. */
-					<span
-						aria-hidden="true"
-						style={{
-							position: "absolute",
-							bottom: 3,
-							left: "50%",
-							transform: "translateX(-50%)",
-							width: 5,
-							height: 5,
-							borderRadius: "50%",
-							background: "currentColor",
-							pointerEvents: "none",
-						}}
-					/>
-				) : null}
-			</span>
-			{!isInMonth ? (
-				<span
-					className="be-adj-tooltip"
-					role="tooltip"
-					aria-hidden="true"
-					style={{
-						position: "absolute",
-						bottom: "100%",
-						left: "50%",
-						transform: "translateX(-50%)",
-						marginBottom: 6,
-						background: "#1F2937",
-						color: "#FFFFFF",
-						padding: "4px 8px",
-						borderRadius: 4,
-						fontSize: 11,
-						fontWeight: 500,
-						whiteSpace: "nowrap",
-						pointerEvents: "none",
-						opacity: 0,
-						transition: "opacity 0.15s ease",
-						zIndex: 10,
-					}}
-				>
-					{date.toLocaleDateString(locale, {
-						month: "long",
-						year: "numeric",
-						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-					})}
-				</span>
-			) : null}
-		</button>
+			</button>
+		</div>
 	);
 });
 
@@ -1975,7 +2051,9 @@ interface CalendarGridProps {
 	firstDayOfWeek: number;
 	dateKeyOf: (date: Date) => string;
 	hasAvailability: (date: Date) => boolean;
-	dateTabIndexByKey: Map<string, number>;
+	// ROVING-TABINDEX: the key of the ONE selectable date that acts as the
+	// grid's roving tab stop (tabIndex 0); all other cells render -1.
+	activeDateKey: string | null;
 	locale?: string;
 	// W1-07-F4 fix: visitor-tz for cell labels (see CalendarCell).
 	timeZone?: string;
@@ -2015,7 +2093,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	firstDayOfWeek,
 	dateKeyOf,
 	hasAvailability,
-	dateTabIndexByKey,
+	// ROVING-TABINDEX: single active (tabbable) date key.
+	activeDateKey,
 	locale,
 	// W1-07-F4 fix: forwarded to cells for tz-aware labels.
 	timeZone,
@@ -2035,13 +2114,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	onHoverChange,
 	onFocusChange,
 }: CalendarGridProps) {
-	// W1-10-A9 / W2-28-F5 fix: the sr-only month/year live region must
-	// not announce on first render — otherwise a screen reader spouts
-	// "January 2026" on page load. Content stays empty until the visible
-	// month label actually changes.
-	const monthLabel = `${monthName} ${yearLabel}`;
-	const prevMonthLabelRef = React.useRef(monthLabel);
-	const [announceMonthLabel, setAnnounceMonthLabel] = React.useState(false);
 	// W1-10-A4 fix: stable id linking the grid to its month/year heading
 	// (aria-labelledby). SSR/hydration fix: Framer serves real browsers a
 	// headless-prerendered HTML where effects have ALREADY run, so ANY
@@ -2050,13 +2122,12 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// same in the prerender, in renderToString, and on the first client
 	// render — so nothing derived from it can ever mismatch.
 	const gridLabelId = "be-calendar-grid-label";
+	// MONTH-ANNOUNCE dedupe: the visible month/year header below carries the
+	// role="status" live region that announces month changes; the former
+	// SECOND sr-only region (plus its ref/state/effect) announced the exact
+	// same "Month Year" string again — screen readers heard every page flip
+	// twice. One announcement source remains.
 	const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null);
-	useIsomorphicLayoutEffect(() => {
-		if (prevMonthLabelRef.current !== monthLabel) {
-			prevMonthLabelRef.current = monthLabel;
-			setAnnounceMonthLabel(true);
-		}
-	}, [monthLabel]);
 	const rows: React.ReactNode[] = [];
 	for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
 		rows.push(
@@ -2077,10 +2148,16 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					// availability exists (the slots fetch already covers the
 					// month edges), disabled otherwise. `isInMonth` now only
 					// drives the month-abbreviation indicator.
+					// CAL-ADJ-SOURCE: `hasAvailability` is the SAME normalized
+					// availability source used by the in-month view (the
+					// parent's month-wide Cal.com slots, fetched with ±12-day
+					// edge widening) — a previewed adjacent date shows exactly
+					// the state it will have after navigating into its month.
+					// Unknown/not-yet-fetched dates are unavailable, never
+					// "available because rendered".
 					const isUnavailable = isPast || !hasAvailability(date);
 					const isSelected = isSameDay(selectedDate, date);
 					const isToday = isSameDay(today, date);
-					const isTodayHighlighted = false;
 					// W2-55 fix: LEADING cells from the previous month that
 					// are past or have no availability render as EMPTY
 					// gridcells — matching Cal.com, where irrelevant leading
@@ -2095,18 +2172,33 @@ const CalendarGrid = React.memo(function CalendarGrid({
 								key={`empty-${dateKey}`}
 								role="gridcell"
 								aria-disabled="true"
-								style={{ minHeight: TOUCH_TARGET_MIN }}
+								style={{
+									minHeight: TOUCH_TARGET_MIN,
+									minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
+								}}
 							/>
 						);
 					}
-					// W2-59 fix: month abbreviation shows ONLY on the first
-					// visible date of each adjacent month (e.g. SEP above 1,
-					// not above 2-5). Generic via the date's own month.
-					const isFirstOfAdjacentMonth =
-						!isInMonth &&
-						!isEmptyLeadingCell &&
-						(globalIdx === 0 ||
-							cells[globalIdx - 1].getMonth() !== date.getMonth());
+					// CAL-ADJ-INDICATOR: one shared helper drives BOTH the
+					// previous-month and next-month abbreviations — only the
+					// first rendered date of each adjacent month carries one
+					// (empty leading placeholders are skipped over).
+					const adjacentMonthLabel = !isInMonth
+						? getAdjacentMonthAbbreviation(
+								cells,
+								globalIdx,
+								(candidate) =>
+									candidate.getTime() < visibleMonth.getTime() &&
+									(startOfDay(candidate).getTime() < today.getTime() ||
+										!hasAvailability(candidate)),
+							)
+						: null;
+					// ROVING-TABINDEX: exactly one selectable cell per grid
+					// is the tab stop; unavailable cells are never active.
+					const isActive =
+						activeDateKey !== null &&
+						dateKey === activeDateKey &&
+						!isUnavailable;
 					const isRingHover =
 						hoveredDateKey === dateKey &&
 						!isUnavailable &&
@@ -2119,11 +2211,10 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							isUnavailable={isUnavailable}
 							isSelected={isSelected}
 							isInMonth={isInMonth}
-							isFirstOfAdjacentMonth={isFirstOfAdjacentMonth}
+							adjacentMonthLabel={adjacentMonthLabel}
 							isToday={isToday}
-							isTodayHighlighted={isTodayHighlighted}
 							isRingHover={isRingHover}
-							tabIndex={dateTabIndexByKey.get(dateKey) ?? 0}
+							isActive={isActive}
 							firstDayOfWeek={firstDayOfWeek}
 							locale={locale}
 							// W1-19-N1 fix: pass the narrow flag through so
@@ -2154,7 +2245,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	}
 	return (
 		<>
-			<style suppressHydrationWarning>{`button:hover .be-adj-tooltip, button:focus .be-adj-tooltip, button:focus-visible .be-adj-tooltip { opacity: 1 !important; }`}</style>
+			{/* CSS-NOTE: the .be-adj-tooltip hover/focus reveal rule is defined
+                ONCE in RootShell's root <style> block (search "CSS-CONSOLIDATED")
+                — this grid no longer injects a per-instance copy. */}
 			<div
 				style={{
 					display: "flex",
@@ -2183,10 +2276,12 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					>
 						{/* W1-10-OBS-2 fix: the month/year header had no
                             live-region semantics — SR users paging the
-                            calendar never heard the month change. The
-                            visually-hidden sibling below only speaks the
-                            authored announcement copy; this wrapper gives
-                            the visible header itself status semantics. */}
+                            calendar never heard the month change. This
+                            wrapper gives the visible header itself status
+                            semantics. MONTH-ANNOUNCE dedupe: this is now the
+                            ONLY month-change announcement — the second
+                            sr-only region that repeated the same string was
+                            removed. */}
 						{/* biome-ignore lint/a11y/useSemanticElements: intentional
                             polite status region (W1-10-OBS-2) — the visible
                             month/year header announces the month change; an
@@ -2307,23 +2402,10 @@ const CalendarGrid = React.memo(function CalendarGrid({
 				</div>
 			</div>
 
-			<div
-				aria-live="polite"
-				aria-atomic="true"
-				style={{
-					position: "absolute",
-					width: 1,
-					height: 1,
-					padding: 0,
-					margin: -1,
-					overflow: "hidden",
-					clip: "rect(0, 0, 0, 0)",
-					whiteSpace: "nowrap",
-					border: 0,
-				}}
-			>
-				{announceMonthLabel ? monthLabel : null}
-			</div>
+			{/* MONTH-ANNOUNCE dedupe: the single live region is the visible
+                    month/year header above (role="status"); the duplicate
+                    sr-only region that re-announced the same string was
+                    removed. */}
 
 			{/* biome-ignore lint/a11y/useSemanticElements: CSS-grid calendar with the
                W3C grid role pattern — native <table> markup cannot host the
@@ -2466,7 +2548,6 @@ interface TimeSlotListProps {
 	mutedSoftText: string;
 	backgroundColor: string;
 	loadingLabel: string;
-	dtInstanceId: string;
 	slotsLoading: boolean;
 	selectedDate: Date | null;
 	/** W2-51: the default/active date when nothing is selected yet (today) —
@@ -2679,7 +2760,6 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		mutedSoftText,
 		backgroundColor,
 		loadingLabel,
-		dtInstanceId,
 		slotsLoading,
 		selectedDate,
 		fallbackDate,
@@ -2705,6 +2785,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		// W1-10-N3 fix: group label for the 12h/24h toggle.
 		timeFormatLabel,
 	} = props;
+	// RADIUS-INNER: the segmented control's outer surface uses the shared
+	// Radius token; its active/highlight pill is inset by the control's 3px
+	// padding, so its radius derives as max(0, Radius − 3) instead of
+	// blindly repeating the outer value (correct for every Radius 0–24).
+	const segmentInnerRadius = innerRadiusValue(borderRadius, 3);
 	// W1-16-P-13 fix: the first non-elapsed slot used to be re-found with
 	// `.findIndex()` for every rendered slot (O(N²) per render — ~13k
 	// comparisons for a 36-slot day); compute it once per render, then
@@ -2776,7 +2861,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				minWidth: 0,
 				borderLeft: isNarrow ? "none" : subtleBorder,
 				borderTop: isNarrow ? subtleBorder : "none",
-				padding: isNarrow ? "10px 16px 0 16px" : "12px 16px 0 16px",
+				padding: isNarrow ? "10px 16px 0 16px" : "16px 16px 0 16px",
 				boxSizing: "border-box",
 				display: "flex",
 				flexDirection: "column",
@@ -2784,14 +2869,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			}}
 		>
 			{/* W2-57 fix: the time list stays scrollable but the browser
-                scrollbar itself is invisible (scrollbar-width:none +
-                ::-webkit-scrollbar width/height 0). Constant CSS text;
-                suppressHydrationWarning REQUIRED — canonical explanation at
-                the be-input <style> in RootShell (search "HYDRATION-AUDIT"). */}
-			<style suppressHydrationWarning>{`
-.be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
-.be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
-`}</style>
+                scrollbar itself is invisible. CSS-CONSOLIDATED: the
+                .be-dt-scroll rules live ONCE in RootShell's root <style>
+                block (search "CSS-CONSOLIDATED") — this list no longer
+                injects a per-instance copy (::-webkit-scrollbar needs a real
+                CSS rule; inline styles can't target pseudo-elements). */}
 			<div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
 				{/* W2-51 fix: the header reflects the ACTIVE date immediately —
                     today is the default selection, so the label is never
@@ -2884,7 +2966,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								activeTimeFormat === "24h"
 									? "translateX(100%)"
 									: "translateX(0)",
-							borderRadius: borderRadius,
+							borderRadius: segmentInnerRadius,
 							background: backgroundColor,
 							border: `1px solid ${borderColor}`,
 							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
@@ -2910,7 +2992,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							bottom: 3,
 							left: 3,
 							width: "calc(50% - 3px)",
-							borderRadius: borderRadius,
+							borderRadius: segmentInnerRadius,
 							background: backgroundColor,
 							border: `1px solid ${borderColor}`,
 							boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
@@ -2965,7 +3047,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							width: "100%",
 							padding: "0 8px",
 							border: "none",
-							borderRadius: 999,
+							// RADIUS-INNER: matches the active pill's derived
+							// radius (Radius − 3px inset) so a Radius of 0
+							// squares every segmented-control surface.
+							borderRadius: segmentInnerRadius,
 							background: "transparent",
 							color: active ? textColor : mutedText,
 							cursor: "pointer",
@@ -3459,8 +3544,8 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// used to leave focus stranded after a month change — the previously
 	// focused date button unmounts with the old grid and nothing takes its
 	// place as the focus target. Flag that the next month render should
-	// re-focus the grid's "active" cell (tabIndex 1 — see
-	// `dateTabIndexByKey`) once it exists.
+	// re-focus the grid's roving active cell (`activeDateKey`, the single
+	// `tabIndex={0}` date) once it exists.
 	const pendingMonthFocusRef = React.useRef(false);
 	// W1-09-NEW-03 fix: cross-month ARROW navigation previously scheduled a
 	// single rAF immediately after `setVisibleMonth` — under
@@ -3524,7 +3609,8 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// its "active" cell if a Page Up/Down (or W1-09-NEW-03 cross-month
 	// arrow) triggered this change. Prefer the explicit target key when the
 	// cross-month arrow path set one; otherwise fall back to the grid's
-	// tabIndex=1 active cell.
+	// roving active cell (`data-be-active-date` — the single `tabIndex={0}`
+	// date under the roving-tabindex model).
 	React.useEffect(() => {
 		if (!pendingMonthFocusRef.current) return;
 		pendingMonthFocusRef.current = false;
@@ -3541,7 +3627,9 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 				return;
 			}
 			const activeCell =
-				rootRef.current?.querySelector<HTMLElement>('[tabindex="1"]');
+				rootRef.current?.querySelector<HTMLElement>(
+					'[data-be-active-date="true"]',
+				);
 			if (activeCell) {
 				activeCell.focus();
 				return;
@@ -4225,10 +4313,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// Requirement 4: scoped id for this DateAndTimeInline instance's own
 	// <style> block (hiding the time-list scrollbar needs a real CSS rule
 	// for ::-webkit-scrollbar — inline styles can't target pseudo-elements).
-	// SSR/hydration fix: plain constant (see gridLabelId) — the class and
-	// the style-block selectors must be identical in the prerendered HTML,
-	// renderToString HTML and the client's first render.
-	const dtInstanceId = "be-dt-scroll";
+	// CSS-CONSOLIDATED: that rule now lives ONCE in RootShell's root
+	// <style> block (same constant class `.be-dt-scroll`); the per-instance
+	// style tag and this id are gone.
 	// T5-M8 fix: reduce-motion support for the 12h/24h slider.
 	const prefersReducedMotion = useReducedMotion();
 
@@ -4502,50 +4589,16 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		hasKnownAvailability,
 	]);
 
-	// Requirement 5: sequential Tab order across every available date, with
-	// the currently active/highlighted date (`selectedOrFirstDateKey`)
-	// landed on first. Native Tab order visits every element with a
-	// positive `tabIndex` (ascending) before falling through to elements
-	// with `tabIndex={0}` in DOM order — so the highlighted date gets 1,
-	// every other available date gets 2, 3, 4, … in calendar (reading)
-	// order, and everything after the grid (the 12h/24h toggle, time
-	// slots, timezone selector, Continue button) keeps its ordinary
-	// `tabIndex={0}` and is only reached once every date has been tabbed
-	// through.
-	//
-	// Tradeoff worth flagging: positive `tabIndex` is a document-global
-	// order, not a local one — so if a Calendar step's custom fields are
-	// authored *before* the Calendar Widget marker, those fields' own
-	// (ordinary `tabIndex={0}`) inputs will actually be reached AFTER all
-	// the numbered date cells, even though they render earlier on screen.
-	// This is the standard, well-known caveat of positive tabIndex; it's
-	// the explicit behavior asked for here (sequential Tab through every
-	// date), so it's accepted rather than worked around.
-	const dateTabIndexByKey = React.useMemo(() => {
-		const map = new Map<string, number>();
-		if (!selectedOrFirstDateKey) return map;
-		let next = 2;
-		for (const date of calendarCells) {
-			const isInMonth = date.getMonth() === visibleMonth.getMonth();
-			const isPast = startOfDay(date).getTime() < today.getTime();
-			if (!isInMonth || isPast || !hasKnownAvailability(date)) continue;
-			const dateKey = dateKeyOf(date);
-			if (dateKey === selectedOrFirstDateKey) {
-				map.set(dateKey, 1);
-			} else {
-				map.set(dateKey, next);
-				next += 1;
-			}
-		}
-		return map;
-	}, [
-		calendarCells,
-		visibleMonth,
-		today,
-		selectedOrFirstDateKey,
-		hasKnownAvailability,
-		dateKeyOf,
-	]);
+	// ROVING-TABINDEX: Tab order model. Exactly ONE selectable date per
+	// visible grid — `selectedOrFirstDateKey` (the selected date, else the
+	// month's first available date) — renders `tabIndex={0}`; every other
+	// cell renders `tabIndex={-1}`. Positive tabindex values are never used:
+	// they create a document-global tab sequence that hijacks order across
+	// the whole page. Keyboard users Tab once into the grid's active cell,
+	// then move with Arrow keys / Home / End / PageUp / PageDown (handled by
+	// each cell's native keydown), and Tab again to leave — the standard
+	// WAI-ARIA grid/roving-tabindex contract.
+	const activeDateKey = selectedOrFirstDateKey;
 
 	const getPayload = React.useCallback(
 		(date: Date, time: string): BookingPayload => {
@@ -4949,7 +5002,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						firstDayOfWeek={firstDayOfWeek}
 						dateKeyOf={dateKeyOf}
 						hasAvailability={hasKnownAvailability}
-						dateTabIndexByKey={dateTabIndexByKey}
+						activeDateKey={activeDateKey}
 						locale={pageLocale()}
 						// W1-07-F4 fix: label cells in the visitor's tz.
 						timeZone={timeZone}
@@ -4992,7 +5045,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					// F-17-3 fix: radius token.
 					borderRadius={String(radius)}
 					loadingLabel={loadingLabel}
-					dtInstanceId={dtInstanceId}
 					slotsLoading={slotsLoading}
 					selectedDate={selectedDate}
 					fallbackDate={today}
@@ -11225,6 +11277,19 @@ animation: prefersReducedMotion
     color: ${withAlpha(theme.textPrimaryColor, 0.6, theme.surfaceColor)};
     opacity: 1;
 }
+/* CSS-CONSOLIDATED: static Calendar CSS defined ONCE here instead of being
+   re-injected per Calendar/time-panel instance. Both rules are constant —
+   no dynamic tokens inside.
+   1. Adjacent-month custom tooltip: revealed on hover/focus of the date
+      button; the tooltip element itself is aria-hidden + pointer-events:none
+      and only renders for AVAILABLE adjacent-month dates.
+   2. Time list (.be-dt-scroll): scrollable with an invisible browser
+      scrollbar (::-webkit-scrollbar cannot be targeted by inline styles). */
+.be-motion-root button:hover .be-adj-tooltip,
+.be-motion-root button:focus .be-adj-tooltip,
+.be-motion-root button:focus-visible .be-adj-tooltip { opacity: 1 !important; }
+.be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 @keyframes be-spin { to { transform: rotate(360deg); } }
 `}</style>
 		</RootShell>

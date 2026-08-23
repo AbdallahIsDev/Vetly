@@ -392,6 +392,31 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **The Booking Engine's Framer default/design width remains `850px` (`@framerIntrinsicWidth 850`), but the rendered component is fluid: `width: 100%`, `maxWidth: 100%`, `minWidth: 0`, never `width: 850px` in runtime.** The root and all flex/grid children use `minWidth: 0` and `flex` shrinkability so the 3-column Calendar layout (event info | calendar | times) can reduce gaps/column widths at medium widths and reflow to a vertical stack (event info → calendar → times) at small widths without horizontal overflow, clipping, or unusable cells. Every state (calendar, time list, form, confirmation) participates.
 
+### 63. No positive `tabindex` — the Calendar uses roving tabindex only
+
+**Calendar date navigation must never use positive `tabindex` values (`1`, `2`, `3`, …).** Exactly one selectable date per visible grid (the active date: selected date, else first available of the month) renders `tabIndex={0}`; every other date cell renders `tabIndex={-1}`. Keyboard users Tab once into the grid's active cell and move with Arrow keys / Home / End / PageUp / PageDown via the cells' native keydown handlers. Positive tabindex creates a document-global tab sequence that hijacks ordering for the whole page; its reintroduction is an architectural regression.
+
+### 64. Accessible Calendar/Time controls preserve native keyboard semantics
+
+**Grid/time-list semantics must not strip native interactive semantics from their controls.** The date cell is a `role="gridcell"` wrapper containing a real `<button>` (native focus, Enter/Space, disabled); never collapse the two by putting `role="gridcell"` directly on the button or removing button semantics. The time list stays a `role="radiogroup"` of `role="radio"` buttons with roving tabindex and arrow keys per the ARIA radio pattern. Each interactive area keeps ONE clear accessible name; the same month/date must never be announced twice (one live-region source for month changes).
+
+### 65. Static Calendar CSS is defined once at RootShell scope — no per-instance `<style>` tags
+
+**Constant Calendar CSS (adjacent-month tooltip reveal `.be-adj-tooltip`, hidden time-list scrollbar `.be-dt-scroll`) lives ONCE in RootShell's root `<style suppressHydrationWarning>` block — never re-injected per Calendar/time-panel instance.** Inline styles are reserved for genuinely dynamic values (Property Control tokens, colors, computed dimensions). Any new `<style>` tag must carry `suppressHydrationWarning` and follow the HYDRATION-AUDIT rules in the source.
+
+### 66. Inner surface radius derives from outer Radius minus its inset
+
+**Wherever an inner surface sits inside an outer radius with a known border/padding inset (the 12h/24h segmented control: 3px padding), its radius is derived as `max(0px, Radius − inset)` — never a blind repeat of the outer Radius and never negative.** Correct for every Radius value 0–24; at Radius 0 every such inner surface becomes square too.
+
+### 67. Today is independent from availability
+
+**The Today indicator always marks the actual current calendar date, never the first available date.** Today may be Today + unavailable, Today + selected, etc.; Selected/Available/Unavailable/Adjacent-month states are independent of it and must be derived independently.
+
+### 68. Adjacent-month indicators/tooltips: shared helper, both directions, available dates only
+
+**Previous-month and next-month indicators use one shared helper (`getAdjacentMonthAbbreviation`) — never two hard-coded implementations — showing the abbreviation only on the first visible adjacent-month date of each month, removed when selected.** The custom hover tooltip shows ONLY the full month name (no year), 12px/600, on the Accent token background with the fixed on-accent foreground, positioned above the cell, `pointer-events: none`, `aria-hidden`, and appears exclusively on selectable/available adjacent dates — unavailable adjacent dates get no tooltip and no hover treatment. Previewed adjacent availability always equals the same normalized Cal.com source used inside that month.
+
+
 
 
 
