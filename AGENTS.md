@@ -432,6 +432,59 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 **Both segments of the 12h/24h Time Format segmented control render `font-weight: 600` in every state** — active and inactive are distinguished by colour treatment only, never by weight. Do not reintroduce 700/500 state-dependent weights.
 
+### 73. A "flow collapses to calendar-only with Book Now below ~1200px" report is a breakpoint-override divergence — never a width-threshold bug in code
+
+**The Booking Engine has zero viewport-width-dependent navigation logic.** The only width thresholds in the file (`COMPACT_BREAKPOINT = 768`, choice-column/pills breakpoints) affect layout columns and cell sizing only; step order, step count, and `currentIndex` are pure functions of the Property Control props of whichever breakpoint variant Framer is rendering. Diagnostic signature, proven from the code:
+
+- Progress bar hidden ⇒ `totalActive === 1` (all progress rendering is gated behind `totalActive > 1`).
+- Primary button says the final action ("Book Now") ⇒ `totalActive === 1 || isLast`.
+- Calendar-only view ⇒ the single active step is the `datetime` step.
+
+Together these prove the component received a **different Steps configuration on the smaller breakpoint** (e.g. a stale per-breakpoint override: `stepCount: 1` with a Date & Time step, or form steps whose Fields arrays arrive empty and are dropped by the T10-M9 zero-fields filter in `normalizeSteps`). Framer scopes property edits to the breakpoint the canvas/preview is currently at: editing Steps while the canvas/preview is below the Desktop breakpoint silently writes Tablet/Phone-scoped overrides that diverge from Desktop forever after.
+
+Required behavior when this symptom appears (or when touching step configuration at all):
+
+1. Do NOT add width-based navigation logic, auto-jump prevention, or "restore my steps" patches to the component — that would fight the author's actual configuration and violate rule 2's spirit.
+2. In Framer, select the Booking Engine instance at EACH breakpoint (Desktop / Tablet / Phone), compare the Steps / Number of Steps controls, and reset every overridden control on Tablet/Phone so it inherits Desktop (or re-set it deliberately). Also check ancestor frames for duplicated instances across breakpoint variants.
+3. Remember remount semantics: crossing a breakpoint boundary unmounts/remounts code components; the engine must come back exactly where the visitor was via the module snapshot (rule 74), never via stale storage or clamped state.
+
+### 74. Remounts within a live page session must never resurrect stale sessionStorage progress
+
+**A non-null module-level `inSessionFormSnapshot` proves the current mount is a REMOUNT of a live session (breakpoint switch, animation unmount, canvas re-parent) — and on any such mount the sessionStorage restore effect must skip the storage read entirely, even when the snapshot looks pristine (empty values, index 0).** The pre-fix gate (`if snapshot hasData → skip`) let a resize-triggered remount with an empty-looking snapshot re-read older storage from earlier in the same tab and teleport the visitor onto a previously-saved step mid-session. The live snapshot is always at least as fresh as the debounced storage write, so skipping storage on remount loses nothing. Fresh PAGE loads keep a null snapshot and must continue restoring saved progress before first paint (rules 7/16/20 unchanged — autosave stays always-on).
+
+### 75. Pre-booking Review step removed — success is the only review
+
+**The Booking Engine has no pre-booking Review step.** `StepType` is `"form" | "datetime"` only; the Framer control shows `Form` and `Calendar` only. Any persisted `review` step is dropped in `normalizeSteps` and never rendered. The post-booking success state (`flowStatus === "success"` with its confirmation details) is the sole review surface. Do not re-add a `review` step type, its `ReviewStepBody`, or its warnings and re-validation.
+
+### 76. Cal.com bookingFields are auto-handled — auto-slug, canvas warning, visitor auto-inject with 11-step exception
+
+**`calFieldId` auto-slug is the fit-all default.** `buildBookingFieldsResponses` uses `field.calFieldId` when set, otherwise `slugifyLabel(field.label)` (kebab-case, e.g. `Pet Name` → `pet-name`) with `field.id` fallback. Explicit `calFieldId` always wins (backward compat). Attendee fields (`isPrimaryName`/`email`/`calendar-widget`) are skipped for auto-derived keys.
+
+**Missing required Cal.com fields are surfaced to the author, not the visitor, and auto-repaired for the visitor.** `GET /v2/event-types/{id}` is fetched via `fetchCalEventTypeMeta` (same `CAL_EVENT_TYPE_API_VERSION`, cached `EVENT_META_CACHE_TTL_MS`, non-blocking per rule 38) to get both `CalEventMeta` and `bookingFields[]` (`slug`/`label`/`type`/`required`/`hidden`/`isDefault`/`placeholder`/`options`). A required `bookingFields` entry is *missing* when no base field covers its `slug` via `calFieldId` or auto-slug (case-insensitive, plus `name` coverage for `isPrimaryName`/`email`). In the Framer canvas (`isCanvas`) a warning lists each missing required field (`"Pet Name (pet-name)"`) and tells the author to add a matching label/`calFieldId` or make the Cal.com field optional — visitors never see this warning.
+
+**Visitor auto-inject is a separate `Additional Details` step before the Calendar.** On the published site (`!isCanvas`) when `missingRequiredCalFields.length > 0`, the engine inserts one `form` step (`id: auto-cal-required`, title `Additional Details`, subtitle `Please provide the following details to complete your booking.`) immediately before the first `datetime` step (or appended if no datetime). Each missing field becomes a `NormalizedField` (`id: auto-cal-{slug}`, `label`, `placeholder`, `required: true`, `fieldType: calTypeToFieldType(type)`, `calFieldId: slug`, options mapped to `ChoiceOption`). Hydration-safe: initial server and client render use the base pipeline; the effective pipeline grows after the fields fetch. Progress, `totalActive`, `safeCurrentIndex`, validation and `bookingFieldsResponses`/`notes` all use the effective pipeline.
+
+**11-step exception:** The author's `stepCount`/`Fields` controls cap at 10 steps/10 fields, but the effective pipeline may be 11 steps when the auto step is added to a 10-step base. `totalActive` and navigation must handle 11. Do not re-cap effective at 10 and do not coerce the auto step into an existing step when missing is 3+ — the dedicated step prevents overloading a single step with 8 fields.
+
+**Docs guidance:** Owners should keep Cal.com custom fields **optional** and author custom fields in the Engine (Engine is source of truth via auto-slug + notes). Optional keeps bookings from failing; required should only be used when the auto-inject or a matching Engine field exists.
+
+### 77. Calendar Today is visitor-local and independent from Selected
+
+**The Calendar's `today` state must always be the visitor's actual local calendar date** derived via `getTodayInTimeZone(timeZone)` (visitor-auto-detected zone, not browser local or UTC). `today` is the `isToday` marker (dot) and past-date guard; `selectedDate` is the `isSelected` highlight. The two are independent: Today never implies Selected.
+
+### 78. Today is only selected when it is available
+
+**Today must never be selected merely because it is today.** The default selected date on first open (no saved/restored date) is: today if `hasKnownAvailability(today)` is true, otherwise the **first available date on or after today** in the loaded `calendarCells` window using the same `availableDates` source that the grid uses. If no future date is available in the loaded window, leave `selectedDate` as `null` (no selection) rather than selecting an unavailable date. Today marker stays on the real today regardless.
+
+### 79. Today calculation is live, not frozen
+
+**The `today` state must not be frozen from an earlier render or server pass.** It is initialized from `HYDRATION_PLACEHOLDER_TODAY` for hydration parity, then set to `getTodayInTimeZone(timeZone)` pre-paint. While the component remains open across local midnight, `today` must roll over to the new visitor-local date without a full reload, via a lightweight poll that checks `getTodayInTimeZone(timeZone)` every 30s. Do not schedule based on browser local midnight.
+
+### 80. Segmented controls share one moving-thumb implementation
+
+**All segmented controls in the Booking Engine must use the same reusable `SegmentedControl` with a moving absolute highlight/thumb.** The thumb is `position: absolute` inside a `position: relative` track, width `calc((100% - 6px) / N)`, height inset 3px, radius `max(0px, Radius - 3px)`, animating via `transform: translateX(index * 100%)`. Do not implement a variant by changing the selected button's background directly. Use the shared component for the Calendar Time Format (12h/24h) and the BookingEngine segmented choice variant. Active and inactive text both use `font-weight: 600`, distinguished by color only. The component must support arbitrary option counts and preserve keyboard `aria-pressed` and focus behavior.
+
+
 
 
 
