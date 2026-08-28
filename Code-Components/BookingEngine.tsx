@@ -3155,8 +3155,6 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				borderColor={borderColor}
 				ariaLabel={timeFormatLabel}
 			/>
-				})}
-			</div>
 			</div>
 
 			{/* W2-47 fix: the time list must stay CONTAINED within the
