@@ -958,6 +958,16 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 	return { y, x };
 }
 
+// CAL-BG-OWNERSHIP: the calendar surface's own default background. The
+// Calendar Widget owns its background through the marker field's Styles
+// submenu (`calendarStyles.backgroundColor`); the global Background token no
+// longer reaches the calendar. An UNCONFIGURED calendar keeps rendering the
+// exact look it always had in the default theme (white), so opening its
+// Styles submenu never changes its appearance, and a customized value
+// replaces this default only when the author actually sets one. The
+// navigation/footer wrapper stays transparent regardless (FOOTER-TRANSPARENT).
+const DEFAULT_CALENDAR_SURFACE_BACKGROUND = "#FFFFFF";
+
 // =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
 // segmented controls (Calendar Time Format 12h/24h and BookingEngine
@@ -4402,7 +4412,13 @@ interface DateAndTimeInlineProps {
 	// Falls back to the legacy constant for instances/paths that don't
 	// pass it yet.
 	accentForegroundColor?: string;
-	backgroundColor: string;
+	// CAL-BG-OWNERSHIP: the calendar surface is owned by the Calendar
+	// Widget marker's own `calendarStyles` (Background/Radius/Padding —
+	// the same shared FieldStyleOverrides model). The global Background
+	// token deliberately does NOT reach the calendar anymore; an unset
+	// key falls back to DEFAULT_CALENDAR_SURFACE_BACKGROUND so opening
+	// the Styles submenu never changes the calendar's appearance.
+	calendarStyles?: FieldStyleOverrides;
 	textColor: string;
 	borderColor: string;
 	radius: number | string;
@@ -4505,7 +4521,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		accentColor,
 		// PRIMARY-FOREGROUND: On-Primary token (legacy constant fallback).
 		accentForegroundColor = TEXT_ON_ACCENT,
-		backgroundColor,
+		calendarStyles,
 		textColor,
 		borderColor,
 		radius,
@@ -4812,6 +4828,21 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		() => `1px solid ${borderColor}`,
 		[borderColor],
 	);
+	// CAL-BG-OWNERSHIP: resolved calendar-surface tokens. Every key comes
+	// from the Calendar Widget marker's own `calendarStyles` ONLY when the
+	// author configured it (STYLES-INIT: untouched keys are undefined);
+	// otherwise the native defaults apply — white surface, shared Radius
+	// token, no padding. Opening the Styles submenu therefore never changes
+	// the calendar's appearance, and a configured value replaces exactly
+	// one of these without touching the global Background token or the
+	// transparent footer.
+	const surfaceBackground =
+		calendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
+	const surfaceRadius = resolveFieldRadius(calendarStyles, radius);
+	const surfacePadding =
+		typeof calendarStyles?.padding === "string" && calendarStyles.padding.trim()
+			? calendarStyles.padding
+			: undefined;
 	// W1-11-NEW-FIND-2 fix: the `focusInset` shadow memo is gone —
 	// focus rings come from the CSS :focus-visible rule alone.
 
@@ -5239,8 +5270,13 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				width: "100%",
 				height: "auto",
 				minHeight: 300,
-				borderRadius: radius,
-				background: backgroundColor,
+				// CAL-BG-OWNERSHIP: the calendar surface's radius/background/
+				// padding are owned by the marker field's own Styles submenu
+				// (calendarStyles); untouched keys keep the native look. The
+				// global Background token does not reach this surface.
+				borderRadius: surfaceRadius,
+				background: surfaceBackground,
+				...(surfacePadding ? { padding: surfacePadding } : {}),
 				color: textColor,
 				border: subtleBorder,
 				overflow: "hidden",
@@ -5471,7 +5507,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					selectedAccentText={selectedAccentText}
 					mutedText={mutedText}
 					mutedSoftText={mutedSoftText}
-					backgroundColor={backgroundColor}
+					// CAL-BG-OWNERSHIP: inner surfaces follow the calendar's
+					// OWN resolved surface background (never the global
+					// Background token), so a customized calendar stays
+					// coherent end to end.
+					backgroundColor={surfaceBackground}
 					// F-17-3 fix: radius token.
 					borderRadius={String(radius)}
 					loadingLabel={loadingLabel}
@@ -5708,6 +5748,10 @@ interface FieldConfig {
 	styles?: FieldStyleOverrides;
 	choiceStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
+	// CAL-BG-OWNERSHIP: the Calendar Widget marker's own Styles set. Its
+	// Background/Radius/Padding own the calendar surface — the global
+	// Background token no longer applies to it (see DateAndTimeInline).
+	calendarStyles?: FieldStyleOverrides;
 }
 
 interface StepConfig {
@@ -13367,6 +13411,15 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		// wherever the "Calendar Widget" marker sits in `step.fields`, so
 		// dragging that marker in the Fields array actually moves the whole
 		// calendar block up or down relative to any custom fields.
+		// CAL-BG-OWNERSHIP: the Calendar Widget marker field carries the
+		// calendar's own Styles set (Background/Radius/Padding). It is
+		// passed straight into DateAndTimeInline so the calendar surface is
+		// owned by the marker's Styles submenu — the global Background
+		// token never reaches the calendar, and the footer/nav wrapper
+		// stays transparent (FOOTER-TRANSPARENT).
+		const calendarMarkerField = step.fields.find(
+			(candidate) => candidate.fieldType === "calendar-widget",
+		);
 		const calendarBlock = (
 			<div style={{ gridColumn: "1 / -1" }}>
 				{/* Fix #13: surface Cal.com fetch errors as an inline banner.
@@ -13497,7 +13550,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
 							accentForegroundColor={theme.accentForegroundColor}
-							backgroundColor={theme.backgroundColor}
+							// CAL-BG-OWNERSHIP: the marker field's own Styles
+							// set owns the calendar surface (Background,
+							// Radius, Padding). Undefined while untouched —
+							// the calendar renders its native look and the
+							// global Background token is not consulted.
+							calendarStyles={calendarMarkerField?.calendarStyles}
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
 							radius={borderRadius}
@@ -15402,10 +15460,11 @@ type ProgressBarControlProps = Pick<
 // =============================================================================
 // One reusable architecture for the per-field Styles submenu. Three composed
 // control sets — input-like, choice, checkbox — share these factories and the
-// single FieldStyleOverrides runtime model. Every control is optional so an
-// untouched key never overrides the engine theme, and each field type exposes
-// exactly the set that is meaningful for it (no fake controls). The Calendar
-// Widget marker exposes none: it renders no field surface of its own.
+// single FieldStyleOverrides runtime model. Every control is optional AND
+// default-free (STYLES-INIT hard rule): an untouched key materializes as
+// undefined and never overrides the engine theme / field default, and each
+// field type exposes exactly the set that is meaningful for it (no fake
+// controls). The Calendar Widget marker exposes `calendarStyles` (see below).
 const FIELD_STYLE_INPUT_TYPES = ["text", "email", "phone", "textarea", "select"];
 const isFieldStyleInputType = (fieldType?: string) =>
 	FIELD_STYLE_INPUT_TYPES.includes(fieldType || "");
@@ -15426,34 +15485,40 @@ function fieldStylesNumberControl(title: string, min: number, max: number) {
 		unit: "px",
 	};
 }
-function fieldStylesFontControl(title: string, defaultFontSize: string) {
+// STYLES-INIT: no defaultValue — an untouched font control must pass
+// undefined so the field's native size/weight/family is preserved (a
+// defaultValue here would materialize as an explicit size on activation
+// and override per-type defaults, exactly the bug STYLES-INIT fixes).
+function fieldStylesFontControl(title: string) {
 	return {
 		type: ControlType.Font,
 		title,
 		controls: "extended" as const,
 		defaultFontType: "sans-serif" as const,
-		// No variant in the default: an untouched font control must not
-		// introduce a weight where the runtime had none.
-		defaultValue: { fontSize: defaultFontSize },
 	};
 }
 // FIELD-STYLES (native compound controls): the Border / Radius / Padding
 // controls are Framer's documented compound types — one logical Border
 // (color + width + style, per-side segmented mode included), a Framer-style
-// Radius (single value or per-corner), and a Padding control (single value or
-// per-side). Defaults mirror the engine theme's own defaults exactly
-// (1px solid #E5E7EB / 12px / 10px 14px), so a value touched here renders the
-// same look the theme would have produced — defaults are preserved.
+// Radius (single value or per-corner), and a Padding control (single value
+// or per-side).
+//
+// STYLES-INIT (hard rule, AGENTS.md): NO nested field-styles control carries
+// a concrete `defaultValue`. A `defaultValue` would be materialized as an
+// EXPLICIT value the moment the author activates the optional Styles object,
+// and the runtime would then treat "not customized" as "configured" —
+// overriding the field's own native/default styling (the reported bug:
+// opening Styles snapped a field to the submenu's defaults). Instead every
+// key materializes as undefined while untouched, and the runtime resolvers
+// (resolveFieldBorder/Radius/Padding, fontPixelSize, the `??` guards) fall
+// back to each field type's own default. A value is stored — and applied —
+// only when the author actually enters one, and reopening the submenu shows
+// Framer's persisted value (previously customized values are never reset).
 function fieldStylesBorderControl() {
 	return {
 		type: ControlType.Border,
 		title: "Border",
 		optional: true,
-		defaultValue: {
-			borderWidth: 1,
-			borderStyle: "solid",
-			borderColor: "#E5E7EB",
-		},
 	};
 }
 function fieldStylesRadiusControl() {
@@ -15461,7 +15526,6 @@ function fieldStylesRadiusControl() {
 		type: ControlType.BorderRadius,
 		title: "Radius",
 		optional: true,
-		defaultValue: "12px",
 	};
 }
 function fieldStylesPaddingControl() {
@@ -15469,14 +15533,13 @@ function fieldStylesPaddingControl() {
 		type: ControlType.Padding,
 		title: "Padding",
 		optional: true,
-		defaultValue: "10px 14px",
 	};
 }
 
 function makeInputFieldStylesControls() {
 	return {
-		font: fieldStylesFontControl("Font", "14px"),
-		labelFont: fieldStylesFontControl("Label Font", "13px"),
+		font: fieldStylesFontControl("Font"),
+		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		// PLACEHOLDER-STYLE (hard rule): a first-class option that renders
@@ -15495,8 +15558,8 @@ function makeInputFieldStylesControls() {
 
 function makeChoiceFieldStylesControls() {
 	return {
-		font: fieldStylesFontControl("Font", "14px"),
-		labelFont: fieldStylesFontControl("Label Font", "13px"),
+		font: fieldStylesFontControl("Font"),
+		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
@@ -15513,11 +15576,25 @@ function makeChoiceFieldStylesControls() {
 
 function makeCheckboxFieldStylesControls() {
 	return {
-		labelFont: fieldStylesFontControl("Label Font", "14px"),
+		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
 		checkSize: fieldStylesNumberControl("Size", 12, 32),
 		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+	};
+}
+
+// CAL-BG-OWNERSHIP: the Calendar Widget's own Styles set — the SAME shared
+// architecture (FieldStyleOverrides + the factories above), narrowed to the
+// three properties that genuinely apply to the calendar surface (Background,
+// Radius, Padding). No input/label/choice controls are exposed for it. The
+// Background here owns the calendar surface; the global Styles Background
+// token no longer reaches it (AGENTS.md rule 86 + STYLES-INIT rule).
+function makeCalendarFieldStylesControls() {
+	return {
+		backgroundColor: fieldStylesColorControl("Background"),
+		radius: fieldStylesRadiusControl(),
+		padding: fieldStylesPaddingControl(),
 	};
 }
 
@@ -15725,13 +15802,14 @@ function makeFieldObjectControls() {
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
 		},
-		// FIELD-STYLES (hard rule): the per-field Styles submenu. Three
-		// Object controls share the title "Styles"; each is hidden for
-		// disjoint type sets so the panel always shows exactly ONE Styles
-		// item per field type, opening the control set that is meaningful
-		// for it. Plain Object controls hidden by a sibling scalar are the
+		// FIELD-STYLES (hard rule): the per-field Styles submenu. Object
+		// controls share the title "Styles"; each is hidden for disjoint
+		// type sets so the panel always shows exactly ONE Styles item per
+		// field type, opening the control set that is meaningful for it.
+		// Plain Object controls hidden by a sibling scalar are the
 		// documented-safe conditional-visibility pattern (Safety Rule #2).
-		// Calendar Widget renders no field surface, so it gets none.
+		// Calendar Widget gets exactly one too: `calendarStyles`
+		// (Background/Radius/Padding — CAL-BG-OWNERSHIP).
 		styles: {
 			type: ControlType.Object,
 			title: "Styles",
@@ -15758,6 +15836,15 @@ function makeFieldObjectControls() {
 			optional: true,
 			controls: makeCheckboxFieldStylesControls(),
 			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
+		},
+		calendarStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "color",
+			optional: true,
+			controls: makeCalendarFieldStylesControls(),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
 			type: ControlType.Enum,
