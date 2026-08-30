@@ -42,16 +42,17 @@ declare global {
 	}
 }
 
-// FINAL-65 fix: the 9-color token set is now ONE named type instead of a
+// FINAL-65 fix: the color token set is now ONE named type instead of a
 // duplicated inline shape at every consumption site. Compile-time only.
-// COLOR-SYSTEM (rule 88): Accent / Primary Foreground / Background / Surface
-// / Text Primary / Error are authored (six Styles controls); Text Secondary,
-// Border and Success remain as SEMANTIC tokens for the ~40 consumers but are
-// derived internally at fixed design ratios — see the engine body.
+// COLOR-SYSTEM (rule 90): Accent / Primary Foreground / Surface / Text
+// Primary / Border are authored (five Styles controls); Text Secondary and
+// Success are derived at fixed design ratios and Error is the fixed
+// internal red — all remain SEMANTIC tokens for the ~40 consumers. There is
+// no Background token: the root is transparent and the calendar owns its
+// surface (CAL-BG-OWNERSHIP).
 type ThemeToken =
 	| "accentColor"
 	| "accentForegroundColor"
-	| "backgroundColor"
 	| "surfaceColor"
 	| "textPrimaryColor"
 	| "textSecondaryColor"
@@ -916,10 +917,10 @@ function resolveFieldBorder(
 			b.borderBottomWidth,
 			b.borderLeftWidth,
 		].filter((v): v is number => typeof v === "number" && v > 0);
-		const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? 1);
+		const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? FIELD_STYLES_BORDER_WIDTH);
 		return { width, style: b.borderStyle || "solid", color: b.borderColor };
 	}
-	return { width: fs?.borderWidth ?? 1, style: "solid", color: fs?.borderColor };
+	return { width: fs?.borderWidth ?? FIELD_STYLES_BORDER_WIDTH, style: "solid", color: fs?.borderColor };
 }
 
 /** Resolve the effective radius: NEW compound BorderRadius string ("12px" or
@@ -937,10 +938,14 @@ function resolveFieldRadius(
 
 /** Resolve the effective padding: NEW compound Padding string ("10px 14px",
  *  CSS shorthand order) wins, the LEGACY vertical/horizontal number pair
- *  comes next, then the historical 10px/14px input default. */
+ *  comes next, then the shared effective default (STYLES-INIT-EFFECTIVE:
+ *  same constant the Styles control's defaultValue uses). */
 function resolveFieldPadding(fs: FieldStyleOverrides | undefined): string {
 	if (typeof fs?.padding === "string" && fs.padding.trim()) return fs.padding;
-	return `${fs?.paddingY ?? 10}px ${fs?.paddingX ?? 14}px`;
+	if (fs?.paddingY != null || fs?.paddingX != null) {
+		return `${fs?.paddingY ?? 10}px ${fs?.paddingX ?? 14}px`;
+	}
+	return FIELD_STYLES_INPUT_PADDING;
 }
 
 /** Horizontal padding (px) from a resolved CSS padding string — used by the
@@ -972,24 +977,49 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 // navigation/footer wrapper stays transparent regardless (FOOTER-TRANSPARENT).
 const DEFAULT_CALENDAR_SURFACE_BACKGROUND = "#FFFFFF";
 
-// COLOR-SYSTEM (AGENTS.md rules 1-3/70/71 + rule 88): the author-facing
-// palette is SIX independent controls (Accent, Primary Foreground,
-// Background, Surface, Text, Error). The three removed controls are derived
-// internally from those bases via the existing withAlpha() blending
-// architecture:
-//   - Text Secondary = Text at a fixed 0.62 alpha (composites onto whatever
-//     surface it lands on — the same technique the muted-text memos use).
-//   - Border = Text pre-blended at a fixed 0.12 alpha onto the Background
-//     (deterministic hairline; the solid pre-blend keeps nested borders from
-//     double-dipping alpha).
+// COLOR-SYSTEM (AGENTS.md rules 1-3/70/71 + rule 90): the author-facing
+// palette is FIVE independent controls (Accent, Primary Foreground, Surface,
+// Text, Border). The removed controls are handled internally:
+//   - Text Secondary = Text at a fixed 0.62 alpha via withAlpha (composites
+//     onto whatever surface it lands on).
 //   - Success = one fixed internal green (pure positive-validation marker).
-// The ratios are FIXED DESIGN DEFAULTS chosen by the component — never
-// contrast calculations, never validation, never auto-correction (rules 1-3).
-// The author stays free to pick any value for the six controls; derived
-// outcomes follow deterministically and are the author's to accept.
+//   - Error = one fixed internal red (validation/booking-critical states;
+//     semantic meaning should not be re-branded per control).
+// The ratios and fixed colors are FIXED DESIGN DEFAULTS chosen by the
+// component — never contrast calculations, never validation, never
+// auto-correction (rules 1-3). There is NO Background control: the engine
+// root is deliberately transparent (the Framer frame provides the page
+// background) and the calendar owns its own surface (CAL-BG-OWNERSHIP), so
+// a Background control had no honest purpose — its removal is what keeps
+// every exposed color's semantic mapping exact (rule 90).
 const DERIVED_SECONDARY_TEXT_ALPHA = 0.62;
-const DERIVED_BORDER_ALPHA = 0.12;
 const DERIVED_SUCCESS_COLOR = "#15803D";
+const FIXED_ERROR_COLOR = "#DC2626";
+
+// STYLES-INIT-EFFECTIVE (rule 90, refining rule 87): the per-field Styles
+// controls MUST carry defaultValue(s) equal to the field's effective default
+// for that control set. Framer materializes untouched nested controls as
+// zero/empty values the moment the author activates the optional Styles
+// object — a defaultValue-free control therefore snaps the field to 0
+// padding / 0 radius on activation (the original STYLES-INIT bug). With
+// effective-default defaults, the materialized object renders IDENTICALLY
+// to the inherit path, so activating Styles never changes the appearance,
+// the panel shows the field's real defaults (16px shows 16px), and only an
+// author-entered value becomes an override. Explicit 0 stays 0: the runtime
+// resolvers distinguish set/unset with `??` and typeof checks — never
+// falsy `||` checks (an explicit 0, "0px", or empty color is applied as
+// entered). These constants are the SINGLE source of truth shared by the
+// resolvers below and the control factories (one reusable mechanism, not
+// per-field hacks).
+const FIELD_STYLES_INPUT_PADDING = "10px 14px";
+const FIELD_STYLES_SPACING = 6;
+const FIELD_STYLES_CHECK_SIZE = 18;
+// Matches the shipped shared Radius default (rule 60) and the authored
+// Border control default below, so a materialized field value equals the
+// inherit look under default authoring.
+const FIELD_STYLES_FIELD_RADIUS = "12px";
+const FIELD_STYLES_BORDER_WIDTH = 1;
+const FIELD_STYLES_BORDER_COLOR = "#E5E7EB";
 
 // =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
@@ -5807,13 +5837,14 @@ interface BookingEngineStyleProps {
 	styles: {
 		// THEME-AGNOSTIC (hard rule): no component-level Light/Dark/Auto
 		// mode selector. The engine consumes ONE light/default semantic
-		// palette. SIX independent author controls (COLOR-SYSTEM): Accent,
-		// Primary Foreground, Background, Surface, Text, Error — website-
-		// level theme differences are the author's job via Framer Color
-		// Variables assigned to these controls (see AGENTS.md). Text
-		// Secondary, Border and Success are NOT author controls: they are
-		// derived internally from Text/Background at fixed design ratios
-		// (and one fixed success green) via withAlpha — see the engine body.
+		// palette. FIVE independent author controls (COLOR-SYSTEM, rule 90):
+		// Accent, Primary Foreground, Surface, Text, Border — website-level
+		// theme differences are the author's job via Framer Color Variables
+		// assigned to these controls (see AGENTS.md). There is deliberately
+		// NO Background control (transparent root; calendar owns its own
+		// surface) and NO Error control (fixed internal #DC2626). Text
+		// Secondary and Success are derived internally via withAlpha at
+		// fixed design ratios — see the engine body.
 		accentColor: string;
 		// PRIMARY-FOREGROUND: semantic On-Primary token for text/icons
 		// rendered directly on Primary/Accent-colored surfaces (selected
@@ -5821,10 +5852,12 @@ interface BookingEngineStyleProps {
 		// author-configured value — never derived from or validated against
 		// the Primary colour (see AGENTS.md hard rules).
 		accentForegroundColor: string;
-		backgroundColor: string;
 		surfaceColor: string;
 		textPrimaryColor: string;
-		errorColor: string;
+		// BORDER: the one border token. Rendered verbatim everywhere a
+		// border is drawn (inputs, cards, calendar cells, dividers). A
+		// control named Background must never control a border (rule 90).
+		borderColor: string;
 		// W1-17-F-17-13 fix: Framer's BorderRadius control can emit either
 		// a CSS size string ("12px") or a numeric radius; the interface
 		// previously claimed `string`, so numeric values were a silent type
@@ -9485,17 +9518,30 @@ function StepVisibilityWrapper(props: {
 	);
 }
 
-// In-session form snapshot. Step UI remounts (AnimatePresence keys,
+// In-session form snapshots. Step UI remounts (AnimatePresence keys,
 // Framer canvas remounts) must not wipe answers — this lives outside
 // any component instance. sessionStorage remains the reload path.
+//
+// INSTANCE-ISOLATION (rule 91): one snapshot PER PERSISTENCE IDENTITY,
+// never a page-wide singleton. The old module-level single object let
+// Instance A's answers/step seed Instance B's initial state (and gated
+// B's own storage restore away) — the root cause of instances steering
+// each other. Keys are the per-instance storage identity (see
+// instanceKeyRef below): two engines on one page have two identities, so
+// each seeds/clamps/persists only its own session. Any number of
+// instances is supported; deliberately-identical author-set storage keys
+// intentionally share a session (documented behavior).
 type InSessionFormSnapshot = {
 	values: BookingValues;
 	currentIndex: number;
 	timeFormat: "12h" | "24h";
 };
-let inSessionFormSnapshot: InSessionFormSnapshot | null = null;
+const inSessionFormSnapshots = new Map<string, InSessionFormSnapshot>();
 
-function useBookingEngineState(props: BookingEngineProps) {
+function useBookingEngineState(
+	props: BookingEngineProps,
+	engineRootRef?: React.RefObject<HTMLDivElement | null>,
+) {
 	const {
 		style,
 		stepCount,
@@ -9568,36 +9614,35 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// editor when only the Validation group changed.
 	}, [validation]);
 
-	// Destructure style tokens from the grouped Styles object. SIX
-	// independent author controls remain (COLOR-SYSTEM): Accent, Primary
-	// Foreground, Background, Surface, Text, Error. The three removed
-	// controls (Text Secondary, Border, Success) are DERIVED below at fixed
-	// design ratios via withAlpha — the semantic token names stay identical
+	// Destructure style tokens from the grouped Styles object. FIVE
+	// independent author controls remain (COLOR-SYSTEM, rule 90): Accent,
+	// Primary Foreground, Surface, Text, Border. There is deliberately NO
+	// Background control (transparent root + calendar-owned surface) and
+	// NO Error control (fixed internal red). Text Secondary and Success
+	// are DERIVED below; the semantic token names stay identical
 	// downstream, so every UI state keeps a valid color.
 	const {
 		accentColor,
 		// PRIMARY-FOREGROUND: independent On-Primary token (see Styles control).
 		accentForegroundColor,
-		backgroundColor,
 		surfaceColor,
 		textPrimaryColor,
-		errorColor,
+		// BORDER: authored token, rendered verbatim everywhere a border is
+		// drawn — one control, one semantic purpose (rule 90).
+		borderColor,
 		borderRadius,
 	} = styles;
-	// COLOR-SYSTEM derived tokens. Fixed design ratios — never contrast
-	// calculations, never color validation, never auto-correction. The
-	// same local names the removed props used keeps every downstream
-	// consumer (theme memo, RootShell/StepBody/SuccessState props) valid.
+	// COLOR-SYSTEM derived/fixed tokens. Fixed design ratios and fixed
+	// semantic colors — never contrast calculations, never color
+	// validation, never auto-correction. The same local names the removed
+	// props used keeps every downstream consumer (theme memo, RootShell/
+	// StepBody/SuccessState props) valid.
 	const textSecondaryColor = withAlpha(
 		textPrimaryColor,
 		DERIVED_SECONDARY_TEXT_ALPHA,
 	);
-	const borderColor = withAlpha(
-		textPrimaryColor,
-		DERIVED_BORDER_ALPHA,
-		backgroundColor,
-	);
 	const successColor = DERIVED_SUCCESS_COLOR;
+	const errorColor = FIXED_ERROR_COLOR;
 	// Radius clamp: the Framer control (now Number) enforces 0–24 in the UI,
 	// but runtime must also sanitize — a value outside the range must never
 	// reach the rendered component even if passed programmatically.
@@ -9780,18 +9825,17 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// Fix #25: memoize the theme object so child components wrapped in
 	// React.memo don't re-render on every parent render.
 	// THEME-AGNOSTIC + COLOR-SYSTEM: exactly ONE semantic palette. Accent,
-	// Primary Foreground, Background, Surface, Text and Error are the
-	// author's configured values, rendered verbatim — no Light/Dark/Auto
-	// branching, no contrast logic (AGENTS.md hard rules). Text Secondary,
-	// Border and Success are derived at the fixed design ratios above.
-	// Site-level theme switching stays the author's job via Framer Color
-	// Variables assigned to the six Styles color controls.
+	// Primary Foreground, Surface, Text and Border are the author's
+	// configured values, rendered verbatim — no Light/Dark/Auto branching,
+	// no contrast logic (AGENTS.md hard rules). Text Secondary and Success
+	// are derived at the fixed design ratios above; Error is the fixed
+	// internal red. Site-level theme switching stays the author's job via
+	// Framer Color Variables assigned to the five Styles color controls.
 	const theme = React.useMemo<Theme & { borderRadius: string }>(
 		() => ({
 			accentColor,
 			// PRIMARY-FOREGROUND: rendered verbatim — no derivation.
 			accentForegroundColor,
-			backgroundColor,
 			surfaceColor,
 			textPrimaryColor,
 			textSecondaryColor,
@@ -9805,10 +9849,8 @@ function useBookingEngineState(props: BookingEngineProps) {
 		[
 			accentColor,
 			accentForegroundColor,
-			backgroundColor,
 			surfaceColor,
 			textPrimaryColor,
-			errorColor,
 			sanitizedRadius,
 		],
 	);
@@ -9874,8 +9916,14 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// and for initial hydration before Cal.com fields are known. Effective
 	// navigation (with auto-injected Additional Details step) is defined after
 	// the bookingFields fetch below.
+	// INSTANCE-ISOLATION: initial state is hydration-neutral (empty/step 1/
+	// 12h — identical on server and client). A remount of a live session is
+	// seeded pre-paint by the identity effect below from THIS instance's
+	// own snapshot; a fresh visit is restored pre-paint from THIS
+	// instance's own storage key. Nothing is ever read from another
+	// instance's session.
 	const [currentIndex, setCurrentIndex] = useStateGuarded(
-		inSessionFormSnapshot?.currentIndex ?? 0,
+		0,
 		baseTotalActive,
 	);
 	// CC-8 fix: `useStateGuarded` only re-clamps when its setter is called —
@@ -9944,10 +9992,10 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// Form state. Hydration-safe: start empty (matches server) and hydrate
 	// from in-memory snapshot (remount) or sessionStorage in layout effect.
 	// Do not read sessionStorage synchronously during render (hydration #425).
-	const [values, setValues] = React.useState<BookingValues>(() => {
-		const snap = inSessionFormSnapshot;
-		return snap?.values ? { ...snap.values } : {};
-	});
+	// INSTANCE-ISOLATION: start empty (hydration-safe; matches server). The
+	// identity effect below seeds from this instance's own snapshot on
+	// remount, pre-paint.
+	const [values, setValues] = React.useState<BookingValues>({});
 	const [errors, setErrors] = React.useState<Record<string, string | null>>({});
 	const [touched, setTouched] = React.useState<Record<string, boolean>>({});
 	const [flowStatus, setFlowStatus] = React.useState<FlowStatus>("in-progress");
@@ -10008,35 +10056,77 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// already got this treatment, so both choices persist the same way.
 	// (The visitor's own format choice is still persisted to sessionStorage
 	// below — that is a per-viewer preference, not an author preset.)
-	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">(
-		() => inSessionFormSnapshot?.timeFormat ?? "12h",
-	);
+	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">("12h");
 
-	// Keep the module-level snapshot in lockstep so a remount (animation
+	// INSTANCE-ISOLATION (rule 91): per-instance persistence identity.
+	// The base key is the author's storage key (historical default when
+	// unset). The EFFECTIVE identity is derived from this root's position
+	// among all `[data-be-engine-root]` elements: the FIRST instance keeps
+	// the plain historical key (existing single-engine saved progress stays
+	// reachable — rules 13/20 preserved), every ADDITIONAL instance gets a
+	// positional suffix. The identity is mount-stable (DOM order of the
+	// roots does not change across re-renders), supports any number of
+	// instances, involves no "top/bottom" detection, and never renders
+	// into markup (layout effect only) so hydration stays byte-identical.
+	const baseSessionKey =
+		typeof props.sessionStorageKey === "string" && props.sessionStorageKey.trim()
+			? props.sessionStorageKey.trim()
+			: "booking-engine:session";
+	const instanceKeyRef = React.useRef<string>(baseSessionKey);
+	// Runs as the FIRST layout effect of the hook (declared before the
+	// snapshot write + restore effects): resolve identity, then seed this
+	// instance's own in-session snapshot pre-paint (rule 16 — no Step-1
+	// flash on remount). Seeding is scoped to THIS instance's key, so
+	// Instance A's step/values can never seed Instance B.
+	useIsomorphicLayoutEffect(() => {
+		if (typeof document === "undefined") return;
+		const root = engineRootRef?.current;
+		if (root) {
+			const roots = Array.from(
+				document.querySelectorAll<HTMLElement>("[data-be-engine-root]"),
+			);
+			const idx = roots.indexOf(root);
+			instanceKeyRef.current =
+				idx <= 0 ? baseSessionKey : `${baseSessionKey}#${idx + 1}`;
+		}
+		const snap = inSessionFormSnapshots.get(instanceKeyRef.current);
+		if (!snap) return;
+		setValues({ ...snap.values });
+		setCurrentIndex(
+			Math.min(snap.currentIndex, Math.max(0, baseTotalActive - 1)),
+		);
+		setTimeFormat(snap.timeFormat);
+		// Mirror the storage-restore month handling: keep the calendar on
+		// the month of the seeded selection (M3 fix parity).
+		const snapSlot = snap.values[SELECTED_SLOT_KEY];
+		if (snapSlot && typeof snapSlot === "object" && "date" in snapSlot) {
+			const d = (snapSlot as { date?: unknown }).date;
+			if (d instanceof Date && !Number.isNaN(d.getTime())) {
+				setPickedDate(d);
+				setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+			}
+		}
+		// baseSessionKey/root identity only; the seed reads the map once.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [baseSessionKey, baseTotalActive]);
+
+	// Keep this instance's snapshot in lockstep so a remount (animation
 	// unmount, Framer canvas) rehydrates from memory, not empty useState.
+	// Per-identity map — never another instance's session (rule 91).
 	React.useEffect(() => {
-		inSessionFormSnapshot = {
+		inSessionFormSnapshots.set(instanceKeyRef.current, {
 			values,
 			// Uses base index before auto-inject; effective index is handled after
 			// effectiveActiveSteps is resolved (visitor auto step).
 			currentIndex: baseSafeCurrentIndex,
 			timeFormat,
-		};
+		});
 	}, [values, baseSafeCurrentIndex, timeFormat]);
 
-	// Persisted-state restore. Opt-in (F-12-2); auto-generated instance ID.
-	// F-12-3 fix: payloads carry a schema version so a future shape change
-	// can migrate or purge instead of silently mis-restoring.
+	// Persisted-state restore. Autosave is always-on (rule 7); payloads
+	// carry a schema version so a future shape change can migrate or purge
+	// instead of silently mis-restoring.
 	const PERSIST_SCHEMA_VERSION = 1;
-	// FINAL-14 fix: the storage key stays the historical stable default
-	// (AGENTS.md rules 13/20 — never per-mount, never auto-suffixed), but a
-	// site embedding MULTIPLE BookingEngine instances can now give each its
-	// own key so their autosaved sessions stop overwriting each other.
-	// Empty/omitted keeps the shared default key.
-	const sessionKey =
-		typeof props.sessionStorageKey === "string" && props.sessionStorageKey.trim()
-			? props.sessionStorageKey.trim()
-			: "booking-engine:session";
 	// Restore before paint so a saved currentIndex never flashes Step 1.
 	// Hydration fix (#425/#418/#422): server and initial client render must
 	// match (Step 1). Do not read sessionStorage synchronously in initializers.
@@ -10064,9 +10154,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: no restore on the canvas / in exports.
 		if (isStaticRender) return;
-		if (inSessionFormSnapshot) return;
+		// INSTANCE-ISOLATION: the gate is THIS instance's own snapshot — a
+		// non-null entry for our identity proves this mount is a remount of
+		// a live session (rule 74 semantics, now per instance). Another
+		// instance's snapshot must never gate our restore.
+		if (inSessionFormSnapshots.has(instanceKeyRef.current)) return;
 		try {
-			const raw = window.sessionStorage.getItem(sessionKey);
+			const raw = window.sessionStorage.getItem(instanceKeyRef.current);
 			if (!raw) return;
 			// F-12-6 fix (merge) + F-12-8 fix (reviver removal): the old global
 			// reviver converted ANY property named "date" holding an ISO string
@@ -10089,7 +10183,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 						"BookingEngine: purging saved progress with an unknown schema version.",
 					);
 					try {
-						window.sessionStorage.removeItem(sessionKey);
+						window.sessionStorage.removeItem(instanceKeyRef.current);
 					} catch {
 						// non-fatal
 					}
@@ -10230,12 +10324,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// F-12-1 fix: a parse failure used to leave the corrupt entry in
 			// storage forever, so every reload re-threw the same error. Purge it.
 			try {
-				window.sessionStorage.removeItem(sessionKey);
+				window.sessionStorage.removeItem(instanceKeyRef.current);
 			} catch {
 				console.warn("BookingEngine: failed to purge corrupt saved progress.");
 			}
 		}
-	}, [persistState, sessionKey, isStaticRender]);
+	}, [persistState, isStaticRender]);
 
 	// Persist on every change while in-progress.
 	// T6-M1 fix: the write used to run synchronously on EVERY keystroke
@@ -10267,7 +10361,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 				persistTimerRef.current = null;
 			}
 			try {
-				window.sessionStorage.removeItem(sessionKey);
+				window.sessionStorage.removeItem(instanceKeyRef.current);
 			} catch (err: unknown) {
 				console.warn("BookingEngine: failed to clear saved progress.", err);
 			}
@@ -10292,7 +10386,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			if (!hasAnything) return;
 			try {
 				window.sessionStorage.setItem(
-					sessionKey,
+					instanceKeyRef.current,
 					JSON.stringify({
 						// F-12-3 fix: schema stamp on every write.
 						v: PERSIST_SCHEMA_VERSION,
@@ -10336,7 +10430,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		};
 	}, [
 		persistState,
-		sessionKey,
 		values,
 		flowStatus,
 		// TZ-TIME-HARD-RULE: `timeZone` is intentionally absent — it is no
@@ -10907,11 +11000,17 @@ function useBookingEngineState(props: BookingEngineProps) {
 			// had been collapsed. Validation/submit still trim internally.
 			const nextValue = value;
 			valuesRef.current = { ...valuesRef.current, [fieldId]: nextValue };
-			inSessionFormSnapshot = {
+			// INSTANCE-ISOLATION: keep THIS instance's snapshot fresh so a
+			// mid-keystroke remount never loses the typed value (the
+			// per-identity write effect also runs, but a remount can land
+			// between keystroke and its debounce-free tick).
+			const liveKey = instanceKeyRef.current;
+			const liveSnap = inSessionFormSnapshots.get(liveKey);
+			inSessionFormSnapshots.set(liveKey, {
 				values: valuesRef.current,
-				currentIndex: inSessionFormSnapshot?.currentIndex ?? 0,
-				timeFormat: inSessionFormSnapshot?.timeFormat ?? "12h",
-			};
+				currentIndex: liveSnap?.currentIndex ?? 0,
+				timeFormat: liveSnap?.timeFormat ?? "12h",
+			});
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
 			// SUBMIT-DRIVEN-VALIDATION: typing alone never validates and
 			// never INTRODUCES an error. Only a field that already shows
@@ -10965,10 +11064,15 @@ function useBookingEngineState(props: BookingEngineProps) {
 					valuesRef.current[field.id],
 					validationCopy,
 				);
-				if (err) {
-					const wrapper = document.querySelector<HTMLElement>(
-						`[data-field-id="${field.id}"]`,
-					);
+			if (err) {
+				// INSTANCE-ISOLATION (rule 91): query is scoped to THIS
+				// instance's own subtree. Field ids are shared across
+				// instances (hydration-safe constants), so a document-wide
+				// query used to focus the FIRST instance's input while the
+				// visitor was interacting with another one.
+				const wrapper = engineRootRef?.current?.querySelector<HTMLElement>(
+					`[data-field-id="${field.id}"]`,
+				);
 					// T4-M5 fix: the wrapper div isn't focusable, so calling
 					// `focus()` on it silently did nothing (visible for
 					// choice/radio groups) and keyboard focus never reached
@@ -11005,6 +11109,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 				}
 			}
 		},
+		// INSTANCE-ISOLATION: engineRootRef is a stable ref object — listing
+		// it documents the root-scoped query without invalidating the
+		// callback identity.
 		[validationCopy],
 	);
 
@@ -11476,11 +11583,25 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// FINAL-42 fix: Escape is a keyboard route out of the submitting state
 	// (previously only reachable by Tabbing to the Cancel button). The
 	// window-level listener exists only while the POST is in flight.
+	// INSTANCE-ISOLATION (rule 91): a keydown originating inside a
+	// DIFFERENT engine's subtree must not cancel this instance's submit —
+	// the closest `[data-be-engine-root]` marker disambiguates (body/
+	// document targets keep the documented behavior).
 	React.useEffect(() => {
 		if (flowStatus !== "submitting") return;
 		if (typeof window === "undefined") return;
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") handleCancelSubmit();
+			if (event.key !== "Escape") return;
+			const target = event.target as Element | null;
+			if (
+				target &&
+				typeof target.closest === "function" &&
+				engineRootRef?.current
+			) {
+				const owner = target.closest("[data-be-engine-root]");
+				if (owner && owner !== engineRootRef.current) return;
+			}
+			handleCancelSubmit();
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
@@ -11503,7 +11624,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		submittingRef.current = false;
 		if (typeof window !== "undefined" && persistState) {
 			try {
-				window.sessionStorage.removeItem(sessionKey);
+				window.sessionStorage.removeItem(instanceKeyRef.current);
 			} catch (err: unknown) {
 				console.warn(
 					"BookingEngine: failed to clear saved progress on restart.",
@@ -11511,7 +11632,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 				);
 			}
 		}
-	}, [persistState, sessionKey, transitionFlowStatus, isStaticRender]);
+	}, [persistState, transitionFlowStatus, isStaticRender]);
 
 	const handleSlotReady = React.useCallback((payload?: BookingPayload) => {
 		if (!payload) {
@@ -11666,7 +11787,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		accentColor,
 		activeSteps,
 		availableDates,
-		backgroundColor,
 		backLabel,
 		bookingResult,
 		borderColor,
@@ -11729,7 +11849,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		reactInstanceId,
 		safeCurrentIndex,
 		selectedDate,
-		sessionKey,
+		instanceKeyRef,
 		setBookingResult,
 		setCurrentIndex,
 		setErrors,
@@ -11813,6 +11933,12 @@ function useBookingEngineState(props: BookingEngineProps) {
  * @framerDisableUnlink
  */
 export default function BookingEngine(props: BookingEngineProps) {
+	// INSTANCE-ISOLATION (rule 91): the engine root ref is created BEFORE
+	// the state hook so the hook can (a) derive a mount-stable per-instance
+	// persistence identity from this root's DOM position and (b) scope
+	// queries/handlers (focus restoration, Escape) to this instance's own
+	// subtree. Declared before the destructure — hooks order is stable.
+	const engineRootRef = React.useRef<HTMLDivElement | null>(null);
 	const {
 		activeSteps,
 		availableDates,
@@ -11888,7 +12014,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		meetingDurationMs,
 		calEventMeta,
 		calEventMetaStatus,
-	} = useBookingEngineState(props);
+	} = useBookingEngineState(props, engineRootRef);
 
 	// FINAL-12 fix: apply the author's locale override before any child
 	// renders (pageLocale() reads it during first paint of this render
@@ -11913,7 +12039,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 	// container width via ResizeObserver (L757, L3511), so the grid now
 	// does too: measure RootShell, collapse below COMPACT_BREAKPOINT (the
 	// file-wide container threshold), and the @media rule is gone.
-	const engineRootRef = React.useRef<HTMLDivElement | null>(null);
+	// (engineRootRef is created above the state hook — INSTANCE-ISOLATION.)
 	const [engineWidth, setEngineWidth] = React.useState<number>(320);
 	// PRERENDER-DEFER: the prerender browser's viewport must never reach
 	// the served HTML — the two-column grid decision (engineWidth >=
@@ -12631,6 +12757,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 								copy={copy}
 								ariaLabels={ariaLabels}
 								errorCopy={errorCopy}
+								// INSTANCE-ISOLATION (rule 91): per-engine id prefix
+								// for the slot-error banner + every field id.
+								instanceId={reactInstanceId}
 								onFieldChange={handleFieldChange}
 								onSlotReady={handleSlotReady}
 								onDateChange={handleInlineDateChange}
@@ -13134,6 +13263,13 @@ const RootShell = React.memo(function RootShell(props: {
 						: "be-motion-root"
 				}
 				ref={setRootRef}
+				// INSTANCE-ISOLATION (rule 91): constant marker attribute — every
+				// Booking Engine root carries it so the engine can derive a
+				// mount-stable, per-instance persistence identity (DOM position)
+				// and scope queries/handlers to its own subtree. Plain constant:
+				// hydration-safe (nothing id-derived, nothing per-instance in
+				// the markup itself).
+				data-be-engine-root=""
 				style={{
 					position: "relative",
 					width: "100%",
@@ -13248,6 +13384,11 @@ interface StepBodyProps {
 	/** W1-02-F4–F8 fix (bundle 17): merged error copy for the
 	 *  unconfigured-date-time notice (title + body). */
 	errorCopy: ErrorCopy;
+	/** INSTANCE-ISOLATION (rule 91): this engine's hydration-safe id
+	 *  prefix — scopes the slot-error banner id (and through it every
+	 *  field id rendered here) to this instance. Empty on the first
+	 *  render of server and client alike (no hydration mismatch). */
+	instanceId: string;
 	onFieldChange: (fieldId: string, value: string | boolean | undefined) => void;
 	onSlotReady: (payload?: BookingPayload) => void;
 	onDateChange: (d: Date) => void;
@@ -13353,6 +13494,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		onRetrySlots,
 		hideDemoWhenUnconfigured,
 		errorCopy,
+		// INSTANCE-ISOLATION (rule 91): hydration-safe per-engine id prefix.
+		instanceId = "",
 		engineWidth,
 		isSubmitting = false,
 		eventMeta,
@@ -13360,11 +13503,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		eventMetaFallbackDurationMinutes,
 	} = props;
 
-	// W1-10-N2 fix: the slot-error banner id must be scoped per StepBody
-	// instance — two BookingEngine instances on one page used to collide on
-	// these ids (the label and aria-describedby resolved against the first
-	// instance). SSR/hydration fix: plain constant (see gridLabelId).
-	const slotErrorId = "be-slot-error";
+	// W1-10-N2 fix: the slot-error banner id is scoped per engine instance
+	// via the hydration-safe prefix ("" on the first render of both server
+	// and client — no hydration mismatch; set post-mount like the skip
+	// link's suffix). Two engines on one page never resolve each other's
+	// slot-error references.
+	const slotErrorId = `${instanceId ? `${instanceId}-` : ""}be-slot-error`;
 
 	// W1-11-A9 fix: the slots error banner announces (role="alert") but
 	// never took focus, so a keyboard/low-vision visitor had to hunt for
@@ -13417,6 +13561,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						selectOptionLabel={copy.selectOptionLabel}
 						// W1-20-N1 fix: freeze authored fields during the POST.
 						isSubmitting={isSubmitting}
+						instanceId={instanceId}
 					/>
 				))}
 			</div>
@@ -13714,6 +13859,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							selectOptionLabel={copy.selectOptionLabel}
 							// W1-20-N1 fix: freeze authored fields during the POST.
 							isSubmitting={isSubmitting}
+							instanceId={instanceId}
 						/>
 					),
 				)}
@@ -13971,6 +14117,15 @@ interface FieldRendererProps {
 	// W1-20-N1 fix: freezes every input/choice/checkbox during the POST
 	// (threaded from StepBodyProps.isSubmitting).
 	isSubmitting?: boolean;
+	// INSTANCE-ISOLATION (rule 91): this engine's hydration-safe id prefix.
+	// Empty string on the first render (both server and client — no
+	// hydration mismatch), then "be-engine-N" post-mount. Field DOM ids
+	// (label htmlFor, input id, error id, aria-describedby) are prefixed
+	// with it so two engines on one page never resolve each other's
+	// labels/announcements. The ids mutate post-hydration in the same
+	// commit for the whole pair — exactly like the skip-link's
+	// `be-skip-end-${reactInstanceId}`.
+	instanceId: string;
 }
 
 const FieldRenderer = React.memo(function FieldRenderer(
@@ -13987,19 +14142,23 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		choiceGroupAriaLabel,
 		selectOptionLabel,
 		isSubmitting = false,
+		instanceId = "",
 	} = props;
 
-	// W1-10-N2 fix: field ids were instance-scoped so two BookingEngine
-	// instances on one page collided — `<label
-	// htmlFor>`, `aria-describedby` and error wiring all resolved to the
-	// wrong (first) instance's controls. SSR/hydration fix: ids are now
-	// derived from the (props-stable) `field.id` only, with no instance
-	// prefix — identical in the prerendered HTML and the client's first
-	// render, so the label/input id pair always resolves within this field
-	// and nothing id-derived can mismatch. Multi-instance pages can share
-	// ids (harmless here — one engine is visible per page at a time).
-	// (The old `fieldId` helper was removed in the hydration audit — it
-	// was declared but never called.)
+	// INSTANCE-ISOLATION (rule 91): field DOM ids are scoped per engine
+	// instance. History: the original instance-scoped ids were dropped in
+	// the W1-10-N2 hydration audit because effect-derived prefixes
+	// mismatched the headless prerender (#418). The hydration-safe
+	// `reactInstanceId` ("" on the first render of BOTH server and client,
+	// then set once post-mount — the same proven pattern as the skip
+	// link's `be-skip-end-${reactInstanceId}`) lets us restore instance
+	// scoping WITHOUT any hydration divergence: first render is identical
+	// everywhere, and the id/htmlFor/describedby pair mutates in one
+	// commit. Two engines on one page therefore never resolve each
+	// other's labels, focus, or error announcements.
+	const domIdPrefix = instanceId ? `${instanceId}-` : "";
+	const fieldDomId = `${domIdPrefix}be-field-${field.id}`;
+	const errorDomId = `${domIdPrefix}be-error-${field.id}`;
 
 	// T10-M5 fix: auto-resize the textarea to its content. Hooks live at
 	// the top (not inside the switch) so a fieldType change in the editor
@@ -14093,14 +14252,14 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	const labelEl = isChoiceFieldType ? (
 		<div style={labelTextStyle}>{field.label}</div>
 	) : (
-		<label htmlFor={`be-field-${field.id}`} style={labelTextStyle}>
+		<label htmlFor={fieldDomId} style={labelTextStyle}>
 			{field.label}
 		</label>
 	);
 
 	const errorEl = error ? (
 		<div
-			id={`be-error-${field.id}`}
+			id={errorDomId}
 			style={{
 				color: theme.errorColor,
 				fontSize: 12,
@@ -14207,7 +14366,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				<div style={containerStyle} data-field-id={field.id}>
 					{labelEl}
 					<textarea
-						id={`be-field-${field.id}`}
+						id={fieldDomId}
 						// W1-20-N5 fix: prefer the author-mapped Cal field id
 						// as the semantic form name — autofill/password
 						// managers key on name, and "step-1-field-0" gives
@@ -14227,7 +14386,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						onChange={(e) => onFieldChange(field.id, e.target.value)}
 						aria-invalid={!!error}
 						aria-describedby={
-							error ? `be-error-${field.id}` : undefined
+							error ? errorDomId : undefined
 						}
 						rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
 						ref={textareaRef}
@@ -14250,7 +14409,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
                         below removes the browser's native one. */}
 					<div style={{ position: "relative" }}>
 						<select
-							id={`be-field-${field.id}`}
+							id={fieldDomId}
 							// W1-20-N5 fix: same semantic-name preference as
 							// the textarea/input sites above.
 							name={field.calFieldId || field.id}
@@ -14265,7 +14424,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							onChange={(e) => onFieldChange(field.id, e.target.value)}
 							aria-invalid={!!error}
 							aria-describedby={
-								error ? `be-error-${field.id}` : undefined
+								error ? errorDomId : undefined
 							}
 							style={{
 								...inputBaseStyle,
@@ -14413,7 +14572,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
 						ariaDescribedBy={
-							error ? `be-error-${field.id}` : undefined
+							error ? errorDomId : undefined
 						}
 						onChange={handleChoiceChange}
 						choiceGroupAriaLabel={choiceGroupAriaLabel}
@@ -14484,7 +14643,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							aria-invalid={!!error}
 							// Fix #16: associate the error with the checkbox.
 							aria-describedby={
-								error ? `be-error-${field.id}` : undefined
+								error ? errorDomId : undefined
 							}
 							style={{
 								marginTop: 2,
@@ -14505,7 +14664,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				<div style={containerStyle} data-field-id={field.id}>
 					{labelEl}
 					<input
-						id={`be-field-${field.id}`}
+						id={fieldDomId}
 						// W1-20-M2 fix: `name` was missing everywhere, so
 						// password managers couldn't group fields and
 						// autofill had nothing to key on.
@@ -14567,7 +14726,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						}
 						aria-invalid={!!error}
 						aria-describedby={
-							error ? `be-error-${field.id}` : undefined
+							error ? errorDomId : undefined
 						}
 						style={inputBaseStyle}
 					/>
@@ -15506,7 +15665,12 @@ const isFieldStyleChoiceType = (fieldType?: string) =>
 function fieldStylesColorControl(title: string) {
 	return { type: ControlType.Color, title, optional: true };
 }
-function fieldStylesNumberControl(title: string, min: number, max: number) {
+function fieldStylesNumberControl(
+	title: string,
+	min: number,
+	max: number,
+	defaultValue: number,
+) {
 	return {
 		type: ControlType.Number,
 		title,
@@ -15515,6 +15679,10 @@ function fieldStylesNumberControl(title: string, min: number, max: number) {
 		max,
 		step: 1,
 		unit: "px",
+		// STYLES-INIT-EFFECTIVE: the default is the field's effective default
+		// for this property, so Framer's activation-time materialization
+		// yields the inherit look instead of a 0 override.
+		defaultValue,
 	};
 }
 // STYLES-INIT: no defaultValue — an untouched font control must pass
@@ -15551,6 +15719,14 @@ function fieldStylesBorderControl() {
 		type: ControlType.Border,
 		title: "Border",
 		optional: true,
+		// STYLES-INIT-EFFECTIVE: mirrors the authored Border token default so
+		// the materialized value renders identically to the inherit path
+		// (and a zero-width materialization can never strip field borders).
+		defaultValue: {
+			borderWidth: FIELD_STYLES_BORDER_WIDTH,
+			borderStyle: "solid",
+			borderColor: FIELD_STYLES_BORDER_COLOR,
+		},
 	};
 }
 function fieldStylesRadiusControl() {
@@ -15558,6 +15734,10 @@ function fieldStylesRadiusControl() {
 		type: ControlType.BorderRadius,
 		title: "Radius",
 		optional: true,
+		// STYLES-INIT-EFFECTIVE: the shipped shared Radius default (rule 60);
+		// an explicit author-entered 0 still applies as 0 (`??`/typeof
+		// resolvers — never falsy checks).
+		defaultValue: FIELD_STYLES_FIELD_RADIUS,
 	};
 }
 function fieldStylesPaddingControl() {
@@ -15565,6 +15745,9 @@ function fieldStylesPaddingControl() {
 		type: ControlType.Padding,
 		title: "Padding",
 		optional: true,
+		// STYLES-INIT-EFFECTIVE: the same constant resolveFieldPadding falls
+		// back to — opening Styles shows the field's real padding.
+		defaultValue: FIELD_STYLES_INPUT_PADDING,
 	};
 }
 
@@ -15583,8 +15766,8 @@ function makeInputFieldStylesControls() {
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
 		focusBorderColor: fieldStylesColorControl("Focus Border"),
-		minHeight: fieldStylesNumberControl("Height", 24, 200),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+		minHeight: fieldStylesNumberControl("Height", 24, 200, TOUCH_TARGET_MIN),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
 	};
 }
 
@@ -15598,8 +15781,8 @@ function makeChoiceFieldStylesControls() {
 		border: fieldStylesBorderControl(),
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
-		minHeight: fieldStylesNumberControl("Height", 24, 200),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+		minHeight: fieldStylesNumberControl("Height", 24, 200, TOUCH_TARGET_MIN),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
@@ -15611,8 +15794,8 @@ function makeCheckboxFieldStylesControls() {
 		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
-		checkSize: fieldStylesNumberControl("Size", 12, 32),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+		checkSize: fieldStylesNumberControl("Size", 12, 32, FIELD_STYLES_CHECK_SIZE),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
 	};
 }
 
@@ -15620,8 +15803,8 @@ function makeCheckboxFieldStylesControls() {
 // architecture (FieldStyleOverrides + the factories above), narrowed to the
 // three properties that genuinely apply to the calendar surface (Background,
 // Radius, Padding). No input/label/choice controls are exposed for it. The
-// Background here owns the calendar surface; the global Styles Background
-// token no longer reaches it (AGENTS.md rule 86 + STYLES-INIT rule).
+// Background here owns the calendar surface; the global Styles has no
+// Background control (rule 90 + STYLES-INIT rule).
 function makeCalendarFieldStylesControls() {
 	return {
 		backgroundColor: fieldStylesColorControl("Background"),
@@ -16166,20 +16349,20 @@ addPropertyControls(BookingEngine, {
 			// COLOR-SYSTEM: "Text" is the single base text color. Text
 			// Secondary is derived from it internally (fixed 0.62 alpha) —
 			// there is no second text control and no replacement for the
-			// removed ones (see AGENTS.md rule 88).
+			// removed ones (see AGENTS.md rule 90).
 			textPrimaryColor: {
 				type: ControlType.Color,
 				title: "Text",
 				defaultValue: "#111827",
 			},
-			// COLOR-SYSTEM: Border and Success are NOT author controls —
-			// Border derives from Text pre-blended onto Background (fixed
-			// 0.12 alpha) and Success is one fixed internal green. Removed
-			// controls are never reintroduced (AGENTS.md rule 88).
-			errorColor: {
+			// BORDER (rule 90): the one border token, rendered verbatim
+			// everywhere a border is drawn. There is deliberately NO
+			// Background control (transparent root, calendar-owned surface)
+			// and NO Error control (fixed internal #DC2626).
+			borderColor: {
 				type: ControlType.Color,
-				title: "Error",
-				defaultValue: "#DC2626",
+				title: "Border",
+				defaultValue: FIELD_STYLES_BORDER_COLOR,
 			},
 			borderRadius: {
 				type: ControlType.Number,
