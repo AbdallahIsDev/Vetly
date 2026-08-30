@@ -44,6 +44,10 @@ declare global {
 
 // FINAL-65 fix: the 9-color token set is now ONE named type instead of a
 // duplicated inline shape at every consumption site. Compile-time only.
+// COLOR-SYSTEM (rule 88): Accent / Primary Foreground / Background / Surface
+// / Text Primary / Error are authored (six Styles controls); Text Secondary,
+// Border and Success remain as SEMANTIC tokens for the ~40 consumers but are
+// derived internally at fixed design ratios — see the engine body.
 type ThemeToken =
 	| "accentColor"
 	| "accentForegroundColor"
@@ -967,6 +971,25 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 // replaces this default only when the author actually sets one. The
 // navigation/footer wrapper stays transparent regardless (FOOTER-TRANSPARENT).
 const DEFAULT_CALENDAR_SURFACE_BACKGROUND = "#FFFFFF";
+
+// COLOR-SYSTEM (AGENTS.md rules 1-3/70/71 + rule 88): the author-facing
+// palette is SIX independent controls (Accent, Primary Foreground,
+// Background, Surface, Text, Error). The three removed controls are derived
+// internally from those bases via the existing withAlpha() blending
+// architecture:
+//   - Text Secondary = Text at a fixed 0.62 alpha (composites onto whatever
+//     surface it lands on — the same technique the muted-text memos use).
+//   - Border = Text pre-blended at a fixed 0.12 alpha onto the Background
+//     (deterministic hairline; the solid pre-blend keeps nested borders from
+//     double-dipping alpha).
+//   - Success = one fixed internal green (pure positive-validation marker).
+// The ratios are FIXED DESIGN DEFAULTS chosen by the component — never
+// contrast calculations, never validation, never auto-correction (rules 1-3).
+// The author stays free to pick any value for the six controls; derived
+// outcomes follow deterministically and are the author's to accept.
+const DERIVED_SECONDARY_TEXT_ALPHA = 0.62;
+const DERIVED_BORDER_ALPHA = 0.12;
+const DERIVED_SUCCESS_COLOR = "#15803D";
 
 // =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
@@ -5784,9 +5807,13 @@ interface BookingEngineStyleProps {
 	styles: {
 		// THEME-AGNOSTIC (hard rule): no component-level Light/Dark/Auto
 		// mode selector. The engine consumes ONE light/default semantic
-		// palette, configurable color-by-color below — website-level
-		// theme differences are the author's job via Framer Color
-		// Variables assigned to these controls (see AGENTS.md).
+		// palette. SIX independent author controls (COLOR-SYSTEM): Accent,
+		// Primary Foreground, Background, Surface, Text, Error — website-
+		// level theme differences are the author's job via Framer Color
+		// Variables assigned to these controls (see AGENTS.md). Text
+		// Secondary, Border and Success are NOT author controls: they are
+		// derived internally from Text/Background at fixed design ratios
+		// (and one fixed success green) via withAlpha — see the engine body.
 		accentColor: string;
 		// PRIMARY-FOREGROUND: semantic On-Primary token for text/icons
 		// rendered directly on Primary/Accent-colored surfaces (selected
@@ -5797,10 +5824,7 @@ interface BookingEngineStyleProps {
 		backgroundColor: string;
 		surfaceColor: string;
 		textPrimaryColor: string;
-		textSecondaryColor: string;
-		borderColor: string;
 		errorColor: string;
-		successColor: string;
 		// W1-17-F-17-13 fix: Framer's BorderRadius control can emit either
 		// a CSS size string ("12px") or a numeric radius; the interface
 		// previously claimed `string`, so numeric values were a silent type
@@ -9544,7 +9568,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 		// editor when only the Validation group changed.
 	}, [validation]);
 
-	// Destructure style tokens from the grouped Styles object.
+	// Destructure style tokens from the grouped Styles object. SIX
+	// independent author controls remain (COLOR-SYSTEM): Accent, Primary
+	// Foreground, Background, Surface, Text, Error. The three removed
+	// controls (Text Secondary, Border, Success) are DERIVED below at fixed
+	// design ratios via withAlpha — the semantic token names stay identical
+	// downstream, so every UI state keeps a valid color.
 	const {
 		accentColor,
 		// PRIMARY-FOREGROUND: independent On-Primary token (see Styles control).
@@ -9552,12 +9581,23 @@ function useBookingEngineState(props: BookingEngineProps) {
 		backgroundColor,
 		surfaceColor,
 		textPrimaryColor,
-		textSecondaryColor,
-		borderColor,
 		errorColor,
-		successColor,
 		borderRadius,
 	} = styles;
+	// COLOR-SYSTEM derived tokens. Fixed design ratios — never contrast
+	// calculations, never color validation, never auto-correction. The
+	// same local names the removed props used keeps every downstream
+	// consumer (theme memo, RootShell/StepBody/SuccessState props) valid.
+	const textSecondaryColor = withAlpha(
+		textPrimaryColor,
+		DERIVED_SECONDARY_TEXT_ALPHA,
+	);
+	const borderColor = withAlpha(
+		textPrimaryColor,
+		DERIVED_BORDER_ALPHA,
+		backgroundColor,
+	);
+	const successColor = DERIVED_SUCCESS_COLOR;
 	// Radius clamp: the Framer control (now Number) enforces 0–24 in the UI,
 	// but runtime must also sanitize — a value outside the range must never
 	// reach the rendered component even if passed programmatically.
@@ -9739,18 +9779,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// Fix #25: memoize the theme object so child components wrapped in
 	// React.memo don't re-render on every parent render.
-	// THEME-AGNOSTIC: exactly ONE semantic palette. Every token is the
-	// author's configured value, rendered verbatim — no Light/Dark/Auto
-	// branching, no derived colors, no contrast logic (AGENTS.md hard
-	// rules). Site-level theme switching stays the author's job via
-	// Framer Color Variables assigned to the Styles color controls.
-	// Fix #25: memoize the theme object so child components wrapped in
-	// React.memo don't re-render on every parent render.
-	// THEME-AGNOSTIC: exactly ONE semantic palette. Every token is the
-	// author's configured value, rendered verbatim — no Light/Dark/Auto
-	// branching, no derived colors, no contrast logic (AGENTS.md hard
-	// rules). Site-level theme switching stays the author's job via
-	// Framer Color Variables assigned to the Styles color controls.
+	// THEME-AGNOSTIC + COLOR-SYSTEM: exactly ONE semantic palette. Accent,
+	// Primary Foreground, Background, Surface, Text and Error are the
+	// author's configured values, rendered verbatim — no Light/Dark/Auto
+	// branching, no contrast logic (AGENTS.md hard rules). Text Secondary,
+	// Border and Success are derived at the fixed design ratios above.
+	// Site-level theme switching stays the author's job via Framer Color
+	// Variables assigned to the six Styles color controls.
 	const theme = React.useMemo<Theme & { borderRadius: string }>(
 		() => ({
 			accentColor,
@@ -9773,10 +9808,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			backgroundColor,
 			surfaceColor,
 			textPrimaryColor,
-			textSecondaryColor,
-			borderColor,
 			errorColor,
-			successColor,
 			sanitizedRadius,
 		],
 	);
@@ -16131,30 +16163,23 @@ addPropertyControls(BookingEngine, {
 				title: "Surface",
 				defaultValue: "#F7F8FA",
 			},
+			// COLOR-SYSTEM: "Text" is the single base text color. Text
+			// Secondary is derived from it internally (fixed 0.62 alpha) —
+			// there is no second text control and no replacement for the
+			// removed ones (see AGENTS.md rule 88).
 			textPrimaryColor: {
 				type: ControlType.Color,
-				title: "Text Primary",
+				title: "Text",
 				defaultValue: "#111827",
 			},
-			textSecondaryColor: {
-				type: ControlType.Color,
-				title: "Text Secondary",
-				defaultValue: "#6B7280",
-			},
-			borderColor: {
-				type: ControlType.Color,
-				title: "Border",
-				defaultValue: "#E5E7EB",
-			},
+			// COLOR-SYSTEM: Border and Success are NOT author controls —
+			// Border derives from Text pre-blended onto Background (fixed
+			// 0.12 alpha) and Success is one fixed internal green. Removed
+			// controls are never reintroduced (AGENTS.md rule 88).
 			errorColor: {
 				type: ControlType.Color,
 				title: "Error",
 				defaultValue: "#DC2626",
-			},
-			successColor: {
-				type: ControlType.Color,
-				title: "Success",
-				defaultValue: "#15803D",
 			},
 			borderRadius: {
 				type: ControlType.Number,
