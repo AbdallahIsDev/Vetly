@@ -16336,11 +16336,13 @@ addPropertyControls(BookingEngine, {
 				title: "Primary Foreground",
 				defaultValue: "#FFFFFF",
 			},
-			backgroundColor: {
-				type: ControlType.Color,
-				title: "Background",
-				defaultValue: "#FFFFFF",
-			},
+			// COLOR-SYSTEM (rule 90): there is deliberately NO Background
+			// control — the engine root is transparent by design (the Framer
+			// frame provides the page background) and the Calendar owns its
+			// own surface (CAL-BG-OWNERSHIP). A Background control here was
+			// a duplicate/conflicting mapping: its only consumer was the
+			// border pre-blend, i.e. a control named Background controlling
+			// a border. Border is its own authored control below.
 			surfaceColor: {
 				type: ControlType.Color,
 				title: "Surface",
