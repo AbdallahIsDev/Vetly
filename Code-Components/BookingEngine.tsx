@@ -37,6 +37,8 @@ import * as React from "react";
 declare global {
 	interface Window {
 		__BE_STEP_DEBUG__?: boolean;
+		// BE-DIAG: set to false to silence the scoped booking diagnostics.
+		__BE_DIAG__?: boolean;
 	}
 }
 
@@ -865,6 +867,97 @@ function innerRadiusValue(
 	return `${Math.max(0, parseRadiusNumber(value) - inset)}px`;
 }
 
+// FIELD-STYLES helper: Framer's Font control emits fontSize as a number OR a
+// CSS string ("14px"). Returns the numeric pixel size, or undefined when the
+// key is unset so callers can fall back to their own defaults per key.
+function fontPixelSize(value: string | number | undefined): number | undefined {
+	if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+	if (typeof value === "string") {
+		const parsed = Number.parseFloat(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	}
+	return undefined;
+}
+
+// =============================================================================
+// FIELD-STYLES (native compound controls): resolvers for the new Border /
+// BorderRadius / Padding control values. Every resolver keeps the LEGACY
+// scalar keys working (instances saved before the compound controls existed)
+// and falls back to the engine theme when nothing is set — untouched fields
+// keep rendering byte-identically to the pre-compound default look.
+// =============================================================================
+
+/** Resolve the effective border (width / style / color) from the NEW compound
+ *  Border control value, falling back to the LEGACY borderWidth/borderColor
+ *  scalars. `color` is undefined when the author left it untouched — the call
+ *  site then applies the engine theme (or the error color, which always wins
+ *  for visibility). */
+function resolveFieldBorder(
+	fs: FieldStyleOverrides | undefined,
+): { width: number; style: string; color: string | undefined } {
+	const b = fs?.border;
+	const compoundSet =
+		b != null &&
+		(b.borderWidth != null ||
+			b.borderColor != null ||
+			b.borderStyle != null ||
+			b.borderTopWidth != null ||
+			b.borderRightWidth != null ||
+			b.borderBottomWidth != null ||
+			b.borderLeftWidth != null);
+	if (compoundSet && b) {
+		const sides = [
+			b.borderTopWidth,
+			b.borderRightWidth,
+			b.borderBottomWidth,
+			b.borderLeftWidth,
+		].filter((v): v is number => typeof v === "number" && v > 0);
+		const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? 1);
+		return { width, style: b.borderStyle || "solid", color: b.borderColor };
+	}
+	return { width: fs?.borderWidth ?? 1, style: "solid", color: fs?.borderColor };
+}
+
+/** Resolve the effective radius: NEW compound BorderRadius string ("12px" or
+ *  four per-corner values) wins, the LEGACY number (px) comes next, and the
+ *  engine theme radius is the untouched default (theme token may be a number
+ *  or a CSS string). */
+function resolveFieldRadius(
+	fs: FieldStyleOverrides | undefined,
+	themeRadius: string | number,
+): string {
+	if (typeof fs?.radius === "string" && fs.radius.trim()) return fs.radius;
+	if (typeof fs?.radius === "number") return `${fs.radius}px`;
+	return typeof themeRadius === "number" ? `${themeRadius}px` : themeRadius;
+}
+
+/** Resolve the effective padding: NEW compound Padding string ("10px 14px",
+ *  CSS shorthand order) wins, the LEGACY vertical/horizontal number pair
+ *  comes next, then the historical 10px/14px input default. */
+function resolveFieldPadding(fs: FieldStyleOverrides | undefined): string {
+	if (typeof fs?.padding === "string" && fs.padding.trim()) return fs.padding;
+	return `${fs?.paddingY ?? 10}px ${fs?.paddingX ?? 14}px`;
+}
+
+/** Horizontal padding (px) from a resolved CSS padding string — used by the
+ *  select variant, which reserves chevron room past the content padding. */
+function paddingHorizontalFrom(padding: string): number {
+	const parts = padding.trim().split(/\s+/).map((p) => Number.parseFloat(p));
+	if (!parts.length || !Number.isFinite(parts[0])) return 14;
+	return parts.length >= 2 && Number.isFinite(parts[1]) ? parts[1] : parts[0];
+}
+
+/** Vertical/horizontal axes (px) from a resolved CSS padding string — used by
+ *  choice options, whose paddings are applied per-axis inline. */
+function paddingAxesFrom(padding: string): { y: number; x: number } | null {
+	const parts = padding.trim().split(/\s+/).map((p) => Number.parseFloat(p));
+	if (!parts.length || !Number.isFinite(parts[0])) return null;
+	if (parts.length === 1) return { y: parts[0], x: parts[0] };
+	const y = parts[0];
+	const x = Number.isFinite(parts[1]) ? parts[1] : y;
+	return { y, x };
+}
+
 // =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
 // segmented controls (Calendar Time Format 12h/24h and BookingEngine
@@ -882,17 +975,32 @@ interface SegmentedControlProps {
 	borderColor: string;
 	ariaLabel?: string;
 	disabled?: boolean;
+	// FIELD-STYLES: optional per-field overrides (choice segmented variant).
+	// Undefined keeps the engine-default look; the 12h/24h toggle never
+	// passes them. Segment labels stay font-weight 600 in every state
+	// (shared-thumb rule, AGENTS.md rule 80).
+	trackBackground?: string;
+	thumbBorderColor?: string;
+	optionPaddingX?: number;
+	optionFont?: FramerFont;
 }
 
 const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedControlProps) {
-	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled } = props;
+	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled, trackBackground, thumbBorderColor, optionPaddingX, optionFont } = props;
 	const isStaticRender = useIsStaticRenderer();
 	const prefersReducedMotion = useReducedMotion();
 	const count = options.length;
 	const selectedIndex = Math.max(0, options.findIndex((o) => o.value === value));
 	const segmentInnerRadius = innerRadiusValue(borderRadius, 3);
 	const thumbWidth = count > 0 ? `calc((100% - 6px) / ${count})` : "calc(50% - 3px)";
-	const trackBackground = withAlpha(borderColor, 0.14);
+	// FIELD-STYLES: the track normally derives from the border color; an
+	// explicit per-field Background override replaces it verbatim.
+	const effectiveTrackBackground = trackBackground ?? withAlpha(borderColor, 0.14);
+	const thumbBorder = thumbBorderColor ?? borderColor;
+	const segmentFontSize =
+		optionFont?.fontSize != null
+			? fontPixelSize(optionFont.fontSize) ?? 13
+			: 13;
 	const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
 	return (
 		<div
@@ -902,7 +1010,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 				position: "relative",
 				display: "grid",
 				gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`,
-				background: trackBackground,
+				background: effectiveTrackBackground,
 				border: `1px solid ${borderColor}`,
 				borderRadius: borderRadius,
 				overflow: "hidden",
@@ -923,7 +1031,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 						transform: `translateX(${selectedIndex * 100}%)`,
 						borderRadius: segmentInnerRadius,
 						background: backgroundColor,
-						border: `1px solid ${borderColor}`,
+						border: `1px solid ${thumbBorder}`,
 						boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
 						pointerEvents: "none",
 					}}
@@ -941,7 +1049,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 						width: thumbWidth,
 						borderRadius: segmentInnerRadius,
 						background: backgroundColor,
-						border: `1px solid ${borderColor}`,
+						border: `1px solid ${thumbBorder}`,
 						boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
 						pointerEvents: "none",
 					}}
@@ -980,15 +1088,23 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 							position: "relative",
 							zIndex: 1,
 							width: "100%",
-							padding: "0 8px",
+							padding: `0 ${optionPaddingX ?? 8}px`,
 							border: "none",
 							borderRadius: segmentInnerRadius,
 							background: "transparent",
 							color: active ? textColor : mutedTextColor,
 							cursor: disabled ? "not-allowed" : "pointer",
-							fontFamily: "inherit",
-							fontSize: 13,
+							fontFamily: optionFont?.fontFamily ?? "inherit",
+							fontSize: segmentFontSize,
+							// Shared-thumb rule: 600 in active AND inactive
+							// states — never weight-switched (AGENTS.md rule 80).
 							fontWeight: 600,
+							...(optionFont?.letterSpacing != null
+								? { letterSpacing: optionFont.letterSpacing }
+								: {}),
+							...(optionFont?.lineHeight != null
+								? { lineHeight: optionFont.lineHeight }
+								: {}),
 							whiteSpace: "nowrap",
 							overflow: "hidden",
 							textOverflow: "ellipsis",
@@ -1087,6 +1203,22 @@ interface ChoiceGroupInlineProps {
 	 *  silently vanish on success. */
 	isSubmitting?: boolean;
 	onChange?: (value: string) => void;
+	// FIELD-STYLES: optional per-field overrides (AGENTS.md rule 83).
+	// Undefined values keep the existing engine-theme look exactly; only
+	// keys the author set in the field's Styles submenu take effect.
+	selectedBackgroundColor?: string;
+	selectedTextColor?: string;
+	selectedBorderColor?: string;
+	optionHoverBorderColor?: string;
+	optionBorderWidth?: number;
+	optionRadius?: number | string;
+	optionPaddingY?: number;
+	optionPaddingX?: number;
+	optionMinHeight?: number;
+	optionFont?: FramerFont;
+	/** Segmented variant only: track surface override (thumb uses
+	 *  selectedBackgroundColor via backgroundColor). */
+	trackBackground?: string;
 }
 
 function getInitialSelection(
@@ -1167,6 +1299,18 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		onChange,
 		isSubmitting = false,
 		showLabel = true,
+		// FIELD-STYLES: per-field overrides (undefined = engine default).
+		selectedBackgroundColor,
+		selectedTextColor: selectedTextColorOverride,
+		selectedBorderColor,
+		optionHoverBorderColor,
+		optionBorderWidth,
+		optionRadius,
+		optionPaddingY,
+		optionPaddingX,
+		optionMinHeight,
+		optionFont,
+		trackBackground,
 	} = props;
 
 	// W1-18-F1 fix: choice option hover/selection CSS transitions gated on
@@ -1183,6 +1327,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	);
 
 	const [measuredWidth, setMeasuredWidth] = React.useState<number>(320);
+	// PRERENDER-DEFER: gate for the width-measurement layout effect below.
+	const beInteractive = useBeInteractive();
 	const [internalSelected, setInternalSelected] = React.useState<string>(() =>
 		controlledValue !== undefined ? getInitialSelection(parsedOptions, controlledValue) : getInitialSelection(parsedOptions, defaultValue),
 	);
@@ -1335,6 +1481,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	}, [parsedOptions, controlledValue, defaultValue]);
 
 	useIsomorphicLayoutEffect(() => {
+		// PRERENDER-DEFER: width measurement is environment-dependent —
+		// the prerender browser's viewport baked ITS width into the
+		// served HTML while every client starts at the 320px guess
+		// (#418 attribute mismatches on the option wrappers). Defer the
+		// measurement to interactive clients; the guess is
+		// server-identical everywhere.
+		if (!beInteractive) return;
 		if (
 			typeof window !== "undefined" &&
 			typeof ResizeObserver !== "undefined"
@@ -1358,7 +1511,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			observer.observe(rootRef.current);
 			return () => observer.disconnect();
 		}
-	}, []);
+	}, [beInteractive]);
 
 	// W1-11-A11 fix: the window listeners below were duplicated here,
 	// re-implementing the shared T7-M3 `useKeyboardModality` hook.
@@ -1372,9 +1525,28 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	// it marks SELECTED state, not focus.
 	// PRIMARY-FOREGROUND: foreground for options rendered on the Primary
 	// (Accent) surface — semantic token, not a hard-coded white assumption.
-	const selectedTextColor = accentForegroundColor ?? TEXT_ON_ACCENT;
+	// FIELD-STYLES: the per-field Selected Text override wins when set; the
+	// per-field Font control's size replaces the historical 14px floor only
+	// when the author explicitly set it.
+	const selectedTextColor = selectedTextColorOverride ?? accentForegroundColor ?? TEXT_ON_ACCENT;
+	const selectedSurface = selectedBackgroundColor ?? accentColor;
+	const selectedRing = selectedBorderColor ?? accentColor;
+	const hoverRing = optionHoverBorderColor ?? selectedRing;
+	const optionBorder = optionBorderWidth ?? 1;
 	const compact = measuredWidth < COMPACT_BREAKPOINT;
-	const effectiveFontSize = Math.max(14, fontSize);
+	const effectiveFontSize =
+		optionFont?.fontSize != null
+			? fontPixelSize(optionFont.fontSize) ?? Math.max(14, fontSize)
+			: Math.max(14, fontSize);
+	const optionFontExtraStyle: React.CSSProperties = {
+		...(optionFont?.fontFamily ? { fontFamily: optionFont.fontFamily } : {}),
+		...(optionFont?.fontWeight != null ? { fontWeight: optionFont.fontWeight } : {}),
+		...(optionFont?.fontStyle ? { fontStyle: optionFont.fontStyle } : {}),
+		...(optionFont?.letterSpacing != null
+			? { letterSpacing: optionFont.letterSpacing }
+			: {}),
+		...(optionFont?.lineHeight != null ? { lineHeight: optionFont.lineHeight } : {}),
+	};
 	const columns = React.useMemo(() => {
 		if (measuredWidth >= CHOICE_COLUMNS_BREAKPOINT_WIDE) return 5;
 		if (measuredWidth >= CHOICE_COLUMNS_BREAKPOINT_MEDIUM) return 3;
@@ -1543,13 +1715,15 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				onFocus={() => React.startTransition(() => setFocusedIndex(index))}
 				onBlur={() => React.startTransition(() => setFocusedIndex(null))}
 				style={{
-					minHeight: TOUCH_TARGET_MIN,
+					minHeight: optionMinHeight ?? TOUCH_TARGET_MIN,
 					// FINAL-51 fix: width floor too — very short labels ("A",
 					// "1") previously produced hair-thin tap targets.
 					minWidth: TOUCH_TARGET_MIN,
-					borderRadius: radius,
-					border: `1px solid ${isSelected || isHovered ? accentColor : borderColor}`,
-					background: isSelected ? accentColor : backgroundColor,
+					borderRadius: optionRadius ?? radius,
+					border: `${optionBorder}px solid ${
+						isSelected ? selectedRing : isHovered ? hoverRing : borderColor
+                                        }`,
+					background: isSelected ? selectedSurface : backgroundColor,
 					color: option.disabled
 						? mutedTextColor
 						: isSelected
@@ -1580,11 +1754,12 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					// focus rings now come solely from that CSS rule. The
 					// remaining ring marks SELECTED state only.
 					boxShadow: isSelected
-						? `inset 0 0 0 1px ${accentColor}`
+						? `inset 0 0 0 1px ${selectedRing}`
 						: "none",
-					fontFamily: "inherit",
+					fontFamily: optionFont?.fontFamily ?? "inherit",
 					fontSize: effectiveFontSize,
 					lineHeight: 1.2,
+					...optionFontExtraStyle,
 					overflow: "hidden",
 					// W1-18-F1 fix: gated on prefers-reduced-motion.
 					transition: reducedMotion
@@ -1818,7 +1993,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				>
 					{parsedOptions.map((option, index) =>
 						renderOptionButton(option, index, {
-							padding: compact ? "10px 6px" : "10px 8px",
+							padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? (compact ? 6 : 8)}px`,
 							textAlign: "center",
 							minWidth: 0,
 						}),
@@ -1833,10 +2008,18 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 						const opt = parsedOptions.find((o) => optionValue(o) === val);
 						if (opt) selectOption(opt);
 					}}
-					borderRadius={16}
-					textColor={textColor}
-					mutedTextColor={mutedTextColor}
-					backgroundColor={backgroundColor}
+					// FIELD-STYLES: Background → track, Selected BG → thumb,
+					// Selected Border → thumb border, Radius → track radius
+					// (the thumb derives −3 via innerRadiusValue). Text Color →
+					// inactive segments, Selected Text → active segment.
+					borderRadius={optionRadius ?? 16}
+					textColor={selectedTextColor}
+					mutedTextColor={textColor}
+					backgroundColor={selectedSurface}
+					trackBackground={trackBackground}
+					thumbBorderColor={selectedRing}
+					optionPaddingX={optionPaddingX}
+					optionFont={optionFont}
 					borderColor={borderColor}
 					ariaLabel={label || choiceGroupAriaLabel || inputName}
 					disabled={isSubmitting}
@@ -1865,7 +2048,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 							justifyContent: "flex-start",
 							gap: 10,
 							textAlign: "left",
-							padding: "10px 14px",
+							padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? 14}px`,
 							flexShrink: 0,
 						}),
 					)}
@@ -1888,8 +2071,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				>
 					{parsedOptions.map((option, index) =>
 						renderOptionButton(option, index, {
-							padding: compact ? "10px 10px" : "10px 12px",
-							borderRadius: 999,
+							padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? (compact ? 10 : 12)}px`,
+							borderRadius: optionRadius ?? 999,
 							// FIX: allow any number of pills to wrap naturally.
 							// Narrow (<420) keeps 2 per row for readability;
 							// wide uses auto-sized pills that wrap as needed.
@@ -4387,13 +4570,23 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// engine's first onMonthChange already carries the real month).
 	const [clockReady, setClockReady] = React.useState(false);
 	const [today, setToday] = React.useState<Date>(() => HYDRATION_PLACEHOLDER_TODAY);
+	// PRERENDER-DEFER: the clock apply used to be an unconditional mount
+	// layout effect — correct for renderToString, but Framer's headless
+	// prerender runs effects too, so the served HTML carried the REAL
+	// prerender-day month/year while every visitor's first render computes
+	// the placeholder day (the exact #425 text mismatches in the h3 month
+	// header). Gate on the interactive-client flag: prerender (and
+	// pre-interaction automation) keeps the placeholder day baked, real
+	// visitors apply the real clock in this same pre-paint layout phase.
+	const beInteractive = useBeInteractive();
 	useIsomorphicLayoutEffect(() => {
+		if (!beInteractive) return;
 		setClockReady(true);
 		setToday(getTodayInTimeZone(timeZone));
 		// Mount-only: later timeZone swaps are handled by the scheduler
 		// effect below via its [timeZone] dependency.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	}, [beInteractive]);
 	React.useEffect(() => {
 		if (!clockReady || typeof window === "undefined") return;
 		// Midnight rollover must follow the visitor's local calendar date,
@@ -4556,6 +4749,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	const lastReadyKeyRef = React.useRef<string>("");
 
 	useIsomorphicLayoutEffect(() => {
+		// PRERENDER-DEFER: same determinism contract as the choice-field
+		// measurement — the 560px guess is server-identical everywhere; the
+		// real measurement waits for an interactive client (#418 on the
+		// datetime step's motion subtree came from the baked viewport width).
+		if (!beInteractive) return;
 		if (
 			typeof window !== "undefined" &&
 			typeof ResizeObserver !== "undefined"
@@ -4576,7 +4774,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			observer.observe(rootRef.current);
 			return () => observer.disconnect();
 		}
-	}, []);
+	}, [beInteractive]);
 
 	// T9-M10 fix: these prop->state sync effects only write when the
 	// incoming value is genuinely different. The click path already
@@ -4655,6 +4853,22 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		}
 		return null;
 	}, [calendarCells, visibleMonth, today, hasKnownAvailability]);
+	// DEFAULT-SELECTION (hard rule): first available date ON/AFTER
+	// visitor-local today across the ENTIRE loaded grid window. Unlike
+	// firstAvailableDate above this is NOT restricted to the visible month —
+	// calendarCells spans the leading/trailing adjacent-month rows and the
+	// slots fetch covers ±12 days beyond the month, so adjacent-window
+	// availability is the same normalized Cal.com source the grid renders.
+	// This is what makes "today unavailable late in the month" select the
+	// first available date in the following days/month instead of leaving
+	// nothing selected (AGENTS.md rule 78).
+	const firstAvailableDateFromToday = React.useMemo(() => {
+		for (const date of calendarCells) {
+			const isPast = startOfDay(date).getTime() < today.getTime();
+			if (!isPast && hasKnownAvailability(date)) return date;
+		}
+		return null;
+	}, [calendarCells, today, hasKnownAvailability]);
 	// H1 fix: this used to be `selectedDate ?? firstAvailableDate` with no
 	// check that `selectedDate` was actually inside the currently *visible*
 	// month. If a visitor picked a date, then paged to a different month,
@@ -4703,13 +4917,23 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// WAI-ARIA grid/roving-tabindex contract.
 	const activeDateKey = selectedOrFirstDateKey;
 
-	// Fix initial Today/selected logic: only select today if it's actually available.
-	// Uses visitor-local today and the same normalized Cal.com availability source
-	// that the grid uses. If today is unavailable, select the first available
-	// future date in the loaded window; if none, leave as null (no selection).
-	// Today marker stays on the real local date regardless of selection.
-	// Handles async availability: defers until clockReady and (for Cal.com) until
-	// availableDates/slots have loaded, avoiding a flash of unavailable selection.
+	// DEFAULT-SELECTION algorithm (hard rules 77/78 — never an isToday
+	// mirror, never an unavailable date):
+	//
+	//   visitor-local today
+	//   → today available/selectable  → select today
+	//   → otherwise → select the FIRST AVAILABLE date on/after today anywhere
+	//     in the loaded grid window (firstAvailableDateFromToday); when that
+	//     date lives in the adjacent-month window and the visitor has not
+	//     paged away, advance the visible month so the selection is in view
+	//   → no available future date in the loaded range → NO selected date
+	//
+	// Today (the dot marker) stays on the real visitor-local date in every
+	// branch — Today and Selected are independent states. The decision runs
+	// once per fresh visit (placeholderSelectedRef gate): a restored/saved
+	// date always wins and short-circuits this effect. Availability comes
+	// from the same normalized Cal.com set the grid renders, deferred while
+	// the fetch is in flight.
 	useIsomorphicLayoutEffect(() => {
 		if (!clockReady) return;
 		if (!placeholderSelectedRef.current) return;
@@ -4722,24 +4946,46 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		const isLoading = typeof slotsLoading !== "undefined" ? slotsLoading : false;
 		if (isCalcom && isLoading) return;
 		const todayAvailable = hasKnownAvailability(today);
-		if (todayAvailable) {
+		const defaultDate = todayAvailable ? today : firstAvailableDateFromToday;
+		if (defaultDate) {
 			placeholderSelectedRef.current = false;
-			setSelectedDate(today);
-		} else if (firstAvailableDate) {
-			placeholderSelectedRef.current = false;
-			setSelectedDate(firstAvailableDate);
+			React.startTransition(() => {
+				setSelectedDate(defaultDate);
+				// Keep the engine in sync so the time panel lists the
+				// selected day's times exactly like a visitor click.
+				onDateChange?.(defaultDate);
+			});
+			// Advance the visible month only while the calendar still
+			// sits on its self-seeded starting view (today's month, or
+			// the hydration placeholder if the self-seed hasn't committed
+			// in this same pass). A visitor who paged away during the
+			// fetch keeps their view — the selection still lands.
+			const untouched =
+				(visibleMonth.getFullYear() === today.getFullYear() &&
+					visibleMonth.getMonth() === today.getMonth()) ||
+				(visibleMonth.getFullYear() === 2024 &&
+					visibleMonth.getMonth() === 0);
+			if (
+				untouched &&
+				(defaultDate.getFullYear() !== visibleMonth.getFullYear() ||
+					defaultDate.getMonth() !== visibleMonth.getMonth())
+			) {
+				setVisibleMonth(
+					new Date(
+						defaultDate.getFullYear(),
+						defaultDate.getMonth(),
+						1,
+					),
+				);
+			}
 		} else if (isCalcom && !isLoading) {
-			// No available date in loaded window and we have known availability -> leave as null
+			// No available future date anywhere in the loaded window ->
+			// leave NO selected date (never select an unavailable date).
+			// The visitor can page forward to load further months.
 			placeholderSelectedRef.current = false;
 			setSelectedDate(null);
-		} else if (!isCalcom) {
-			// Demo mode without Cal.com: still select today even if hasKnownAvailability says unavailable?
-			// In demo, availableDates is undefined, so hasKnownAvailability is true, so we already handled todayAvailable.
-			// Fallback: select today
-			placeholderSelectedRef.current = false;
-			setSelectedDate(today);
 		}
-	}, [clockReady, today, hasKnownAvailability, firstAvailableDate, availableDates, slotsLoading]);
+	}, [clockReady, today, hasKnownAvailability, firstAvailableDateFromToday, availableDates, slotsLoading, visibleMonth, setVisibleMonth, onDateChange]);
 
 	// Diagnostics for initial-date logic (enable via window.__BE_DIAGNOSTICS__ = true or ?beDiagnostics=1)
 	React.useEffect(() => {
@@ -5303,7 +5549,6 @@ type FieldType =
 	// is never validated, and has no editable label/placeholder/etc.
 	| "calendar-widget";
 type FlowStatus = "in-progress" | "submitting" | "success" | "error";
-type ColorMode = "light" | "dark" | "auto";
 
 // T6-H4 fix: flowStatus is a tiny state machine. The guarded setter
 // (transitionFlowStatus) rejects impossible transitions - e.g. a future
@@ -5334,6 +5579,79 @@ interface FramerFont {
 	fontStyle?: string;
 	letterSpacing?: number | string;
 	lineHeight?: number | string;
+}
+
+// FIELD-STYLES (native compound controls): the value shape of Framer's
+// ControlType.Border, restricted to the keys this engine consumes. All
+// optional — Framer only includes what the author set. Per-side widths are
+// the compound control's segmented mode; the engine renders the max side so
+// a per-side author value still takes effect.
+interface FramerBorderStyle {
+	borderWidth?: number;
+	borderTopWidth?: number;
+	borderRightWidth?: number;
+	borderBottomWidth?: number;
+	borderLeftWidth?: number;
+	borderStyle?: string;
+	borderColor?: string;
+}
+
+// FIELD-STYLES (hard rule): the shared per-field style-override model behind
+// every field type's "Styles" submenu in the Framer panel. ONE architecture,
+// three control sets (input-like / choice / checkbox) that expose exactly the
+// subset meaningful for that field type — never fake controls. Every key is
+// optional: an unset key falls back to the engine theme token, so the default
+// appearance is preserved unless the author explicitly changes a value.
+// Per-field isolation: overrides live on the field's own config object and can
+// never affect another field (AGENTS.md).
+interface FieldStyleOverrides {
+	/** Control typography (input text / option labels). Weight is ignored
+	 *  on segmented options, which stay 600 per the shared-thumb rule. */
+	font?: FramerFont;
+	/** The field label's typography. */
+	labelFont?: FramerFont;
+	labelColor?: string;
+	/** Text/input content color — also option text on choice groups. */
+	textColor?: string;
+	/** Placeholder text color (inputs; the empty-select hint). Renders for
+	 *  real via the .be-input::placeholder CSS-variable rule and the
+	 *  select's empty-hint color branch — a first-class style, not a stub
+	 *  (AGENTS.md). */
+	placeholderColor?: string;
+	/** Input / option / segmented-track surface color. */
+	backgroundColor?: string;
+	/** NEW (native compound): one logical Border control — color, width and
+	 *  style in a single value. Wins over the legacy scalar keys below. */
+	border?: FramerBorderStyle;
+	/** LEGACY scalar border keys — still honored for instances saved before
+	 *  the compound Border control existed (and still written by the
+	 *  compound control's runtime shape on old canvases). */
+	borderColor?: string;
+	borderWidth?: number;
+	/** NEW (native compound): CSS radius string from ControlType.BorderRadius
+	 *  ("12px", or four per-corner values "12px 4px 12px 4px"). The legacy
+	 *  single-number form is still honored. */
+	radius?: number | string;
+	/** NEW (native compound): CSS padding string from ControlType.Padding
+	 *  ("10px 14px", per-side segmented forms supported). The legacy
+	 *  vertical/horizontal number pair is still honored. */
+	padding?: string;
+	/** LEGACY scalar padding keys — see `padding`. */
+	paddingY?: number;
+	paddingX?: number;
+	/** Focus/active border color (inset focus ring on .be-input). */
+	focusBorderColor?: string;
+	/** Minimum control height (inputs, options). */
+	minHeight?: number;
+	/** Label ↔ control ↔ error spacing inside the field column. */
+	spacing?: number;
+	/** Selected/active option surface (choice groups). */
+	selectedBackgroundColor?: string;
+	selectedTextColor?: string;
+	selectedBorderColor?: string;
+	/** Native checkbox accent + square size. */
+	accentColor?: string;
+	checkSize?: number;
 }
 
 interface FieldConfig {
@@ -5384,6 +5702,14 @@ interface FieldConfig {
 	// (matches / no match / invalid / ReDoS risk) evaluated with the exact
 	// same compiled regex the published flow uses. Never rendered live.
 	regexPreviewInput?: string;
+	// FIELD-STYLES (hard rule): per-field visual overrides. Three keys, ONE
+	// shared model (FieldStyleOverrides) — the panel shows exactly one
+	// "Styles" submenu per field type: input-like fields (text/email/phone/
+	// textarea/select) use `styles`, choice groups use `choiceStyles`,
+	// checkbox uses `checkStyles`. Unset keys keep the engine theme look.
+	styles?: FieldStyleOverrides;
+	choiceStyles?: FieldStyleOverrides;
+	checkStyles?: FieldStyleOverrides;
 }
 
 interface StepConfig {
@@ -5414,8 +5740,11 @@ interface BookingEngineStyleProps {
 	// root element — it is a platform surface, not an author-facing prop.
 	style?: React.CSSProperties;
 	styles: {
-		// Theme (formerly the top-level "Color Mode") - first entry in Styles.
-		theme: ColorMode;
+		// THEME-AGNOSTIC (hard rule): no component-level Light/Dark/Auto
+		// mode selector. The engine consumes ONE light/default semantic
+		// palette, configurable color-by-color below — website-level
+		// theme differences are the author's job via Framer Color
+		// Variables assigned to these controls (see AGENTS.md).
 		accentColor: string;
 		// PRIMARY-FOREGROUND: semantic On-Primary token for text/icons
 		// rendered directly on Primary/Accent-colored surfaces (selected
@@ -5436,6 +5765,11 @@ interface BookingEngineStyleProps {
 		// lie. All consumers (CalendarCell/Grid, TimeSlotButton/List,
 		// StepBody/ReviewStepBody/FieldRenderer) are widened to match.
 		borderRadius: string | number;
+		// FIELD-GAP (hard rule): spacing between fields in the field grid.
+		// Single source of truth — control default 16px, range 0–32px,
+		// clamped again at runtime (same dual enforcement as Radius).
+		// Replaces the old hard-coded 12px grid gap (AGENTS.md).
+		gap?: number;
 	};
 	font: FramerFont;
 	// Animation — variant (style) + duration (speed). Variant is the single
@@ -5689,10 +6023,10 @@ interface BookingEngineConfigProps {
 	// distinct key so their autosaved sessions don't collide. Autosave
 	// itself is always-on (AGENTS.md rule 7); this only namespaces it.
 	sessionStorageKey?: string;
-	// W2-23-N1 fix: meeting-duration fallback (ms) for ICS exports,
-	// Google/Outlook deep links, and the success screen when the Cal.com
-	// slot carries no end.
-	defaultMeetingDurationMs?: number;
+	// DURATION-SOURCE (hard rule): removed — Cal.com event metadata is the
+	// single source of truth for the meeting duration. There is no
+	// author-facing duration fallback control and no props fallback; see
+	// `meetingDurationMs` in the state hook.
 	// T10-M1 fix: analytics hook. The component fires a small set of events
 	// with serializable payloads - `step_complete`, `booking_submitted`,
 	// `booking_success`, `booking_error` - through this callback. No
@@ -5779,25 +6113,14 @@ const DEFAULT_ICS_FILENAME = "Booking Appointment.ics";
 // path). Internal compatibility detail — not a Property Control.
 const DEFAULT_ICS_UID_DOMAIN = "@booking-engine";
 
-// FINAL-65 fix: annotated with the shared Theme mapped type (plus the
-// legacy borderRadius extra this literal has always carried).
-const DEFAULT_DARK_THEME: Theme & { borderRadius: string } = {
-	// Default dark-mode palette. Pure defaults — the author can override
-	// every colour here, and the component renders exactly what is
-	// configured. No colour is derived from or judged against another.
-	accentColor: "#4F8EF7",
-	// PRIMARY-FOREGROUND: On-Primary stays white on the dark default accent —
-	// an independent semantic value, never derived from the accent colour.
-	accentForegroundColor: "#FFFFFF",
-	backgroundColor: "#0F1115",
-	surfaceColor: "#1A1D23",
-	textPrimaryColor: "#FFFFFF",
-	textSecondaryColor: "#9CA3AF",
-	borderColor: "#2A2D34",
-	errorColor: "#F87171",
-	successColor: "#16A34A",
-	borderRadius: "12px",
-};
+// THEME-AGNOSTIC (hard rule): the old DEFAULT_DARK_THEME palette, the
+// `ColorMode` ("light" | "dark" | "auto") prop and the prefers-color-scheme
+// listener were removed. The Booking Engine is theme-agnostic at the
+// component level: it exposes ONE light/default semantic palette through the
+// Styles color controls and renders exactly the values the author configures.
+// Website-level dark-mode designs are handled by the author assigning Framer
+// Color Variables to those controls — the engine never owns the mode
+// decision and never switches palettes itself (see AGENTS.md).
 
 // NOTE (TZ-TIME-HARD-RULE): the old `COMMON_TIMEZONES` list was removed
 // along with the "Time Zones" Properties-Controls array — the visitor's time
@@ -5928,7 +6251,14 @@ function detectTimezone(): string {
 // changes mid-session, so one mount-time read is enough.
 function useCoarsePointer(): boolean {
 	const [coarse, setCoarse] = React.useState<boolean>(false);
+	// PRERENDER-DEFER: the prerender browser always reports a fine pointer,
+	// so an unconditional mount read baked `false` into the served HTML —
+	// which happens to equal the initial state. Keep that guarantee
+	// explicit: the read waits for an interactive client, so the served
+	// markup can never diverge from the visitor's first render.
+	const beInteractive = useBeInteractive();
 	React.useEffect(() => {
+		if (!beInteractive) return;
 		if (
 			typeof window === "undefined" ||
 			typeof window.matchMedia !== "function"
@@ -5939,7 +6269,7 @@ function useCoarsePointer(): boolean {
 		} catch {
 			// non-fatal: fine-pointer rendering is the safe default
 		}
-	}, []);
+	}, [beInteractive]);
 	return coarse;
 }
 
@@ -6532,6 +6862,193 @@ function monthCacheKey(
 // `useCalcomSlots` and `submitCalcomBooking` both default to it.
 const FETCH_TIMEOUT_MS = 18000;
 
+// =============================================================================
+// BE-DIAG (scoped booking diagnostics — removable)
+// =============================================================================
+// Concise, structured console diagnostics for the Cal.com request lifecycle
+// and the booking POST. Deliberately NOT a Property Control: it exists to
+// make the request/submit behavior observable in the browser console without
+// touching the author-facing panel. Disable with `window.__BE_DIAG__ = false`
+// (e.g. from a snippet or a console one-liner); the default is ON because an
+// unnoticed failure is what shipped here before. Every event is one
+// console.info line with a stable `[BookingEngine]` prefix and a JSON-ish
+// payload that NEVER contains the API key (not even a fingerprint) and never
+// contains visitor field values (only shapes/lengths/presence).
+const BE_DIAG_PREFIX = "[BookingEngine]";
+
+function beDiagEnabled(): boolean {
+	if (typeof window === "undefined") return false;
+	const w = window as unknown as { __BE_DIAG__?: boolean };
+	return w.__BE_DIAG__ !== false;
+}
+
+function beDiag(event: string, data: Record<string, unknown>): void {
+	if (!beDiagEnabled()) return;
+	try {
+		console.info(`${BE_DIAG_PREFIX} ${event}`, data);
+	} catch {
+		// Diagnostics must never break the flow (frozen console, weird
+		// embedders). Swallow silently — this is observability, not state.
+	}
+}
+
+// Edge-case guard: some embedding environments strip/nominalize
+// `console.info`. Route through whatever exists so the diag lines still land.
+if (typeof console !== "undefined" && typeof console.info !== "function") {
+	console.info = console.log.bind(console);
+}
+
+// Cross-request rate-limit memory. When ANY Cal.com call gets a 429, the
+// timestamp lands here; the booking POST's catch consults it so an opaque
+// network-layer failure (browser blocked a non-CORS 429 response →
+// TypeError "Failed to fetch") is reported as the rate-limit category it
+// almost certainly is, instead of the dishonest "check your connection".
+const CAL_RATE_LIMIT_MEMORY_MS = 90 * 1000;
+let lastCalRateLimitAt = 0;
+function noteCalRateLimit(): void {
+	lastCalRateLimitAt = Date.now();
+}
+function recentCalRateLimit(): boolean {
+	return (
+		lastCalRateLimitAt > 0 &&
+		Date.now() - lastCalRateLimitAt < CAL_RATE_LIMIT_MEMORY_MS
+	);
+}
+
+// =============================================================================
+// PRERENDER-DEFER (React #418/#425/#422 hard fix)
+// =============================================================================
+// Framer serves real browsers HTML captured from a HEADLESS browser in which
+// component effects have ALREADY run (proven by the served ids in the
+// hydration audit). Any effect that updates RENDERED state — the visitor
+// clock, the calendar's self-seeded month, width measurement, Cal.com
+// fetches — therefore bakes prerender-time values into the served HTML, and
+// no visitor's first client render can reproduce them: the exact minified
+// #425 (month/year text), #418 (wrapper/aside/style attributes) and #422
+// recovery errors this page logged.
+//
+// The fix is a single "interactive client" gate: every environment-dependent
+// effect consults it and stays at its initial (server-identical) value until
+// the page is a REAL, interactive client. The prerendering automation browser
+// (navigator.webdriver === true — Puppeteer/Playwright set it) NEVER flips it
+// on its own, so the served HTML is a pure function of initial state, which
+// is byte-identical to every visitor's first render. Real visitors flip it
+// in a microtask right after module evaluation — i.e. before the first
+// effects flush, still after the hydration comparison, which only inspects
+// render output (the gate never appears in markup). QA automation that never
+// qualifies gets the same deterministic first paint and flips the gate on
+// its first real interaction.
+//
+// The renderToString variant (curl / no-store fetches) already matches: its
+// effects never run at all.
+let BE_INTERACTIVE = false;
+const BE_INTERACTIVE_LISTENERS = new Set<() => void>();
+
+function beSetInteractive(): void {
+	if (BE_INTERACTIVE) return;
+	BE_INTERACTIVE = true;
+	for (const listener of Array.from(BE_INTERACTIVE_LISTENERS)) {
+		try {
+			listener();
+		} catch {
+			// A throwing listener must not block the others.
+		}
+	}
+}
+
+function detectAutomationPrerender(): boolean {
+	if (typeof navigator === "undefined") return false;
+	try {
+		return navigator.webdriver === true;
+	} catch {
+		return false;
+	}
+}
+
+if (typeof window !== "undefined") {
+	if (detectAutomationPrerender()) {
+		// Prerender/automation browser: only a genuine interaction (which
+		// crawlers never perform) may flip the gate. This keeps the gate OFF
+		// while the prerenderer captures its HTML.
+		window.addEventListener("pointerdown", beSetInteractive, {
+			once: true,
+			capture: true,
+		});
+		window.addEventListener("keydown", beSetInteractive, {
+			once: true,
+			capture: true,
+		});
+	} else {
+		// Real visitor: flip as soon as the module evaluates — a microtask so
+		// the hydration render itself still observes the initial (false) value
+		// and the gate is true by the time mount effects flush.
+		Promise.resolve().then(beSetInteractive);
+		// Belt-and-suspenders: extremely lazy bundles can hydrate after the
+		// microtask queue drained; the first interaction covers any residual.
+		window.addEventListener("pointerdown", beSetInteractive, {
+			once: true,
+			capture: true,
+		});
+		window.addEventListener("keydown", beSetInteractive, {
+			once: true,
+			capture: true,
+		});
+	}
+}
+
+/** PRERENDER-DEFER: subscribe to the interactive gate. Returns `false` during
+ *  SSR, the headless prerender, and (pre-interaction) QA automation; `true`
+ *  for real visitors from the first effect flush onward. Effects that update
+ *  rendered state must no-op while this is `false` — their state then stays
+ *  at the server-identical initial value, which is what the served HTML
+ *  contains. */
+function useBeInteractive(): boolean {
+	const [interactive, setInteractive] = React.useState(BE_INTERACTIVE);
+	React.useEffect(() => {
+		if (BE_INTERACTIVE) {
+			// Flipped before this component mounted — sync without waiting.
+			setInteractive(true);
+			return;
+		}
+		const listener = () => setInteractive(true);
+		BE_INTERACTIVE_LISTENERS.add(listener);
+		return () => {
+			BE_INTERACTIVE_LISTENERS.delete(listener);
+		};
+	}, []);
+	return interactive;
+}
+
+// DETERMINISTIC-LIFECYCLE: module-level month-keyed slots cache, shared by
+// every useCalcomSlots instance on the page (multi-instance sites included —
+// the key already contains apiKey/eventTypeId/apiBase/timeZone/month). A
+// remount of the same page re-reads this cache instead of re-firing the GET;
+// entries still expire via the TTL at the read site.
+const calSlotsCache = new Map<
+	string,
+	{
+		slots: Array<{
+			value: string;
+			label: string;
+			end?: string;
+			minutes: number;
+		}>;
+		fetchedAt: number;
+	}
+>();
+
+// DETERMINISTIC-LIFECYCLE: cross-instance in-flight dedup. Identical
+// concurrent availability requests (same month key) share ONE network
+// round-trip: the first caller registers a promise; a later effect run
+// (remount, dep echo) FOLLOWS it and applies the outcome through its own
+// state setters instead of firing a duplicate GET. Entries are removed when
+// the request settles. This is the mechanism that makes the request
+// lifecycle idempotent for identical inputs without any retry/timeout tuning.
+interface CalSlotsOutcome {
+	error: string | null;
+}
+const calSlotsInflight = new Map<string, Promise<CalSlotsOutcome>>();
+
 // W1-05-F-04 fix: slots cache entries are considered stale after 5 minutes
 // (long enough to make month paging feel instant, short enough that a
 // long-lived tab never offers already-elapsed slots as selectable). Internal
@@ -6592,6 +7109,11 @@ function useCalcomSlots(
 	// `Authorization: Bearer` header) can no longer leak into static-export
 	// bundles.
 	const isStaticRender = useIsStaticRenderer();
+	// PRERENDER-DEFER: no availability network traffic before the client is
+	// real (interactive). Combined with the parent's reached-gate, a slots
+	// GET now fires exactly once per (config, month, timezone) when the
+	// visitor is actually on the Calendar step.
+	const beInteractive = useBeInteractive();
 	const [slots, setSlots] = React.useState<
 		Array<{ value: string; label: string; end?: string; minutes: number }>
 	>([]);
@@ -6611,6 +7133,11 @@ function useCalcomSlots(
 	// long-lived tab crossing midnight (or an event-type's schedule editing)
 	// doesn't keep offering already-elapsed slots as selectable — the read
 	// site below refetches entries older than SLOTS_CACHE_TTL_MS.
+	// DETERMINISTIC-LIFECYCLE: the cache is now MODULE-level (shared across
+	// remounts of the same page — Framer breakpoint switches, canvas
+	// re-parents) so a remount re-reads the fresh cache instead of firing a
+	// second GET for a month this page just fetched. Identity semantics are
+	// unchanged (same key, same TTL).
 	const cacheRef = React.useRef<
 		Map<
 			string,
@@ -6624,7 +7151,7 @@ function useCalcomSlots(
 				fetchedAt: number;
 			}
 		>
-	>(new Map());
+	>(calSlotsCache);
 	// T3-H4 fix: see UseCalcomSlotsResult.refetch — a bump re-runs the fetch
 	// effect below exactly as if the month had changed.
 	const [refreshNonce, setRefreshNonce] = React.useState(0);
@@ -6664,6 +7191,14 @@ function useCalcomSlots(
 			setLoading(false);
 			return;
 		}
+		// PRERENDER-DEFER: no availability GET before the client is
+		// real. The gate flips post-hydration on real visitors, so the
+		// first eligible fetch happens in the same effect pass as
+		// before — just never during SSR/prerender/automation.
+		if (!beInteractive) {
+			setLoading(false);
+			return;
+		}
 
 		const monthKey = monthCacheKey(
 			monthStart,
@@ -6676,13 +7211,64 @@ function useCalcomSlots(
 		// W1-05-F-04 fix: honor the TTL — a fresh-enough entry short-circuits
 		// the fetch; a stale one falls through and is replaced below.
 		if (cached && Date.now() - cached.fetchedAt < cacheTtl) {
+			beDiag("cal:slots:cache-hit", {
+				trigger: "month-effect",
+				month: monthKey.slice(0, 7),
+				timeZone,
+				ageMs: Date.now() - cached.fetchedAt,
+			});
 			setSlots(cached.slots);
 			setLoading(false);
 			setError(null);
 			return;
 		}
+		// DETERMINISTIC-LIFECYCLE: same month already in flight — follow
+		// it and apply the shared outcome instead of racing a duplicate
+		// GET. The leader writes the cache on success, so a settle-time
+		// cache read covers the happy path; the outcome carries the
+		// error copy for the failure path.
+		const inflight = calSlotsInflight.get(monthKey);
+		if (inflight) {
+			beDiag("cal:slots:dedup", {
+				trigger: "month-effect",
+				month: monthKey.slice(0, 7),
+				timeZone,
+			});
+			setLoading(true);
+			setError(null);
+			inflight.then((outcome) => {
+				if (cancelled) return;
+				const fresh = cacheRef.current.get(monthKey);
+				if (fresh) {
+					setSlots(fresh.slots);
+					setError(null);
+				} else if (outcome.error) {
+					setError(outcome.error);
+					setSlots([]);
+				}
+				setLoading(false);
+			});
+			return () => {
+				cancelled = true;
+			};
+		}
 
 		let cancelled = false;
+		// DETERMINISTIC-LIFECYCLE: register this fetch as the in-flight
+		// leader BEFORE the first attempt goes out; every settle path
+		// (success/failure/abort-cleanup) must resolve the promise and
+		// remove the entry so a later run can fetch again.
+		let resolveInflight!: (outcome: CalSlotsOutcome) => void;
+		const inflightPromise = new Promise<CalSlotsOutcome>((resolve) => {
+			resolveInflight = resolve;
+		});
+		calSlotsInflight.set(monthKey, inflightPromise);
+		const settleInflight = (outcome: CalSlotsOutcome): void => {
+			if (calSlotsInflight.get(monthKey) === inflightPromise) {
+				calSlotsInflight.delete(monthKey);
+			}
+			resolveInflight(outcome);
+		};
 		// T3-I6 fix: a 500/502/503 from Cal.com used to drop straight into
 		// the same error screen as a real failure — a transient server
 		// outage became visitor friction that needed a manual retry. Retry
@@ -6741,6 +7327,17 @@ function useCalcomSlots(
 		// from, briefly indistinguishable from real availability for the
 		// new month.
 		setSlots([]);
+
+		// BE-DIAG: one line per availability GET — trigger, inputs,
+		// cache verdict. Never the API key.
+		beDiag("cal:slots:fetch", {
+			trigger: "month-effect",
+			endpoint: "GET /v2/slots",
+			eventTypeId,
+			month: monthKey.slice(0, 7),
+			timeZone,
+			cache: "miss",
+		});
 
 		// CC-15 fix: neither the fetch itself nor a cancelled request was
 		// ever actually aborted before — the `cancelled` flag only stopped
@@ -6902,18 +7499,21 @@ function useCalcomSlots(
 						// slot.
 						.filter((slot) => !Number.isNaN(slot.minutes))
 						.sort((a, b) => (a.value < b.value ? -1 : 1));
-					if (cancelled) return;
 					// W1-05-F-04 fix: stamp the entry with its fetch time so the
 					// TTL check at the read site can expire it.
 					cacheRef.current.set(monthKey, {
 						slots: mapped,
 						fetchedAt: Date.now(),
 					});
+					// DETERMINISTIC-LIFECYCLE: followers are released FIRST and
+					// unconditionally — a cancelled leader must never leave a
+					// follower hanging on the shared in-flight promise.
+					settleInflight({ error: null });
+					if (cancelled) return;
 					setSlots(mapped);
 					setLoading(false);
 				})
 				.catch((err: unknown) => {
-					if (cancelled) return;
 					// W1-15-TS-08 fix: HTTP failures now arrive as the named
 					// `HttpFetchError` — `instanceof` gives typed
 					// status/retryAfterSeconds with no structural projection;
@@ -6938,6 +7538,7 @@ function useCalcomSlots(
 					// Do not "fix" this asymmetry without a server-side
 					// idempotency story.
 					if (
+						!cancelled &&
 						!timedOut &&
 						typeof status === "number" &&
 						status >= 500 &&
@@ -6965,6 +7566,10 @@ function useCalcomSlots(
 						// tell a temporary quota block from a real outage.
 						// W2-25-F6 fix: when the response carried a Retry-After
 						// hint, surface it instead of the vague "wait a moment".
+						// BE-DIAG + rate-limit memory: a readable 429 stamps the
+						// cross-request memory so a later CORS-opaque failure can
+						// be classified honestly.
+						noteCalRateLimit();
 						const waitSeconds =
 							typeof httpErr?.retryAfterSeconds === "number"
 								? httpErr.retryAfterSeconds
@@ -6994,10 +7599,20 @@ function useCalcomSlots(
 								? copy.slotsFallbackError
 								: plainErr instanceof TypeError ||
 									  plainErr?.name === "TypeError"
-									? copy.networkError
+									? // DETERMINISTIC-LIFECYCLE (honesty): a TypeError right
+									// after a readable 429 is almost always the browser
+									// blocking a non-CORS 429 response — report the
+									// rate-limit category, not "check your connection".
+									recentCalRateLimit()
+										? copy.slotsRateLimitGenericError
+										: copy.networkError
 									: fallbackErrorLabel || copy.slotsFallbackError;
 					}
 					setError(message);
+					// DETERMINISTIC-LIFECYCLE: release followers with the real
+					// outcome before the (possibly cancelled) leader state write.
+					settleInflight({ error: message });
+					if (cancelled) return;
 					setSlots([]);
 					setLoading(false);
 				})
@@ -7010,6 +7625,13 @@ function useCalcomSlots(
 		return () => {
 			cancelled = true;
 			controller.abort();
+			// DETERMINISTIC-LIFECYCLE: if this leader is torn down before
+			// settling (unmount / dep change), release any followers
+			// instead of leaving them on a promise that resolves only via
+			// the aborted chain's catch.
+			if (calSlotsInflight.get(monthKey) === inflightPromise) {
+				settleInflight({ error: null });
+			}
 			backoffTimers.forEach((id) => {
 				window.clearTimeout(id);
 			});
@@ -7026,6 +7648,10 @@ function useCalcomSlots(
 		monthStart,
 		timeZone,
 		refreshNonce,
+		// PRERENDER-DEFER: the interactive gate is part of the fetch
+		// contract — flipping it re-runs the effect so the first real
+		// client fetch happens in the same pass.
+		beInteractive,
 		fallbackErrorLabel,
 		errorCopy,
 		timeoutMs,
@@ -7378,6 +8004,14 @@ function useCalcomEventMeta(params: {
 }): { status: CalEventMetaStatus; meta: CalEventMeta | null; bookingFields: CalBookingField[] } {
 	const { enabled, apiKey, eventTypeId, apiBaseUrl } = params;
 	// Deterministic initializer: identical on server and client first render.
+	// PRERENDER-DEFER note: `enabled` now includes the interactive gate, so
+	// the initial status is "disabled" in the served HTML AND in the
+	// visitor's first render; it transitions to "loading" when the gate
+	// flips post-hydration. The headless prerender can no longer fire this
+	// GET at publish time (the eager metadata fetch was part of the 429
+	// cascade), while real visitors still get metadata immediately after
+	// hydration — early enough for the required-field auto-injection and
+	// the info panel.
 	const [status, setStatus] = React.useState<CalEventMetaStatus>(() =>
 		enabled ? "loading" : "disabled",
 	);
@@ -7392,12 +8026,24 @@ function useCalcomEventMeta(params: {
 		}
 		const cached = calEventMetaCache.get(cacheKey);
 		if (cached && Date.now() - cached.fetchedAt < EVENT_META_CACHE_TTL_MS) {
+			beDiag("cal:meta:cache-hit", {
+				trigger: "enabled-effect",
+				eventTypeId,
+			});
 			setMeta(cached.meta);
 			setBookingFields(cached.bookingFields || []);
 			setStatus(cached.meta || cached.bookingFields.length ? "ready" : "failed");
 			return;
 		}
 		setStatus("loading");
+		// BE-DIAG: one line per metadata GET — trigger + inputs, never
+		// the API key.
+		beDiag("cal:meta:fetch", {
+			trigger: "enabled-effect",
+			endpoint: "GET /v2/event-types/{id}",
+			eventTypeId,
+			cache: "miss",
+		});
 		let cancelled = false;
 		fetchCalEventTypeMeta({ apiKey, eventTypeId, apiBaseUrl }).then((res) => {
 			if (cancelled) return;
@@ -7407,11 +8053,21 @@ function useCalcomEventMeta(params: {
 				setMeta(res.meta);
 				setBookingFields(res.bookingFields);
 				setStatus("ready");
+				beDiag("cal:meta:status", {
+					status: "ready",
+					eventTypeId,
+					hasMeta: res.meta !== null,
+					bookingFieldCount: res.bookingFields.length,
+				});
 			} else {
 				// No meta and no fields -> treat as failed, but keep empty fields
 				setMeta(null);
 				setBookingFields([]);
 				setStatus("failed");
+				beDiag("cal:meta:status", {
+					status: "failed",
+					eventTypeId,
+				});
 			}
 		});
 		return () => {
@@ -7570,12 +8226,46 @@ async function submitCalcomBooking(params: {
 	// W2-25-F10 fix: fail fast on a dead connection instead of firing a
 	// doomed POST and then surfacing the generic network error.
 	if (typeof navigator !== "undefined" && navigator.onLine === false) {
+		beDiag("booking:abort-offline", { endpoint: "POST /v2/bookings" });
 		return {
 			success: false,
 			error: copy.offlineError,
 			errorCode: "OFFLINE",
 		};
 	}
+	// BE-DIAG: attempt start — endpoint/type, non-sensitive inputs, and the
+	// payload SHAPE (key list only; never field values, never the API key).
+	const payloadPreview = {
+		eventTypeId: parsedEventTypeId,
+		start: slotStart,
+		hasEnd: Boolean(
+			slotEnd && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slotEnd),
+		),
+		attendeeKeys: ["name", "email", "timeZone", "language"],
+		hasNotes: Boolean(notes),
+		bookingFieldsResponseKeys: bookingFieldsResponses
+			? Object.keys(bookingFieldsResponses)
+			: [],
+	};
+	beDiag("booking:attempt", {
+		endpoint: "POST /v2/bookings",
+		eventTypeId: parsedEventTypeId,
+		slotStart,
+		slotEnd: payloadPreview.hasEnd ? slotEnd : null,
+		payloadKeys: Object.keys({
+			eventTypeId: 1,
+			start: 1,
+			end: payloadPreview.hasEnd ? 1 : 0,
+			attendee: 1,
+			metadata: 1,
+			notes: 1,
+			...(payloadPreview.bookingFieldsResponseKeys.length
+				? { bookingFieldsResponses: 1 }
+				: {}),
+		}),
+		bookingFieldsResponseKeys: payloadPreview.bookingFieldsResponseKeys,
+		idempotency: Boolean(idempotencyKey),
+	});
 	try {
 		const res = await fetch(`${apiBase}/v2/bookings`, {
 			method: "POST",
@@ -7702,6 +8392,19 @@ async function submitCalcomBooking(params: {
 					}
 				}
 				if (retryAfterSeconds && retryAfterSeconds > 0) {
+					// BE-DIAG + rate-limit memory: a readable 429 is the
+					// anchor fact — later opaque failures get classified
+					// against it.
+					noteCalRateLimit();
+					beDiag("booking:failure", {
+						endpoint: "POST /v2/bookings",
+						httpStatus: res.status,
+						category: "rate-limit",
+						errorCode: code || "RATE_LIMIT_EXCEEDED",
+						retryAfterSeconds,
+						calcomMessage:
+							typeof apiError === "string" ? apiError : undefined,
+					});
 					return {
 						success: false,
 						error: copy.slotsRateLimitTemplate.replace(
@@ -7715,6 +8418,27 @@ async function submitCalcomBooking(params: {
 				}
 			}
 			if (apiError) {
+				// BE-DIAG: preserve Cal.com's own structured error — this is
+				// the code/message the failure report must carry verbatim.
+				beDiag("booking:failure", {
+					endpoint: "POST /v2/bookings",
+					httpStatus: res.status,
+					category:
+						res.status === 429
+							? "rate-limit"
+							: res.status >= 500
+								? "server"
+								: res.status === 401 || res.status === 403
+									? "credentials"
+									: "calcom-validation",
+					errorCode: code || undefined,
+					calcomMessage: String(apiError),
+				});
+				if (res.status === 429) {
+					// A readable 429 that reached this branch (no Retry-After
+					// header) still stamps the cross-request memory.
+					noteCalRateLimit();
+				}
 				return {
 					success: false,
 					error: String(apiError),
@@ -7726,6 +8450,23 @@ async function submitCalcomBooking(params: {
 			// use the author-facing template; it is already visitor-facing
 			// copy, so flag it to skip the consumer's mapper (which would
 			// otherwise degrade it to the generic fallback).
+			if (res.status === 429) {
+				noteCalRateLimit();
+			}
+			beDiag("booking:failure", {
+				endpoint: "POST /v2/bookings",
+				httpStatus: res.status,
+				category:
+					res.status === 429
+						? "rate-limit"
+						: res.status >= 500
+							? "server"
+							: res.status === 401 || res.status === 403
+								? "credentials"
+								: "calcom-validation",
+				errorCode: code || undefined,
+				calcomMessage: null,
+			});
 			return {
 				success: false,
 				error: copy.httpStatusTemplate.replace("{status}", String(res.status)),
@@ -7797,6 +8538,11 @@ async function submitCalcomBooking(params: {
 			json?.data?.booking?.cancelUrl ||
 			json?.data?.cancelUrl ||
 			json?.cancelUrl;
+		// BE-DIAG: success carries the booking UID (never field values).
+		beDiag("booking:success", {
+			endpoint: "POST /v2/bookings",
+			bookingUid: uid,
+		});
 		return {
 			success: true,
 			error: null,
@@ -7820,15 +8566,52 @@ async function submitCalcomBooking(params: {
 		// parse above is tolerant, so this branch primarily future-proofs
 		// against readJson-based callers.)
 		const malformed = errObj?.message === MALFORMED_JSON_ERROR;
+		// TASK-6 HONESTY FIX: the browser throws TypeError "Failed to
+		// fetch" BOTH for real connectivity loss AND for any response it
+		// is not allowed to read — including a 429 whose CORS headers
+		// are missing. When ANY Cal.com call got a readable 429 recently,
+		// classifying this opaque failure as a rate limit (with the
+		// wait-and-retry copy) is the truthful category; "check your
+		// connection" was the copy that shipped when the real cause was
+		// the request cascade.
+		const opaqueAfterRateLimit =
+			!timedOut &&
+			!malformed &&
+			(errObj instanceof TypeError || errObj?.name === "TypeError") &&
+			recentCalRateLimit();
 		const mappedError = timedOut
 			? copy.submitTimeoutError
 			: malformed
 				? copy.malformedResponseError
+				: opaqueAfterRateLimit
+					? copy.slotsRateLimitGenericError
 				: mapCalcomError(
 						errObj?.message || "",
 						errObj?.code || errObj?.errorCode,
 						copy,
 					);
+		// BE-DIAG: the structured failure — category, machine code, and
+		// the raw Cal.com message when one exists.
+		beDiag("booking:failure", {
+			endpoint: "POST /v2/bookings",
+			category: timedOut
+				? "timeout"
+				: malformed
+					? "malformed-response"
+					: opaqueAfterRateLimit
+						? "rate-limit"
+						: "network",
+			errorCode:
+				timedOut
+					? "TIMEOUT"
+					: malformed
+						? MALFORMED_JSON_ERROR
+						: opaqueAfterRateLimit
+							? "RATE_LIMIT_EXCEEDED"
+							: errObj?.code || errObj?.errorCode || undefined,
+			rawError: errObj?.message,
+			recentRateLimit: recentCalRateLimit(),
+		});
 		return {
 			success: false,
 			// T3-H2 fix: route non-timeout network errors through the same
@@ -7840,6 +8623,8 @@ async function submitCalcomBooking(params: {
 				? "TIMEOUT"
 				: malformed
 					? MALFORMED_JSON_ERROR
+					: opaqueAfterRateLimit
+						? "RATE_LIMIT_EXCEEDED"
 					: errObj?.code || errObj?.errorCode || "",
 			// W1-06-F-06-4 fix: the string above is already visitor-facing
 			// copy — flag it so handleSubmitBooking's mapCalcomError pass
@@ -8719,7 +9504,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// Destructure style tokens from the grouped Styles object.
 	const {
-		theme: themeSetting,
 		accentColor,
 		// PRIMARY-FOREGROUND: independent On-Primary token (see Styles control).
 		accentForegroundColor,
@@ -8744,8 +9528,16 @@ function useBookingEngineState(props: BookingEngineProps) {
 		return Math.max(0, Math.min(24, Math.round(n)));
 	}, [borderRadius]);
 	const sanitizedRadius = `${sanitizedRadiusValue}px`;
-	// Defensive fallback for instances created before the prop moved.
-	const colorMode: ColorMode = themeSetting || "light";
+	// FIELD-GAP: runtime clamp mirrors the control range (default 16px,
+	// 0–32) so a programmatic value outside the range never reaches the DOM
+	// — the same dual enforcement (control + runtime) the Radius token
+	// uses. This single value drives the field-grid spacing in StepBody;
+	// there is no second gap control (AGENTS.md hard rule).
+	const fieldGap = React.useMemo(() => {
+		const raw = Number(styles?.gap);
+		const n = Number.isFinite(raw) ? raw : 16;
+		return Math.max(0, Math.min(32, Math.round(n)));
+	}, [styles?.gap]);
 	// Progress settings (grouped object control). Defaults keep
 	// previous instances behaving exactly as before.
 	const progressVisible = progressBar?.visible !== false;
@@ -8808,13 +9600,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const calApiBaseUrl = (
 		props.calApiBaseUrl ?? DEFAULT_CAL_API_BASE_URL
 	).replace(/\/+$/, "");
-	// W2-23-N1 fix: author-tunable fallback meeting duration (ICS export,
-	// deep links, success screen) when Cal.com's slot carries no end.
-	const meetingDurationMs =
-		typeof props.defaultMeetingDurationMs === "number" &&
-		props.defaultMeetingDurationMs > 0
-			? props.defaultMeetingDurationMs
-			: DEFAULT_MEETING_DURATION_MS;
+	// DURATION-SOURCE (hard rule): the author-tunable
+	// `defaultMeetingDurationMs` Property Control AND its props fallback are
+	// removed. The meeting duration now resolves in ONE place — after the
+	// Cal.com event metadata hook below — from `calEventMeta.durationMinutes`;
+	// until metadata arrives, the module-level DEFAULT_MEETING_DURATION_MS
+	// constant (not a control, not a prop) keeps ICS/deep-links/success-screen
+	// behavior stable. Cal.com is the single source of truth.
 
 	// T5-M8 fix: honor the visitor's prefers-reduced-motion setting - the
 	// step fades/glides, the progress-bar spring, and the toggle slider all
@@ -8847,38 +9639,12 @@ function useBookingEngineState(props: BookingEngineProps) {
 		? (rawVariant as TransitionVariantId)
 		: "blurScale";
 
-	// Resolve colorMode → effective palette. "auto" uses the dark palette only
-	// when the visitor's OS reports prefers-color-scheme: dark. Default is light.
-	// SSR fix: the old lazy initializer read matchMedia during render — the
-	// server always saw `false` while a dark-OS visitor's browser saw `true`,
-	// so the FIRST client render produced an entirely different theme than the
-	// SSR HTML (React #418 mismatches on every colored element). Initialize
-	// deterministically (`false`, same as the server) and let the mount effect
-	// below sync the real value synchronously after hydration.
-	const [systemDark, setSystemDark] = React.useState<boolean>(false);
-	React.useEffect(() => {
-		// W1-17-F-17-9 fix: the OS-scheme subscription was wired up
-		// unconditionally, so fixed-mode instances ("light"/"dark") still
-		// listened and re-rendered on every unrelated OS theme toggle.
-		// Only "auto" reads systemDark — that is the only mode that needs
-		// the listener.
-		if (colorMode !== "auto") return;
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		)
-			return;
-		const mq = window.matchMedia("(prefers-color-scheme: dark)");
-		const update = () => setSystemDark(mq.matches);
-		update();
-		try {
-			mq.addEventListener("change", update);
-			return () => mq.removeEventListener("change", update);
-		} catch {
-			mq.addListener(update);
-			return () => mq.removeListener(update);
-		}
-	}, [colorMode]);
+	// THEME-AGNOSTIC: the old colorMode → palette resolution, the
+	// prefers-color-scheme listener and the dark pick() branch were removed
+	// with the Theme control. There is exactly one semantic palette — the
+	// author's configured values below — and the engine never switches it.
+	// (The old matchMedia subscription here was the last light/dark branch;
+	// nothing reads the OS scheme any more.)
 
 	// W1-19-F-07 fix: on mobile the virtual keyboard shrinks the visual
 	// viewport, which can cover the field being typed into (no auto-scroll
@@ -8931,112 +9697,47 @@ function useBookingEngineState(props: BookingEngineProps) {
 
 	// Fix #25: memoize the theme object so child components wrapped in
 	// React.memo don't re-render on every parent render.
-	// F-17-4 fix: the dark-mode fallback matched light defaults by EXACT
-	// string equality — "#ffffff" or "white" slipped through and rendered
-	// light colours in dark mode. Comparison is now normalized (case and
-	// leading '#'), and only the default light values swap (so an author
-	// who deliberately sets "#FFFFFF" on purpose keeps it in both modes).
-	// F-17-8 fix: every field now has a dark counterpart — accent/error/
-	// success/borderRadius previously had NO fallback (the dark theme's
-	// declared values were dead).
-	// fixes light-only.
-	const theme = React.useMemo(() => {
-		const useDarkLocal =
-			colorMode === "dark" || (colorMode === "auto" && systemDark);
-		const isDefault = (value: string | number, lightDefault: string) =>
-			String(value ?? "")
-				.trim()
-				.toLowerCase()
-				.replace(/^#/, "") === lightDefault.toLowerCase().replace(/^#/, "");
-		const pick = (value: string, lightDefault: string, darkDefault: string) =>
-			isDefault(value, lightDefault) ? darkDefault : value;
-		return useDarkLocal
-			? {
-					accentColor: pick(
-						accentColor,
-						"#0080FF",
-						DEFAULT_DARK_THEME.accentColor,
-					),
-					// PRIMARY-FOREGROUND: the white default is correct on both
-					// default accents, so both pick() defaults match — an
-					// author-set non-default value always passes through.
-					accentForegroundColor: pick(
-						accentForegroundColor,
-						"#FFFFFF",
-						DEFAULT_DARK_THEME.accentForegroundColor,
-					),
-					backgroundColor: pick(
-						backgroundColor,
-						"#FFFFFF",
-						DEFAULT_DARK_THEME.backgroundColor,
-					),
-					surfaceColor: pick(
-						surfaceColor,
-						"#F7F8FA",
-						DEFAULT_DARK_THEME.surfaceColor,
-					),
-					textPrimaryColor: pick(
-						textPrimaryColor,
-						"#111827",
-						DEFAULT_DARK_THEME.textPrimaryColor,
-					),
-					textSecondaryColor: pick(
-						textSecondaryColor,
-						"#6B7280",
-						DEFAULT_DARK_THEME.textSecondaryColor,
-					),
-					borderColor: pick(
-						borderColor,
-						"#E5E7EB",
-						DEFAULT_DARK_THEME.borderColor,
-					),
-					errorColor: pick(
-						errorColor,
-						"#DC2626",
-						DEFAULT_DARK_THEME.errorColor,
-					),
-					successColor: pick(
-						successColor,
-						"#15803D",
-						DEFAULT_DARK_THEME.successColor,
-					),
-					// W1-17-N5-new fix: the old dark branch used to swap the
-					// radius token to `DEFAULT_DARK_THEME.borderRadius` when it
-					// detected the light default "12px" — but no runtime site
-					// ever consumed `theme.borderRadius` (everything reads the
-					// raw prop), so the swap was invisible dead logic AND a
-					// latent footgun (a future dark-radius change would only hit
-					// the canvas banner). Both branches now carry the raw prop;
-					// borderRadius is documented as NOT theme-aware.
-					borderRadius: sanitizedRadius,
-				}
-			: {
-					accentColor,
-					// PRIMARY-FOREGROUND: rendered verbatim — no derivation.
-					accentForegroundColor,
-					backgroundColor,
-					surfaceColor,
-					textPrimaryColor,
-					textSecondaryColor,
-					borderColor,
-					errorColor,
-					successColor,
-					borderRadius: sanitizedRadius,
-				};
-	}, [
-		colorMode,
-		systemDark,
-		accentColor,
-		accentForegroundColor,
-		backgroundColor,
-		surfaceColor,
-		textPrimaryColor,
-		textSecondaryColor,
-		borderColor,
-		errorColor,
-		successColor,
-		sanitizedRadius,
-	]);
+	// THEME-AGNOSTIC: exactly ONE semantic palette. Every token is the
+	// author's configured value, rendered verbatim — no Light/Dark/Auto
+	// branching, no derived colors, no contrast logic (AGENTS.md hard
+	// rules). Site-level theme switching stays the author's job via
+	// Framer Color Variables assigned to the Styles color controls.
+	// Fix #25: memoize the theme object so child components wrapped in
+	// React.memo don't re-render on every parent render.
+	// THEME-AGNOSTIC: exactly ONE semantic palette. Every token is the
+	// author's configured value, rendered verbatim — no Light/Dark/Auto
+	// branching, no derived colors, no contrast logic (AGENTS.md hard
+	// rules). Site-level theme switching stays the author's job via
+	// Framer Color Variables assigned to the Styles color controls.
+	const theme = React.useMemo<Theme & { borderRadius: string }>(
+		() => ({
+			accentColor,
+			// PRIMARY-FOREGROUND: rendered verbatim — no derivation.
+			accentForegroundColor,
+			backgroundColor,
+			surfaceColor,
+			textPrimaryColor,
+			textSecondaryColor,
+			borderColor,
+			errorColor,
+			successColor,
+			// Not a color token, carried for the ErrorScreen surface —
+			// never theme-switched (the single Radius token rules it).
+			borderRadius: sanitizedRadius,
+		}),
+		[
+			accentColor,
+			accentForegroundColor,
+			backgroundColor,
+			surfaceColor,
+			textPrimaryColor,
+			textSecondaryColor,
+			borderColor,
+			errorColor,
+			successColor,
+			sanitizedRadius,
+		],
+	);
 
 	// Assemble the active steps from the ten fixed slots, in order, truncated
 	// to `stepCount`. Fixed slots (rather than one dynamic Array control) are
@@ -9210,9 +9911,15 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// zone post-hydration. There is no saved-progress override anymore, so
 	// the functional-form guard just skips the swap if it already ran.
 	const [timeZone, setTimeZone] = React.useState<string>("UTC");
+	// PRERENDER-DEFER: the zone swap used to run on mount unconditionally —
+	// in the headless prerender that baked the PRERENDER HOST's IANA zone
+	// into the served markup chain (clock, date keys). Defer to interactive
+	// clients so the served HTML keeps "UTC" exactly like the first render.
+	const beInteractiveForTz = useBeInteractive();
 	React.useEffect(() => {
+		if (!beInteractiveForTz) return;
 		setTimeZone((prev) => (prev === "UTC" ? detectTimezone() : prev));
-	}, []);
+	}, [beInteractiveForTz]);
 	// TZ-TIME-HARD-RULE: the 12h/24h time format is a per-visitor runtime
 	// preference. It ALWAYS defaults to 12h and is controlled ONLY by the
 	// end user via the on-widget toggle in the time-slot picker. The
@@ -9600,16 +10307,26 @@ function useBookingEngineState(props: BookingEngineProps) {
 		}
 	}, [currentIndex, baseTotalActive]);
 
-	// Cal.com slots — fetched when a datatetime step is present in the flow
-	// and config is present. T2-M4 fix: was gated on `datetimeStepActive`,
-	// so entering (and later re-entering) the datetime step flipped the
-	// effect dep, re-running the fetch effect even though the month never
-	// changed. Gating on the *static* `hasDatetimeStep` keeps the dep stable
-	// for the whole flow (the per-month cache absorbs an otherwise-eager
-	// fetch for a datetime step that comes later in the flow).
+	// Cal.com slots — fetched when a datetime step is present in the flow,
+	// the visitor has ACTUALLY REACHED a datetime step, and config is
+	// present. Two gates, one deterministic lifecycle:
+	//
+	// 1. REACHED-GATE (this block): the old gating on the *static*
+	//    `hasDatetimeStep` fired the availability GET the moment the
+	//    hidden-mounted calendar self-seeded its month — while the visitor
+	//    was still on Step 1 (the console evidence shows both GETs, and
+	//    their 429s, during the Step-1 page load). `reachedDatetimeStep`
+	//    flips ONCE, when the visitor first lands on a datetime step (incl.
+	//    saved-progress restore), and never flips back — so the effect dep
+	//    stays stable for the rest of the flow (T2-M4's concern) while the
+	//    eager pre-Calendar fetch is gone.
+	// 2. INTERACTIVE-GATE (inside useCalcomSlots): no network during SSR,
+	//    the headless prerender, or pre-interaction automation.
 	const hasDatetimeStep =
 		baseActiveSteps.some((step) => step.stepType === "datetime") ?? false;
 	const hasCalConfig = Boolean(calApiKey && calEventTypeId);
+	const [reachedDatetimeStep, setReachedDatetimeStep] =
+		React.useState(false);
 	const {
 		slots,
 		loading: slotsLoading,
@@ -9619,7 +10336,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	} = useCalcomSlots(
 		hasCalConfig ? calApiKey : "",
 		hasCalConfig ? calEventTypeId : "",
-		hasDatetimeStep ? visibleMonth : null,
+		hasDatetimeStep && reachedDatetimeStep ? visibleMonth : null,
 		timeZone,
 		copy?.availabilityErrorLabel,
 		errorCopy,
@@ -9630,17 +10347,38 @@ function useBookingEngineState(props: BookingEngineProps) {
 		SLOTS_CACHE_TTL_MS,
 	);
 
-	// CAL-EVENT-META: fetch event/profile metadata in PARALLEL with the
-	// slots call above (same key + Event ID + Base URL, read-only). Never
-	// gates availability: the panel shows a deterministic loading/fallback
-	// instead of blocking or vanishing. `status` is server/client-identical
-	// on first render (hydration parity).
+	// CAL-EVENT-META: fetch event/profile metadata — same key + Event ID +
+	// Base URL, read-only. Never gates availability: the panel shows a
+	// deterministic loading/fallback instead of blocking or vanishing.
+	// `status` is server/client-identical on first render (hydration
+	// parity). INTERACTIVE-GATE: this runs AFTER hydration (the flag is
+	// false until then), which also keeps the headless prerender from
+	// firing this GET at publish time — metadata is needed early for the
+	// required-field auto-injection and the info panel, but never before
+	// the client is real. The success-only cache (below) dedupes repeats.
+	const beInteractiveForMeta = useBeInteractive();
 	const { status: calEventMetaStatus, meta: calEventMeta, bookingFields: calBookingFields } = useCalcomEventMeta({
-		enabled: hasCalConfig && hasDatetimeStep,
+		enabled: hasCalConfig && hasDatetimeStep && beInteractiveForMeta,
 		apiKey: calApiKey,
 		eventTypeId: calEventTypeId,
 		apiBaseUrl: calApiBaseUrl,
 	});
+
+	// DURATION-SOURCE (hard rule): Cal.com event metadata is the single
+	// source of truth for the meeting duration. `durationMinutes` comes
+	// straight from the /v2/event-types payload (the same GET that powers
+	// the info panel and the required-field auto-injection); the module
+	// constant is a transient placeholder until the metadata lands — NOT
+	// an author-facing control or prop. Downstream consumers (ICS export,
+	// calendar deep links, success screen, info-panel fallback minutes)
+	// are unchanged; they simply read the metadata-derived value now.
+	const meetingDurationMs = React.useMemo(() => {
+		const minutes = calEventMeta?.durationMinutes;
+		if (typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0) {
+			return Math.round(minutes) * 60 * 1000;
+		}
+		return DEFAULT_MEETING_DURATION_MS;
+	}, [calEventMeta]);
 
 	// Task 1 M6 fix (completion): `hasKnownAvailability`/`availableDates`
 	// were added to `DateAndTimeInline` and its keyboard-navigation logic,
@@ -9766,6 +10504,19 @@ function useBookingEngineState(props: BookingEngineProps) {
 		safeCurrentIndex >= 0 && safeCurrentIndex < activeSteps.length ? activeSteps[safeCurrentIndex] : undefined;
 	const isFirst = safeCurrentIndex === 0;
 	const isLast = safeCurrentIndex === totalActive - 1;
+
+	// REACHED-GATE (part 1 of the slots gating above): flip once, here,
+	// where the EFFECTIVE pipeline (auto-injected step included) is known.
+	// Landing on any datetime step — by Continue, jump, or saved-progress
+	// restore — flips it; it never flips back, so the slots effect dep
+	// stays stable afterwards.
+	React.useEffect(() => {
+		if (reachedDatetimeStep) return;
+		const step = activeSteps[safeCurrentIndex];
+		if (step && step.stepType === "datetime") {
+			setReachedDatetimeStep(true);
+		}
+	}, [activeSteps, safeCurrentIndex, reachedDatetimeStep]);
 
 	// Clamp for effective pipeline (grows from base to base+1 when auto step appears).
 	useIsomorphicLayoutEffect(() => {
@@ -10044,14 +10795,17 @@ function useBookingEngineState(props: BookingEngineProps) {
 		stepTitleRef.current?.focus();
 	}, [safeCurrentIndex]);
 
-	// Requirement 3: validation must never trigger or display dynamically
-	// while the user is typing — only `handleContinue` (on "Continue"/final
-	// action click) is allowed to compute and surface field errors. This
-	// handler updates `values` only. FINAL-16 fix: it DOES write a single
-	// field's entry in `errors` — the T4-M1 live-revalidation below clears
-	// (or corrects) that one field's existing message after an edit, but it
-	// never *introduces* first-time error display for untouched fields, and
-	// `touched` stays untouched here.
+	// SUBMIT-DRIVEN-VALIDATION (hard rule): field validation is triggered by
+	// the explicit Continue / final-action click (`handleContinue` →
+	// `validateStep`) — NEVER while the visitor is typing. This handler
+	// updates `values` only; it never runs the validation rules for their
+	// own sake. The single exception is cleanup: when a field ALREADY shows
+	// an error (surfaced by a failed Continue attempt), editing that field
+	// may update or clear its existing message so the visitor sees the
+	// error resolve — but a field with NO visible error never gains one
+	// from typing alone, and an in-progress value is never judged
+	// mid-edit. Required/format/max-length/phone/email/custom-regex rules
+	// all follow this same submit-driven model (AGENTS.md).
 	const handleFieldChange = React.useCallback(
 		(fieldId: string, value: string | boolean | undefined) => {
 			// SYN-05 fix: `activeSteps.find()` only examined the FIRST step
@@ -10085,13 +10839,19 @@ function useBookingEngineState(props: BookingEngineProps) {
 				timeFormat: inSessionFormSnapshot?.timeFormat ?? "12h",
 			};
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
-			// T4-M1 fix: previous behavior only (re)validated on Continue, so a
-			// visitor who fixed what the error described kept seeing a stale
-			// error until the next submit attempt. Re-validate the single
-			// touched field immediately so errors clear (or appear) live.
+			// SUBMIT-DRIVEN-VALIDATION: typing alone never validates and
+			// never INTRODUCES an error. Only a field that already shows
+			// an error (from a failed Continue attempt) is re-evaluated
+			// here, so the visitor sees that existing message clear (or
+			// update) as they fix the value — nothing new appears for
+			// in-progress input.
 			if (!field) return;
+			setErrors((prev) => {
+				if (!prev[fieldId]) return prev;
 			const err = validateField(field, nextValue, validationCopy);
-			setErrors((prev) => ({ ...prev, [fieldId]: err }));
+				if (err === prev[fieldId]) return prev;
+				return { ...prev, [fieldId]: err };
+			});
 		},
 		[activeSteps, validationCopy],
 	);
@@ -10841,7 +11601,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 		buttonLabels,
 		calApiKey,
 		calEventTypeId,
-		colorMode,
+		fieldGap,
 		completePct,
 		continueLabel,
 		copy,
@@ -10902,7 +11662,6 @@ function useBookingEngineState(props: BookingEngineProps) {
 		setFlowStatus,
 		setPickedDate,
 		setSubmitError,
-		setSystemDark,
 		setTimeFormat,
 		setTimeZone,
 		setTouched,
@@ -10936,11 +11695,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 		submittingRef,
 		successColor,
 		surfaceColor,
-		systemDark,
 		textPrimaryColor,
 		textSecondaryColor,
 		theme,
-		themeSetting,
 		timeFormat,
 		timeZone,
 		totalActive,
@@ -10989,6 +11746,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		bookingResult,
 		borderRadius,
 		sanitizedRadius,
+		fieldGap,
 		buttonLabels,
 		completePct,
 		copy,
@@ -11083,7 +11841,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 	// file-wide container threshold), and the @media rule is gone.
 	const engineRootRef = React.useRef<HTMLDivElement | null>(null);
 	const [engineWidth, setEngineWidth] = React.useState<number>(320);
+	// PRERENDER-DEFER: the prerender browser's viewport must never reach
+	// the served HTML — the two-column grid decision (engineWidth >=
+	// COMPACT_BREAKPOINT) baked into the prerender could not be reproduced
+	// by a narrow visitor's first render (#418 on the step wrappers).
+	const beInteractiveForWidth = useBeInteractive();
 	React.useEffect(() => {
+		if (!beInteractiveForWidth) return;
 		const node = engineRootRef.current;
 		if (!node || typeof ResizeObserver === "undefined") return;
 		const observer = new ResizeObserver((entries) => {
@@ -11098,7 +11862,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		});
 		observer.observe(node);
 		return () => observer.disconnect();
-	}, []);
+	}, [beInteractiveForWidth]);
 
 	// F-01-05 fix (bundle 16): BookingEngine's own render-scope copy — the
 	// progress-bar fill and the 12h/24h slider (in TimeSlotList) are drawn
@@ -11780,6 +12544,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								touched={touched}
 								theme={theme}
 								borderRadius={sanitizedRadius}
+								fieldGap={fieldGap}
 								hasCalConfig={hasCalConfig}
 								slotsLoading={slotsLoading}
 								slotsError={slotsError}
@@ -11824,8 +12589,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 
 			{/* Footer nav */}
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
-                steps instead of scrolling out of view; background matches
-                the root so content never shows through. */}
+		steps instead of scrolling out of view. */}
+			{/* FOOTER-TRANSPARENT (hard rule): the nav/action wrapper must
+		NOT consume the exposed Background color — that token belongs to
+		the main surface only (RootShell's root container). The wrapper
+		is transparent so the author's page design shows through behind
+		the sticky actions, exactly like every other non-surface chrome
+		in this component. No replacement footer background property
+		exists by design. */}
 			{/* NAV-GROUP-TOGGLE: default = split layout. Back sits far left and
                 the primary action far right (`justifyContent: space-between`
                 with a right-aligned action group). Only when the author opts
@@ -11840,7 +12611,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 					position: "sticky",
 					bottom: 0,
 					zIndex: 10,
-					background: theme.backgroundColor,
+					// FOOTER-TRANSPARENT: no `background` here — see the
+					// hard-rule note above. Content scrolling beneath the
+					// sticky actions is the intended look; the buttons
+					// themselves remain opaque for readability.
 					paddingTop: 12,
 					// FINAL-30 fix: keep the buttons clear of the iOS home-
 					// indicator gesture area (iPhone X+) — env() is 0 on
@@ -12063,7 +12837,7 @@ animation: prefersReducedMotion
    Invalid fields keep a RED ring while focused (error stays clearly red,
    focus stays clearly intentional) via the be-input-invalid class. */
 .be-input:focus-visible {
-    box-shadow: inset 0 0 0 2px ${theme.accentColor};
+    box-shadow: inset 0 0 0 2px var(--be-focus-color, ${theme.accentColor});
 }
 .be-input.be-input-invalid:focus-visible {
     box-shadow: inset 0 0 0 2px ${theme.errorColor};
@@ -12081,6 +12855,19 @@ animation: prefersReducedMotion
 }
 .be-motion-root.be-pointer-active .be-input.be-input-invalid:focus-visible {
     box-shadow: none;
+}
+/* FIELD-STYLES: per-field Placeholder + Focus Border overrides ride CSS
+   variables set inline on the input itself (--be-ph-color / --be-focus-color).
+   The [style*=] guard keeps these rules INERT for fields without the override,
+   so the browser-default placeholder appearance and the theme-accent focus
+   ring are preserved byte-for-byte when no Styles value is set. The focus
+   rule above falls back to ${theme.accentColor} when --be-focus-color is
+   absent — identical to the pre-override behavior. */
+.be-input[style*="--be-ph-color"]::placeholder {
+    color: var(--be-ph-color);
+}
+.be-input[style*="--be-ph-color"]::-webkit-input-placeholder {
+    color: var(--be-ph-color);
 }
 /* W1-11-A5/A6 fix: the Back/Continue buttons, month-nav arrows,
    slot-list retry, review Edit links and success/error-screen buttons
@@ -12351,6 +13138,10 @@ interface StepBodyProps {
 	touched: Record<string, boolean>;
 	theme: Theme;
 	borderRadius: string | number;
+	/** FIELD-GAP (hard rule): field-grid spacing from the Styles Gap
+	 *  control (default 16px, clamped 0–32 at runtime). Single source of
+	 *  truth for both form-grid `gap`s — the hard-coded 12px is gone. */
+	fieldGap: number;
 	hasCalConfig: boolean;
 	slotsLoading: boolean;
 	/** Fix #13: surface Cal.com fetch errors as an inline banner. */
@@ -12467,6 +13258,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		touched,
 		theme,
 		borderRadius,
+		fieldGap,
 		hasCalConfig,
 		slotsLoading,
 		slotsError,
@@ -12530,7 +13322,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 				style={{
 					display: "grid",
 					gridTemplateColumns: isTwoCol ? "1fr 1fr" : "1fr",
-					gap: 12,
+					// FIELD-GAP: the Styles Gap control is the single
+					// source of truth for the field-grid spacing (the
+					// old hard-coded 12px was removed — AGENTS.md).
+					gap: fieldGap,
 				}}
 				className={`be-form-grid`}
 			>
@@ -12809,7 +13604,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 				style={{
 					display: "grid",
 					gridTemplateColumns: isTwoCol ? "1fr 1fr" : "1fr",
-					gap: 12,
+					// FIELD-GAP: same Styles Gap control as form steps.
+					gap: fieldGap,
 				}}
 				className={`be-form-grid`}
 			>
@@ -13177,11 +13973,34 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// was a dead click target. Choice fields get a plain text heading;
 	// native-control fields keep the real label↔input association.
 	const isChoiceFieldType = CHOICE_FIELD_TYPES.includes(field.fieldType);
+
+	// FIELD-STYLES (hard rule): resolve this field's own override object —
+	// exactly one Styles submenu exists per field type, so exactly one key
+	// can carry data. Undefined everywhere = default engine look.
+	const fieldStyleOverrides: FieldStyleOverrides | undefined =
+		field.fieldType === "checkbox"
+			? field.checkStyles
+			: isChoiceFieldType
+				? field.choiceStyles
+				: field.styles;
+	const fs = fieldStyleOverrides;
+	const fsOptionMuted = fs?.textColor
+		? withAlpha(fs.textColor, 0.6)
+		: theme.textSecondaryColor;
+
 	const labelTextStyle: React.CSSProperties = {
 		display: "block",
-		fontSize: 13,
-		fontWeight: 500,
-		color: theme.textPrimaryColor,
+		fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 13,
+		fontWeight: fs?.labelFont?.fontWeight ?? 500,
+		...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
+		...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
+		...(fs?.labelFont?.letterSpacing != null
+			? { letterSpacing: fs.labelFont.letterSpacing }
+			: {}),
+		...(fs?.labelFont?.lineHeight != null
+			? { lineHeight: fs.labelFont.lineHeight }
+			: {}),
+		color: fs?.labelColor ?? theme.textPrimaryColor,
 	};
 	const labelEl = isChoiceFieldType ? (
 		<div style={labelTextStyle}>{field.label}</div>
@@ -13208,7 +14027,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		gridColumn: field.width === "half" && isTwoCol ? "span 1" : "span 2",
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
+		// FIELD-STYLES: per-field Spacing override (default 6px). Kept as
+		// flex gap — rule 6 forbids margin/padding for error separation.
+		gap: fs?.spacing ?? 6,
 		minWidth: 0,
 	};
 
@@ -13232,18 +14053,51 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// W1-18-F1 fix: the focus-ring border transition is gated too.
 	const reducedMotion = useReducedMotion();
 
+	// FIELD-STYLES: resolve the input-like control surface. Every key falls
+	// back to the engine default; the error border still wins over a custom
+	// border color (error visibility is functional, not decorative). The
+	// coarse-pointer ≥16px font guard (iOS zoom prevention) always wins.
+	const fsFontSize = fontPixelSize(fs?.font?.fontSize);
+	const fsInputFontSize = isCoarsePointer
+		? Math.max(16, fsFontSize ?? inputFontSize)
+		: (fsFontSize ?? inputFontSize);
+	// FIELD-STYLES (native compound controls): border/radius/padding resolve
+	// through the shared helpers — new compound values win, legacy scalars
+	// still work, untouched fields fall back to the engine theme. The error
+	// border still wins over a custom border color (functional, not
+	// decorative), and the coarse-pointer ≥16px font guard always wins.
+	const fsBorder = resolveFieldBorder(fs);
+	const fsRadius = resolveFieldRadius(fs, borderRadius);
+	const fsPadding = resolveFieldPadding(fs);
 	const inputBaseStyle: React.CSSProperties = {
 		width: "100%",
-		minHeight: TOUCH_TARGET_MIN,
-		padding: "10px 14px",
-		borderRadius: borderRadius,
-		border: `1px solid ${error ? theme.errorColor : theme.borderColor}`,
-		background: theme.surfaceColor,
-		color: theme.textPrimaryColor,
-		fontFamily: "inherit",
+		minHeight: fs?.minHeight ?? TOUCH_TARGET_MIN,
+		padding: fsPadding,
+		borderRadius: fsRadius,
+		border: `${fsBorder.width}px ${fsBorder.style} ${
+			error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
+                }`,
+		background: fs?.backgroundColor ?? theme.surfaceColor,
+		color: fs?.textColor ?? theme.textPrimaryColor,
+		fontFamily: fs?.font?.fontFamily ?? "inherit",
 		// W1-19-F-02 fix: was a flat 14 (see inputFontSize above).
-		fontSize: inputFontSize,
+		fontSize: fsInputFontSize,
+		...(fs?.font?.fontWeight != null ? { fontWeight: fs.font.fontWeight } : {}),
+		...(fs?.font?.fontStyle ? { fontStyle: fs.font.fontStyle } : {}),
+		...(fs?.font?.letterSpacing != null
+			? { letterSpacing: fs.font.letterSpacing }
+			: {}),
+		...(fs?.font?.lineHeight != null ? { lineHeight: fs.font.lineHeight } : {}),
 		boxSizing: "border-box",
+		// FIELD-STYLES: placeholder + focus colors ride CSS variables so
+		// the static .be-input rules can consume per-field values while
+		// staying inert (browser-default look) when unset.
+		...(fs?.placeholderColor
+			? ({ "--be-ph-color": fs.placeholderColor } as React.CSSProperties)
+			: {}),
+		...(fs?.focusBorderColor
+			? ({ "--be-focus-color": fs.focusBorderColor } as React.CSSProperties)
+			: {}),
 		// W1-18-F1 fix: gated on prefers-reduced-motion.
 		// FOCUS-STATE-COMPOSE fix: the inset focus ring is a box-shadow —
 		// fade it with the border so state changes never pop.
@@ -13292,9 +14146,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 					ref={textareaRef}
 					style={{
 						...inputBaseStyle,
-						minHeight: 96,
+						minHeight: fs?.minHeight ?? 96,
 						resize: "vertical",
-						fontFamily: "inherit",
+						fontFamily: fs?.font?.fontFamily ?? "inherit",
 					}}
 				/>
 				{errorEl}
@@ -13330,7 +14184,14 @@ const FieldRenderer = React.memo(function FieldRenderer(
 								...inputBaseStyle,
 								cursor: isSubmitting ? "not-allowed" : "pointer",
 								appearance: "none",
-								paddingRight: 36,
+								paddingRight:
+									paddingHorizontalFrom(fsPadding) + 22,
+								// FIELD-STYLES: the empty-select hint uses the
+								// Placeholder color; a chosen value uses Text Color.
+								color:
+									!value && fs?.placeholderColor
+										? fs.placeholderColor
+										: (fs?.textColor ?? theme.textPrimaryColor),
 							}}
 						>
 							<option value="" disabled={field.required}>
@@ -13364,7 +14225,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						>
 							<path
 								d="M4 6L8 10L12 6"
-								stroke={theme.textSecondaryColor}
+								stroke={fs?.textColor ?? theme.textSecondaryColor}
 								strokeWidth="1.5"
 								strokeLinecap="round"
 								strokeLinejoin="round"
@@ -13393,6 +14254,21 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						: field.fieldType === "radio"
 							? "radio"
 							: "cards";
+			// FIELD-STYLES (native compound controls): resolve the choice
+			// surface. Author-set radius/padding/border come from the
+			// compound values when present (legacy scalars still honored);
+			// when unset they stay undefined so ChoiceGroupInline's
+			// per-variant defaults (pills 999, segmented 16, …) still apply.
+			const fsPaddingAxes = fs?.padding
+				? paddingAxesFrom(fs.padding)
+				: null;
+			const fsAuthorRadius =
+				typeof fs?.radius === "string" || typeof fs?.radius === "number"
+					? resolveFieldRadius(fs, borderRadius)
+					: undefined;
+			const fsAuthorBorderWidth = fs?.border
+				? fsBorder.width
+				: fs?.borderWidth;
 			return (
 				<div
 					style={{
@@ -13424,12 +14300,29 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						accentColor={theme.accentColor}
 						// PRIMARY-FOREGROUND: On-Primary for selected options.
 						accentForegroundColor={theme.accentForegroundColor}
-						textColor={theme.textPrimaryColor}
-						mutedTextColor={theme.textSecondaryColor}
-						backgroundColor={theme.surfaceColor}
-						borderColor={theme.borderColor}
-						radius={borderRadius}
-						fontSize={14}
+						// FIELD-STYLES: per-field overrides resolved from this
+						// field's own Styles submenu — every key falls back to
+						// the engine theme value when unset, so untouched
+						// fields render exactly as before.
+						textColor={fs?.textColor ?? theme.textPrimaryColor}
+						mutedTextColor={fsOptionMuted}
+						backgroundColor={fs?.backgroundColor ?? theme.surfaceColor}
+						borderColor={fsBorder.color ?? theme.borderColor}
+						radius={resolveFieldRadius(fs, borderRadius)}
+						fontSize={fontPixelSize(fs?.font?.fontSize) ?? 14}
+						selectedBackgroundColor={fs?.selectedBackgroundColor}
+						selectedTextColor={fs?.selectedTextColor}
+						selectedBorderColor={fs?.selectedBorderColor}
+						optionHoverBorderColor={
+							fs?.selectedBorderColor ?? fs?.selectedBackgroundColor
+						}
+						optionBorderWidth={fsAuthorBorderWidth}
+						optionRadius={fsAuthorRadius}
+						optionPaddingY={fsPaddingAxes?.y ?? fs?.paddingY}
+						optionPaddingX={fsPaddingAxes?.x ?? fs?.paddingX}
+						optionMinHeight={fs?.minHeight}
+						optionFont={fs?.font}
+						trackBackground={fs?.backgroundColor}
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
 						ariaDescribedBy={
@@ -13448,6 +14341,28 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		}
 		case "checkbox": {
 			const checked = Boolean(value);
+			// FIELD-STYLES: checkbox consumes its own checkStyles set —
+			// Label Font, Label Color, Accent and Size. Defaults keep the
+			// historical 18px box + theme accent + 14px label.
+			const checkAccent = fs?.accentColor ?? theme.accentColor;
+			const checkSize = fs?.checkSize ?? 18;
+			const checkLabelStyle: React.CSSProperties = {
+				fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 14,
+				fontWeight: fs?.labelFont?.fontWeight ?? 400,
+				...(fs?.labelFont?.fontFamily
+					? { fontFamily: fs.labelFont.fontFamily }
+					: {}),
+				...(fs?.labelFont?.fontStyle
+					? { fontStyle: fs.labelFont.fontStyle }
+					: {}),
+				...(fs?.labelFont?.letterSpacing != null
+					? { letterSpacing: fs.labelFont.letterSpacing }
+					: {}),
+				...(fs?.labelFont?.lineHeight != null
+					? { lineHeight: fs.labelFont.lineHeight }
+					: {}),
+				color: fs?.labelColor ?? theme.textPrimaryColor,
+			};
 			return (
 				<div style={containerStyle} data-field-id={field.id}>
 					<label
@@ -13456,9 +14371,8 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							alignItems: "flex-start",
 							gap: 10,
 							cursor: "pointer",
-							fontSize: 14,
-							color: theme.textPrimaryColor,
 							lineHeight: 1.4,
+							...checkLabelStyle,
 							// W1-19-N2 fix: single-line labels were ~20px
 							// tall (WCAG 2.5.5 target-size fail); the whole
 							// label row is the tap target, so it gets the
@@ -13487,9 +14401,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							}
 							style={{
 								marginTop: 2,
-								width: 18,
-								height: 18,
-								accentColor: theme.accentColor,
+								width: checkSize,
+								height: checkSize,
+								accentColor: checkAccent,
 								cursor: "pointer",
 							}}
 						/>
@@ -14486,6 +15400,130 @@ type ProgressBarControlProps = Pick<
 	"showTextContent"
 >;
 
+// =============================================================================
+// FIELD-STYLES control factories (AGENTS.md rule 83)
+// =============================================================================
+// One reusable architecture for the per-field Styles submenu. Three composed
+// control sets — input-like, choice, checkbox — share these factories and the
+// single FieldStyleOverrides runtime model. Every control is optional so an
+// untouched key never overrides the engine theme, and each field type exposes
+// exactly the set that is meaningful for it (no fake controls). The Calendar
+// Widget marker exposes none: it renders no field surface of its own.
+const FIELD_STYLE_INPUT_TYPES = ["text", "email", "phone", "textarea", "select"];
+const isFieldStyleInputType = (fieldType?: string) =>
+	FIELD_STYLE_INPUT_TYPES.includes(fieldType || "");
+const isFieldStyleChoiceType = (fieldType?: string) =>
+	CHOICE_FIELD_TYPES.includes(fieldType || "");
+
+function fieldStylesColorControl(title: string) {
+	return { type: ControlType.Color, title, optional: true };
+}
+function fieldStylesNumberControl(title: string, min: number, max: number) {
+	return {
+		type: ControlType.Number,
+		title,
+		optional: true,
+		min,
+		max,
+		step: 1,
+		unit: "px",
+	};
+}
+function fieldStylesFontControl(title: string, defaultFontSize: string) {
+	return {
+		type: ControlType.Font,
+		title,
+		controls: "extended" as const,
+		defaultFontType: "sans-serif" as const,
+		// No variant in the default: an untouched font control must not
+		// introduce a weight where the runtime had none.
+		defaultValue: { fontSize: defaultFontSize },
+	};
+}
+// FIELD-STYLES (native compound controls): the Border / Radius / Padding
+// controls are Framer's documented compound types — one logical Border
+// (color + width + style, per-side segmented mode included), a Framer-style
+// Radius (single value or per-corner), and a Padding control (single value or
+// per-side). Defaults mirror the engine theme's own defaults exactly
+// (1px solid #E5E7EB / 12px / 10px 14px), so a value touched here renders the
+// same look the theme would have produced — defaults are preserved.
+function fieldStylesBorderControl() {
+	return {
+		type: ControlType.Border,
+		title: "Border",
+		optional: true,
+		defaultValue: {
+			borderWidth: 1,
+			borderStyle: "solid",
+			borderColor: "#E5E7EB",
+		},
+	};
+}
+function fieldStylesRadiusControl() {
+	return {
+		type: ControlType.BorderRadius,
+		title: "Radius",
+		optional: true,
+		defaultValue: "12px",
+	};
+}
+function fieldStylesPaddingControl() {
+	return {
+		type: ControlType.Padding,
+		title: "Padding",
+		optional: true,
+		defaultValue: "10px 14px",
+	};
+}
+
+function makeInputFieldStylesControls() {
+	return {
+		font: fieldStylesFontControl("Font", "14px"),
+		labelFont: fieldStylesFontControl("Label Font", "13px"),
+		labelColor: fieldStylesColorControl("Label Color"),
+		textColor: fieldStylesColorControl("Text Color"),
+		// PLACEHOLDER-STYLE (hard rule): a first-class option that renders
+		// for real — the .be-input::placeholder CSS-variable rule and the
+		// select's empty-hint branch consume it.
+		placeholderColor: fieldStylesColorControl("Placeholder"),
+		backgroundColor: fieldStylesColorControl("Background"),
+		border: fieldStylesBorderControl(),
+		radius: fieldStylesRadiusControl(),
+		padding: fieldStylesPaddingControl(),
+		focusBorderColor: fieldStylesColorControl("Focus Border"),
+		minHeight: fieldStylesNumberControl("Height", 24, 200),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+	};
+}
+
+function makeChoiceFieldStylesControls() {
+	return {
+		font: fieldStylesFontControl("Font", "14px"),
+		labelFont: fieldStylesFontControl("Label Font", "13px"),
+		labelColor: fieldStylesColorControl("Label Color"),
+		textColor: fieldStylesColorControl("Text Color"),
+		backgroundColor: fieldStylesColorControl("Background"),
+		border: fieldStylesBorderControl(),
+		radius: fieldStylesRadiusControl(),
+		padding: fieldStylesPaddingControl(),
+		minHeight: fieldStylesNumberControl("Height", 24, 200),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
+		selectedTextColor: fieldStylesColorControl("Selected Text"),
+		selectedBorderColor: fieldStylesColorControl("Selected Border"),
+	};
+}
+
+function makeCheckboxFieldStylesControls() {
+	return {
+		labelFont: fieldStylesFontControl("Label Font", "14px"),
+		labelColor: fieldStylesColorControl("Label Color"),
+		accentColor: fieldStylesColorControl("Accent"),
+		checkSize: fieldStylesNumberControl("Size", 12, 32),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24),
+	};
+}
+
 function makeFieldObjectControls() {
 	return {
 		label: {
@@ -14689,6 +15727,40 @@ function makeFieldObjectControls() {
 			},
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
+		},
+		// FIELD-STYLES (hard rule): the per-field Styles submenu. Three
+		// Object controls share the title "Styles"; each is hidden for
+		// disjoint type sets so the panel always shows exactly ONE Styles
+		// item per field type, opening the control set that is meaningful
+		// for it. Plain Object controls hidden by a sibling scalar are the
+		// documented-safe conditional-visibility pattern (Safety Rule #2).
+		// Calendar Widget renders no field surface, so it gets none.
+		styles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeInputFieldStylesControls(),
+			hidden: (p: FieldControlProps) => !isFieldStyleInputType(p?.fieldType),
+		},
+		choiceStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeChoiceFieldStylesControls(),
+			hidden: (p: FieldControlProps) => !isFieldStyleChoiceType(p?.fieldType),
+		},
+		checkStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeCheckboxFieldStylesControls(),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
 		},
 		width: {
 			type: ControlType.Enum,
@@ -14941,27 +16013,19 @@ addPropertyControls(BookingEngine, {
 			},
 		},
 	},
-	// ----- Styles ("Theme" is the first item inside this submenu) -----
+	// ----- Styles (one light/default semantic palette; no Theme selector) -----
 	styles: {
 		type: ControlType.Object,
 		title: "Styles",
 		icon: "color",
 		buttonTitle: "Styles",
 		controls: {
-			theme: {
-				type: ControlType.Enum,
-				title: "Theme",
-				options: ["light", "dark", "auto"],
-				optionTitles: ["Light", "Dark", "Auto"],
-				defaultValue: "light",
-				displaySegmentedControl: true,
-			},
 			accentColor: {
 				type: ControlType.Color,
 				title: "Accent",
-				// Default accent. Existing instances keep their own values;
-				// in dark mode the pick() override swaps this light default
-				// for DEFAULT_DARK_THEME.accentColor.
+				// Default accent. Assign a Framer Color Variable here to
+				// let a site-level theme drive it (the engine itself is
+				// theme-agnostic and renders this value verbatim).
 				defaultValue: "#0066BB",
 			},
 			// PRIMARY-FOREGROUND: semantic On-Primary token. Independent of
@@ -15014,6 +16078,20 @@ addPropertyControls(BookingEngine, {
 				defaultValue: 12,
 				min: 0,
 				max: 24,
+				step: 1,
+				unit: "px",
+				displayStepper: true,
+			},
+			// FIELD-GAP (hard rule): spacing between fields in the field
+			// grid. Default 16px, range 0–32px, step 1px. Single source of
+			// truth for the field-grid vertical spacing — no other gap
+			// control exists and no hard-coded value remains (AGENTS.md).
+			gap: {
+				type: ControlType.Number,
+				title: "Gap",
+				defaultValue: 16,
+				min: 0,
+				max: 32,
 				step: 1,
 				unit: "px",
 				displayStepper: true,
@@ -15678,18 +16756,10 @@ addPropertyControls(BookingEngine, {
 		title: "Session Storage Key",
 		defaultValue: "booking-engine:session",
 	},
-	// W2-23-N1 fix: author-tunable fallback meeting duration — used for
-	// the .ics, the Google/Outlook deep links, and the success-screen
-	// time when Cal.com's slot has no end. Genuinely author-relevant:
-	// different businesses run different appointment lengths.
-	defaultMeetingDurationMs: {
-		type: ControlType.Number,
-		title: "Default Meeting Duration (ms)",
-		defaultValue: DEFAULT_MEETING_DURATION_MS,
-		min: 5 * 60 * 1000,
-		max: 8 * 60 * 60 * 1000,
-		step: 5 * 60 * 1000,
-	},
+	// DURATION-SOURCE (hard rule): the "Default Meeting Duration (ms)"
+	// Property Control is removed — Cal.com event metadata is the single
+	// source of truth for duration. No renamed/replacement fallback
+	// control exists.
 	// CONFIRM-HOME-URL: the former top-level "Return Home URL" control now
 	// lives in the Buttons group as "Home URL" (buttonLabels.homeUrl), next
 	// to the Done label it configures. Same default ("/") and same explicit
