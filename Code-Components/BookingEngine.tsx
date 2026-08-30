@@ -22,11 +22,11 @@ import {
 	useIsStaticRenderer,
 } from "framer";
 import {
-	MotionConfig,
 	motion,
+	MotionConfig,
+	useReducedMotion,
 	type Transition,
 	type Variants,
-	useReducedMotion,
 } from "framer-motion";
 import * as React from "react";
 
@@ -1662,10 +1662,10 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		const showMedia = variant === "cards" || variant === "radio";
 		return (
 			/* biome-ignore lint/a11y/useSemanticElements: intentional custom radio
-               button — a native <input type="radio"> cannot carry the
-               card/pill/segmented visual system. The full radiogroup contract
-               (roving tabindex, arrow-key navigation, aria-checked) is
-               implemented below, so SR/keyboard behavior is equivalent. */
+	       button — a native <input type="radio"> cannot carry the
+	       card/pill/segmented visual system. The full radiogroup contract
+	       (roving tabindex, arrow-key navigation, aria-checked) is
+	       implemented below, so SR/keyboard behavior is equivalent. */
 			<button
 				// W1-08-F-08-06 fix: duplicate labels collided as React
 				// keys; index-suffixed keys stay unique.
@@ -1720,9 +1720,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					// "1") previously produced hair-thin tap targets.
 					minWidth: TOUCH_TARGET_MIN,
 					borderRadius: optionRadius ?? radius,
-					border: `${optionBorder}px solid ${
-						isSelected ? selectedRing : isHovered ? hoverRing : borderColor
-                                        }`,
+					border: `${optionBorder}px solid ${isSelected ? selectedRing : isHovered ? hoverRing : borderColor
+						}`,
 					background: isSelected ? selectedSurface : backgroundColor,
 					color: option.disabled
 						? mutedTextColor
@@ -1779,9 +1778,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 							width: 18,
 							height: 18,
 							borderRadius: "50%",
-							border: `2px solid ${
-								isSelected ? selectedTextColor : borderColor
-							}`,
+							border: `2px solid ${isSelected ? selectedTextColor : borderColor
+								}`,
 							background: "transparent",
 							boxSizing: "border-box",
 							flexShrink: 0,
@@ -2182,9 +2180,9 @@ const CalendarCell = React.memo(function CalendarCell({
 	const reducedMotion = useReducedMotion();
 	return (
 		/* biome-ignore lint/a11y/useSemanticElements: CSS-grid calendar cell — the
-           W3C datepicker pattern (grid/row/gridcell + roving tabindex) is the
-           contract here; a native <td> cannot participate in the display:grid
-           layout this component renders. */
+	   W3C datepicker pattern (grid/row/gridcell + roving tabindex) is the
+	   contract here; a native <td> cannot participate in the display:grid
+	   layout this component renders. */
 		<div
 			role="gridcell"
 			aria-selected={isSelected}
@@ -2325,10 +2323,10 @@ const CalendarCell = React.memo(function CalendarCell({
 					{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
 					{adjacentMonthLabel && !isSelected ? (
 						/* CAL-ADJ-INDICATOR: adjacent-month dates carry a
-                           compact month abbreviation above the number (generic
-                           — derived from the date's own month by the shared
-                           helper, shown only on the first visible date of each
-                           adjacent month in EITHER direction). */
+			   compact month abbreviation above the number (generic
+			   — derived from the date's own month by the shared
+			   helper, shown only on the first visible date of each
+			   adjacent month in EITHER direction). */
 						<span
 							aria-hidden="true"
 							style={{
@@ -2350,12 +2348,12 @@ const CalendarCell = React.memo(function CalendarCell({
 					) : null}
 					{isToday && !isSelected ? (
 						/* W2-52 fix: today's marker is a small dot beneath the
-                           number — visually independent of the selected-date
-                           fill AND of availability (TODAY-INDEPENDENT: today
-                           stays on the real current date even when that day is
-                           unavailable; Today / Selected / Available /
-                           Unavailable are independent states). currentColor
-                           keeps it legible in every state. */
+			   number — visually independent of the selected-date
+			   fill AND of availability (TODAY-INDEPENDENT: today
+			   stays on the real current date even when that day is
+			   unavailable; Today / Selected / Available /
+			   Unavailable are independent states). currentColor
+			   keeps it legible in every state. */
 						<span
 							aria-hidden="true"
 							style={{
@@ -2519,9 +2517,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
 		rows.push(
 			/* biome-ignore lint/a11y/useFocusableInteractive: row is a structural
-               grouping only (display: contents) — focus lives on the cells
-               via the roving-tabindex contract; making the row tabbable would
-               add a dead stop. */
+	       grouping only (display: contents) — focus lives on the cells
+	       via the roving-tabindex contract; making the row tabbable would
+	       add a dead stop. */
 			// biome-ignore lint/a11y/useSemanticElements: see CSS-grid calendar note above.
 			<div role="row" key={`row-${r}`} style={{ display: "contents" }}>
 				{cells.slice(r * 7, r * 7 + 7).map((date, cIdx) => {
@@ -2572,13 +2570,13 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					// (empty leading placeholders are skipped over).
 					const adjacentMonthLabel = !isInMonth
 						? getAdjacentMonthAbbreviation(
-								cells,
-								globalIdx,
-								(candidate) =>
-									candidate.getTime() < visibleMonth.getTime() &&
-									(startOfDay(candidate).getTime() < today.getTime() ||
-										!hasAvailability(candidate)),
-							)
+							cells,
+							globalIdx,
+							(candidate) =>
+								candidate.getTime() < visibleMonth.getTime() &&
+								(startOfDay(candidate).getTime() < today.getTime() ||
+									!hasAvailability(candidate)),
+						)
 						: null;
 					// ROVING-TABINDEX: exactly one selectable cell per grid
 					// is the tab stop; unavailable cells are never active.
@@ -2688,44 +2686,44 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						</span>
 					</h3>
 				</div>
-			<div
-				style={{
-					display: "flex",
-					alignItems: "center",
-					// W2-46 fix: compact, subtle header controls — 24px buttons
-					// with an 8px gap, visually quieter than the month title.
-					gap: 8,
-				}}
-			>
-				<button
-					type="button"
-					aria-label={previousMonthAriaTemplate.replace(
-						"{month}",
-						prevMonthLabel,
-					)}
-					onClick={() => onPrevMonth()}
-					onMouseEnter={() => canGoPrev && setHoveredNav("prev")}
-					onMouseLeave={() => setHoveredNav((v) => (v === "prev" ? null : v))}
-					disabled={!canGoPrev}
-					tabIndex={0}
+				<div
 					style={{
-						appearance: "none",
-						background: hoveredNav === "prev" && canGoPrev ? borderColor : "transparent",
-						// W2-46 fix: muted tone (60% text) so the arrows stay
-						// secondary to the month title; disabled stays softer.
-						color: canGoPrev ? mutedText : mutedSoftText,
-						border: "none",
-						borderRadius,
-						width: "auto",
-						height: "auto",
-						padding: "6px",
-						display: "inline-flex",
+						display: "flex",
 						alignItems: "center",
-						justifyContent: "center",
-						cursor: canGoPrev ? "pointer" : "not-allowed",
-						opacity: canGoPrev ? 0.8 : 0.4,
+						// W2-46 fix: compact, subtle header controls — 24px buttons
+						// with an 8px gap, visually quieter than the month title.
+						gap: 8,
 					}}
 				>
+					<button
+						type="button"
+						aria-label={previousMonthAriaTemplate.replace(
+							"{month}",
+							prevMonthLabel,
+						)}
+						onClick={() => onPrevMonth()}
+						onMouseEnter={() => canGoPrev && setHoveredNav("prev")}
+						onMouseLeave={() => setHoveredNav((v) => (v === "prev" ? null : v))}
+						disabled={!canGoPrev}
+						tabIndex={0}
+						style={{
+							appearance: "none",
+							background: hoveredNav === "prev" && canGoPrev ? borderColor : "transparent",
+							// W2-46 fix: muted tone (60% text) so the arrows stay
+							// secondary to the month title; disabled stays softer.
+							color: canGoPrev ? mutedText : mutedSoftText,
+							border: "none",
+							borderRadius,
+							width: "auto",
+							height: "auto",
+							padding: "6px",
+							display: "inline-flex",
+							alignItems: "center",
+							justifyContent: "center",
+							cursor: canGoPrev ? "pointer" : "not-allowed",
+							opacity: canGoPrev ? 0.8 : 0.4,
+						}}
+					>
 						<svg
 							width="16"
 							height="16"
@@ -2756,8 +2754,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						style={{
 							appearance: "none",
 							background: hoveredNav === "next" && canGoNext ? borderColor : "transparent",
-						// W2-46 fix: muted tone — matches the prev button.
-						color: canGoNext ? mutedText : mutedSoftText,
+							// W2-46 fix: muted tone — matches the prev button.
+							color: canGoNext ? mutedText : mutedSoftText,
 							border: "none",
 							borderRadius,
 							width: "auto",
@@ -2820,7 +2818,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 				<div role="row" style={{ display: "contents" }}>
 					{weekdayLabels.map((label) => (
 						/* biome-ignore lint/a11y/useSemanticElements lint/a11y/useFocusableInteractive: CSS-grid
-                           header cell — a weekday label, not a native <th> or a control. */
+			   header cell — a weekday label, not a native <th> or a control. */
 						<div
 							role="columnheader"
 							key={label}
@@ -2948,13 +2946,13 @@ interface TimeSlotListProps {
 		minutes: number;
 	}>;
 	availableTimes:
-		| Array<{
-				value: string;
-				label: string;
-				end?: string;
-				minutes: number;
-		  }>
-		| undefined;
+	| Array<{
+		value: string;
+		label: string;
+		end?: string;
+		minutes: number;
+	}>
+	| undefined;
 	selectedTime: string | null;
 	hoveredTime: string | null;
 	setHoveredTime: (time: string | null) => void;
@@ -3050,8 +3048,8 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
 	const reducedMotion = useReducedMotion();
 	return (
 		/* biome-ignore lint/a11y/useSemanticElements: intentional custom radio
-           button — a native <input type="radio"> cannot host the styled slot
-           pill, hover/selected states, and roving-tabindex contract (T5-H3/T5-M1). */
+	   button — a native <input type="radio"> cannot host the styled slot
+	   pill, hover/selected states, and roving-tabindex contract (T5-H3/T5-M1). */
 		<button
 			type="button"
 			// T5-H3 fix (continued): each slot is now a radio in
@@ -3217,10 +3215,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		() =>
 			selectedDate
 				? selectedDate.toLocaleDateString(pageLocale(), {
-						weekday: "short",
-						month: "short",
-						day: "numeric",
-					})
+					weekday: "short",
+					month: "short",
+					day: "numeric",
+				})
 				: "",
 		[selectedDate],
 	);
@@ -3318,26 +3316,26 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						})()}
 					</span>
 				</div>
-			<SegmentedControl
-				options={[
-					{ label: "12h", value: "12h" },
-					{ label: "24h", value: "24h" },
-				]}
-				value={activeTimeFormat}
-				onChange={(val) => {
-					const format = val as "12h" | "24h";
-					React.startTransition(() => {
-						setActiveTimeFormat(format);
-						onTimeFormatChange?.(format);
-					});
-				}}
-				borderRadius={borderRadius}
-				textColor={textColor}
-				mutedTextColor={mutedText}
-				backgroundColor={backgroundColor}
-				borderColor={borderColor}
-				ariaLabel={timeFormatLabel}
-			/>
+				<SegmentedControl
+					options={[
+						{ label: "12h", value: "12h" },
+						{ label: "24h", value: "24h" },
+					]}
+					value={activeTimeFormat}
+					onChange={(val) => {
+						const format = val as "12h" | "24h";
+						React.startTransition(() => {
+							setActiveTimeFormat(format);
+							onTimeFormatChange?.(format);
+						});
+					}}
+					borderRadius={borderRadius}
+					textColor={textColor}
+					mutedTextColor={mutedText}
+					backgroundColor={backgroundColor}
+					borderColor={borderColor}
+					ariaLabel={timeFormatLabel}
+				/>
 			</div>
 
 			{/* W2-47 fix: the time list must stay CONTAINED within the
@@ -3361,43 +3359,43 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						isNarrow
 							? { minWidth: 0 }
 							: {
-									position: "absolute",
-									inset: 0,
-									overflowY: "auto",
-									minWidth: 0,
-								}
+								position: "absolute",
+								inset: 0,
+								overflowY: "auto",
+								minWidth: 0,
+							}
 					}
 				>
-				{/* Fix #18: when no date is picked (and the engine asked
+					{/* Fix #18: when no date is picked (and the engine asked
                             us to hide times until a date is chosen), show a
                             hint instead of dumping all month slots. */}
-				{slotsLoading ? (
-					/* biome-ignore lint/a11y/useSemanticElements: intentional polite
-                               live region (T5-H8) — announces slot loading; <output> is not
-                               a standalone status message and would change inline layout. */
-					<div
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-						style={{
-							padding: "16px 8px",
-							textAlign: "center",
-							color: mutedText,
-							fontSize: 13,
-							fontFamily: "inherit",
-						}}
-					>
-						{loadingLabel}
-					</div>
-				) : !selectedDate && !showTimesWithoutDate ? (
-					<div
-						style={{
-							padding: "16px 8px",
-							textAlign: "center",
-							color: mutedText,
-							fontSize: 13,
-							fontFamily: "inherit",
-						}}
+					{slotsLoading ? (
+						/* biome-ignore lint/a11y/useSemanticElements: intentional polite
+				       live region (T5-H8) — announces slot loading; <output> is not
+				       a standalone status message and would change inline layout. */
+						<div
+							role="status"
+							aria-live="polite"
+							aria-atomic="true"
+							style={{
+								padding: "16px 8px",
+								textAlign: "center",
+								color: mutedText,
+								fontSize: 13,
+								fontFamily: "inherit",
+							}}
+						>
+							{loadingLabel}
+						</div>
+					) : !selectedDate && !showTimesWithoutDate ? (
+						<div
+							style={{
+								padding: "16px 8px",
+								textAlign: "center",
+								color: mutedText,
+								fontSize: 13,
+								fontFamily: "inherit",
+							}}
 						// W1-10-A14 fix: this hint was given
 						// role="status"/aria-live in the T5-H8 sweep,
 						// which made SRs announce the STATIC guidance
@@ -3405,175 +3403,175 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						// copy, not a status change — interactive
 						// updates (loading / no-times) keep their
 						// live regions two blocks up/down.
-					>
-						{pickDateToSeeTimesLabel}
-					</div>
-				) : timeOptions.length === 0 && availableTimes === undefined ? (
-					// L3 fix: only show this fallback "No available
-					// times" empty-state when the parent ISN'T
-					// driving this from Cal.com. In Cal.com mode
-					// (availableTimes !== undefined), the parent's
-					// own outer banner — copy.noTimesLabel — already
-					// owns the "no slots for this day" messaging,
-					// so duplicating it here would stack two
-					// "no times" panels on top of each other.
-					// This branch now only fires in genuine demo
-					// mode, where the synthetic grid happened to
-					// produce zero slots (e.g. startTime>endTime).
-					/* biome-ignore lint/a11y/useSemanticElements: intentional
-                               polite live region (T5-H8) — <output> is not a standalone
-                               status message and would change inline layout here. */
-					<div
-						style={{
-							padding: "16px 8px",
-							textAlign: "center",
-							color: mutedText,
-							fontSize: 13,
-							fontFamily: "inherit",
-						}}
-						// Same T5-H8 fix: "no availability" is a
-						// status change screen readers must hear.
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-					>
-						{noTimesFallbackLabel}
-					</div>
-				) : timeOptions.length === 0 ? (
-					// Cal.com mode with zero slots for this day —
-					// the parent's outer banner handles the message;
-					// render an empty spacer here to avoid the L3
-					// duplicate-panel layout.
-					<div style={{ padding: "8px 0" }} />
-				) : (
-					<div
-						// W1-11-F5 fix: the grid is queried by the
-						// elapsed-focus rescue effect.
-						ref={slotGridRef}
-						style={{
-							display: "grid",
-							// W2-39 fix: one vertical column — each slot
-							// spans the full width and sits directly below
-							// the previous one (no nested scroll).
-							gridTemplateColumns: "minmax(0, 1fr)",
-							gap: isNarrow ? 6 : 8,
-							minWidth: 0,
-						}}
-						// T5-H3 fix: the time buttons were presented as
-						// plain buttons (aria-pressed), and T5-M1: every
-						// button was tabbable with no arrow-key navigation.
-						// The list is now a proper single-tab radio group
-						// with roving tabindex and arrow keys, matching the
-						// date grid's keyboard model.
-						role="radiogroup"
-						aria-label={availableTimesAriaLabel}
-						aria-required={required || undefined}
-						// W1-10-N1 fix: error wiring matching every other
-						// invalidatable control (see FieldRenderer paths).
-						aria-invalid={slotError ? true : undefined}
-						aria-describedby={slotError ? slotErrorId : undefined}
-						onKeyDown={(e) => {
-							// FINAL-44 fix: defense-in-depth Space capture.
-							if (e.key === " ") {
+						>
+							{pickDateToSeeTimesLabel}
+						</div>
+					) : timeOptions.length === 0 && availableTimes === undefined ? (
+						// L3 fix: only show this fallback "No available
+						// times" empty-state when the parent ISN'T
+						// driving this from Cal.com. In Cal.com mode
+						// (availableTimes !== undefined), the parent's
+						// own outer banner — copy.noTimesLabel — already
+						// owns the "no slots for this day" messaging,
+						// so duplicating it here would stack two
+						// "no times" panels on top of each other.
+						// This branch now only fires in genuine demo
+						// mode, where the synthetic grid happened to
+						// produce zero slots (e.g. startTime>endTime).
+						/* biome-ignore lint/a11y/useSemanticElements: intentional
+				       polite live region (T5-H8) — <output> is not a standalone
+				       status message and would change inline layout here. */
+						<div
+							style={{
+								padding: "16px 8px",
+								textAlign: "center",
+								color: mutedText,
+								fontSize: 13,
+								fontFamily: "inherit",
+							}}
+							// Same T5-H8 fix: "no availability" is a
+							// status change screen readers must hear.
+							role="status"
+							aria-live="polite"
+							aria-atomic="true"
+						>
+							{noTimesFallbackLabel}
+						</div>
+					) : timeOptions.length === 0 ? (
+						// Cal.com mode with zero slots for this day —
+						// the parent's outer banner handles the message;
+						// render an empty spacer here to avoid the L3
+						// duplicate-panel layout.
+						<div style={{ padding: "8px 0" }} />
+					) : (
+						<div
+							// W1-11-F5 fix: the grid is queried by the
+							// elapsed-focus rescue effect.
+							ref={slotGridRef}
+							style={{
+								display: "grid",
+								// W2-39 fix: one vertical column — each slot
+								// spans the full width and sits directly below
+								// the previous one (no nested scroll).
+								gridTemplateColumns: "minmax(0, 1fr)",
+								gap: isNarrow ? 6 : 8,
+								minWidth: 0,
+							}}
+							// T5-H3 fix: the time buttons were presented as
+							// plain buttons (aria-pressed), and T5-M1: every
+							// button was tabbable with no arrow-key navigation.
+							// The list is now a proper single-tab radio group
+							// with roving tabindex and arrow keys, matching the
+							// date grid's keyboard model.
+							role="radiogroup"
+							aria-label={availableTimesAriaLabel}
+							aria-required={required || undefined}
+							// W1-10-N1 fix: error wiring matching every other
+							// invalidatable control (see FieldRenderer paths).
+							aria-invalid={slotError ? true : undefined}
+							aria-describedby={slotError ? slotErrorId : undefined}
+							onKeyDown={(e) => {
+								// FINAL-44 fix: defense-in-depth Space capture.
+								if (e.key === " ") {
+									e.preventDefault();
+									return;
+								}
+								const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+								// W1-09-DT-10 fix: Home/End per the WAI-ARIA
+								// radiogroup pattern — jump to the first/last
+								// pickable slot (elapsed ones are disabled and
+								// skipped).
+								if (e.key === "Home" || e.key === "End") {
+									e.preventDefault();
+									const liveButtons = Array.from(
+										e.currentTarget.querySelectorAll<HTMLButtonElement>(
+											"button[role='radio']:not([disabled])",
+										),
+									);
+									if (!liveButtons.length) return;
+									const target =
+										e.key === "Home"
+											? liveButtons[0]
+											: liveButtons[liveButtons.length - 1];
+									if (!target) return;
+									target.focus();
+									const allButtons = Array.from(
+										e.currentTarget.querySelectorAll<HTMLButtonElement>(
+											"button[role='radio']",
+										),
+									);
+									const targetIndex = allButtons.indexOf(target);
+									const opt = timeOptions[targetIndex];
+									if (opt) onSelectTime(opt.value);
+									return;
+								}
+								if (!keys.includes(e.key)) return;
 								e.preventDefault();
-								return;
-							}
-							const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
-							// W1-09-DT-10 fix: Home/End per the WAI-ARIA
-							// radiogroup pattern — jump to the first/last
-							// pickable slot (elapsed ones are disabled and
-							// skipped).
-							if (e.key === "Home" || e.key === "End") {
-								e.preventDefault();
-								const liveButtons = Array.from(
-									e.currentTarget.querySelectorAll<HTMLButtonElement>(
-										"button[role='radio']:not([disabled])",
-									),
-								);
-								if (!liveButtons.length) return;
-								const target =
-									e.key === "Home"
-										? liveButtons[0]
-										: liveButtons[liveButtons.length - 1];
-								if (!target) return;
-								target.focus();
-								const allButtons = Array.from(
+								const buttons = Array.from(
 									e.currentTarget.querySelectorAll<HTMLButtonElement>(
 										"button[role='radio']",
 									),
 								);
-								const targetIndex = allButtons.indexOf(target);
-								const opt = timeOptions[targetIndex];
-								if (opt) onSelectTime(opt.value);
-								return;
-							}
-							if (!keys.includes(e.key)) return;
-							e.preventDefault();
-							const buttons = Array.from(
-								e.currentTarget.querySelectorAll<HTMLButtonElement>(
-									"button[role='radio']",
-								),
-							);
-							if (!buttons.length) return;
-							const idx = selectedTime
-								? Math.max(
+								if (!buttons.length) return;
+								const idx = selectedTime
+									? Math.max(
 										0,
 										timeOptions.findIndex((t) => t.value === selectedTime),
 									)
-								: 0;
-							const move =
-								e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
-							const next = (idx + move + buttons.length) % buttons.length;
-							const target = buttons[next];
-							if (target && !target.disabled) {
-								target.focus();
-								onSelectTime(timeOptions[next].value);
-							}
-						}}
-					>
-						{timeOptions.map((time, index) => {
-							const selected = selectedTime === time.value;
-							// H3 fix: an elapsed slot is shown but
-							// disabled, the same treatment past
-							// calendar dates already get, rather
-							// than staying fully clickable.
-							const elapsed = isTimeElapsed(time);
-							const isHover =
-								hoveredTime === time.value && !selected && !elapsed;
-							return (
-								// W1-16-P-02 fix: memo'd child — see
-								// TimeSlotButton above.
-								<TimeSlotButton
-									key={time.value}
-									value={time.value}
-									label={time.label}
-									selected={selected}
-									elapsed={elapsed}
-									hovered={isHover}
-									isNarrow={isNarrow}
-									accentColor={accentColor}
-									borderColor={borderColor}
-									mutedSoftText={mutedSoftText}
-									textColor={textColor}
-									selectedAccentText={selectedAccentText}
-									onSelect={onSelectTime}
-									// F-17-3 fix: radius token.
-									radius={borderRadius}
-									setHoveredTime={setHoveredTime}
-									setFocusedKey={setFocusedKey}
-									isInitialFocus={
-										selectedTime === null && firstNonElapsedIndex === index
-									}
-									// W1-10-A13 fix: zone for the
-									// slot aria-label.
-									timeZone={timeZone}
-									// W1-09-DT-SR fix: date context.
-									slotDateLabel={slotDateLabel}
-								/>
-							);
-						})}
-					</div>
-				)}
+									: 0;
+								const move =
+									e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+								const next = (idx + move + buttons.length) % buttons.length;
+								const target = buttons[next];
+								if (target && !target.disabled) {
+									target.focus();
+									onSelectTime(timeOptions[next].value);
+								}
+							}}
+						>
+							{timeOptions.map((time, index) => {
+								const selected = selectedTime === time.value;
+								// H3 fix: an elapsed slot is shown but
+								// disabled, the same treatment past
+								// calendar dates already get, rather
+								// than staying fully clickable.
+								const elapsed = isTimeElapsed(time);
+								const isHover =
+									hoveredTime === time.value && !selected && !elapsed;
+								return (
+									// W1-16-P-02 fix: memo'd child — see
+									// TimeSlotButton above.
+									<TimeSlotButton
+										key={time.value}
+										value={time.value}
+										label={time.label}
+										selected={selected}
+										elapsed={elapsed}
+										hovered={isHover}
+										isNarrow={isNarrow}
+										accentColor={accentColor}
+										borderColor={borderColor}
+										mutedSoftText={mutedSoftText}
+										textColor={textColor}
+										selectedAccentText={selectedAccentText}
+										onSelect={onSelectTime}
+										// F-17-3 fix: radius token.
+										radius={borderRadius}
+										setHoveredTime={setHoveredTime}
+										setFocusedKey={setFocusedKey}
+										isInitialFocus={
+											selectedTime === null && firstNonElapsedIndex === index
+										}
+										// W1-10-A13 fix: zone for the
+										// slot aria-label.
+										timeZone={timeZone}
+										// W1-09-DT-SR fix: date context.
+										slotDateLabel={slotDateLabel}
+									/>
+								);
+							})}
+						</div>
+					)}
 				</div>
 			</div>
 		</aside>
@@ -4105,24 +4103,24 @@ function useTimeGrid(options: UseTimeGridOptions): {
 			// (and any DST-fold distinction) lives in the ISO `value`,
 			// aria-labels, and the booking payload — never in the text.
 			// W2-48 fix: before a date is picked, `availableTimes`
-				// contains the whole month's slots — every day's 9:00 AM shares
-				// the same wall-clock minutes, so mapping directly produced the
-				// same 9:00→16:45 range repeated per day. Deduplicate
-				// deterministically by the slot's time-of-day identity (minutes
-				// + label) before mapping so the pre-selection list is a single
-				// clean range. Post-selection filtering already yields one day.
-				const seenMinutes = new Set<string>();
-				const deduped: typeof availableTimes = [];
-				for (const t of availableTimes) {
-					const key = `${t.minutes}|${t.value.slice(11, 16)}`;
-					if (!seenMinutes.has(key)) {
-						seenMinutes.add(key);
-						deduped.push(t);
-					}
+			// contains the whole month's slots — every day's 9:00 AM shares
+			// the same wall-clock minutes, so mapping directly produced the
+			// same 9:00→16:45 range repeated per day. Deduplicate
+			// deterministically by the slot's time-of-day identity (minutes
+			// + label) before mapping so the pre-selection list is a single
+			// clean range. Post-selection filtering already yields one day.
+			const seenMinutes = new Set<string>();
+			const deduped: typeof availableTimes = [];
+			for (const t of availableTimes) {
+				const key = `${t.minutes}|${t.value.slice(11, 16)}`;
+				if (!seenMinutes.has(key)) {
+					seenMinutes.add(key);
+					deduped.push(t);
 				}
-				// Fallback: if dedup somehow empties (should not), keep original
-				const source = deduped.length ? deduped : availableTimes;
-				return source.map((timeOption) => ({
+			}
+			// Fallback: if dedup somehow empties (should not), keep original
+			const source = deduped.length ? deduped : availableTimes;
+			return source.map((timeOption) => ({
 				value: timeOption.value,
 				end: timeOption.end,
 				label: formatTimeLabel(
@@ -4194,14 +4192,14 @@ function useTimeGrid(options: UseTimeGridOptions): {
 			const slotMoment = time.value.includes("T")
 				? new Date(time.value)
 				: (() => {
-						const d = new Date(
-							selectedDate.getFullYear(),
-							selectedDate.getMonth(),
-							selectedDate.getDate(),
-						);
-						d.setMinutes(time.minutes);
-						return d;
-					})();
+					const d = new Date(
+						selectedDate.getFullYear(),
+						selectedDate.getMonth(),
+						selectedDate.getDate(),
+					);
+					d.setMinutes(time.minutes);
+					return d;
+				})();
 			return slotMoment.getTime() <= now.getTime();
 		},
 		[selectedDate, today, now],
@@ -4257,7 +4255,7 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
 		typeof meta.durationMinutes === "number" && meta.durationMinutes > 0
 			? meta.durationMinutes
 			: typeof fallbackDurationMinutes === "number" &&
-				  fallbackDurationMinutes > 0
+				fallbackDurationMinutes > 0
 				? fallbackDurationMinutes
 				: undefined;
 	const initial = meta.organizerName?.trim().charAt(0).toUpperCase();
@@ -5167,27 +5165,27 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			// booking horizon (maxMonthStart) that the nav buttons already
 			// respect. Mirror the same clamp here.
 			if (startOfDay(target).getTime() > maxMonthStart.getTime()) return;
-		if (!hasKnownAvailabilityRef.current(target)) return;
-		const inVisibleMonth =
-			target.getFullYear() === visibleMonth.getFullYear() &&
-			target.getMonth() === visibleMonth.getMonth();
-		if (!inVisibleMonth) {
-			const monthStart = new Date(target.getFullYear(), target.getMonth(), 1);
-			// W1-09-NEW-03 fix: cross-month arrow moves previously scheduled
-			// a single rAF here. Under startTransition deferral (scheduler
-			// load) that frame could fire while the OLD grid was still
-			// mounted — focusing (or missing) the target in the outgoing
-			// grid and dropping focus to document.body after commit. Hand
-			// the target key to the same pendingMonthFocusRef contract that
-			// PageUp/PageDown already use: the post-commit effect (in
-			// useCalendarNavigation) focuses the exact cell once the new
-			// month exists.
-			pendingMonthFocusRef.current = true;
-			pendingMonthFocusTargetRef.current = dateKeyOf(target);
-			React.startTransition(() => setVisibleMonth(monthStart));
-			return;
-		}
-		const key = dateKeyOf(target);
+			if (!hasKnownAvailabilityRef.current(target)) return;
+			const inVisibleMonth =
+				target.getFullYear() === visibleMonth.getFullYear() &&
+				target.getMonth() === visibleMonth.getMonth();
+			if (!inVisibleMonth) {
+				const monthStart = new Date(target.getFullYear(), target.getMonth(), 1);
+				// W1-09-NEW-03 fix: cross-month arrow moves previously scheduled
+				// a single rAF here. Under startTransition deferral (scheduler
+				// load) that frame could fire while the OLD grid was still
+				// mounted — focusing (or missing) the target in the outgoing
+				// grid and dropping focus to document.body after commit. Hand
+				// the target key to the same pendingMonthFocusRef contract that
+				// PageUp/PageDown already use: the post-commit effect (in
+				// useCalendarNavigation) focuses the exact cell once the new
+				// month exists.
+				pendingMonthFocusRef.current = true;
+				pendingMonthFocusTargetRef.current = dateKeyOf(target);
+				React.startTransition(() => setVisibleMonth(monthStart));
+				return;
+			}
+			const key = dateKeyOf(target);
 			// W2-30-F4 fix: the frame is tracked and cancelled before the next
 			// move issues a new one (and on unmount below), instead of letting
 			// stale focus frames queue up.
@@ -5267,20 +5265,20 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				style={
 					isNarrow
 						? {
-								display: "flex",
-								flexDirection: "column",
-								minHeight: 0,
-								flex: 1,
-							}
+							display: "flex",
+							flexDirection: "column",
+							minHeight: 0,
+							flex: 1,
+						}
 						: {
-								display: "grid",
-								minHeight: 0,
-								flex: 1,
-								gridTemplateColumns:
-									eventMetaStatus !== "disabled"
-										? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
-										: "minmax(0, 2fr) minmax(0, 1fr)",
-							}
+							display: "grid",
+							minHeight: 0,
+							flex: 1,
+							gridTemplateColumns:
+								eventMetaStatus !== "disabled"
+									? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
+									: "minmax(0, 2fr) minmax(0, 1fr)",
+						}
 				}
 			>
 				{/* CAL-EVENT-META: event information panel — first column on
@@ -5330,8 +5328,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							/>
 						) : eventMetaStatus === "failed" ? (
 							/* Neutral, informational fallback — no fake data,
-                                no error tones (rule 38: metadata failure is
-                                never an alarm). */
+				no error tones (rule 38: metadata failure is
+				never an alarm). */
 							<div
 								style={{
 									fontSize: 13,
@@ -5343,7 +5341,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							</div>
 						) : (
 							/* Loading skeleton — static neutral blocks, no
-                                shimmer, identical markup on server and client. */
+				shimmer, identical markup on server and client. */
 							<div
 								aria-hidden="true"
 								style={{
@@ -5689,12 +5687,12 @@ interface FieldConfig {
 	// used for this field regardless of its type; `minLength` overrides the
 	// default for min-length rules; `customRegex` feeds "custom-regex".
 	validationRule?:
-		| "type"
-		| "none"
-		| "email"
-		| "phone"
-		| "min-length"
-		| "custom-regex";
+	| "type"
+	| "none"
+	| "email"
+	| "phone"
+	| "min-length"
+	| "custom-regex";
 	minLength?: number;
 	customRegex?: string;
 	// W1-20-M6 fix: canvas-only test input for the Regex Pattern control.
@@ -5702,18 +5700,14 @@ interface FieldConfig {
 	// (matches / no match / invalid / ReDoS risk) evaluated with the exact
 	// same compiled regex the published flow uses. Never rendered live.
 	regexPreviewInput?: string;
-	// FIELD-STYLES (hard rule): per-field visual overrides. Four keys, ONE
+	// FIELD-STYLES (hard rule): per-field visual overrides. Three keys, ONE
 	// shared model (FieldStyleOverrides) — the panel shows exactly one
 	// "Styles" submenu per field type: input-like fields (text/email/phone/
 	// textarea/select) use `styles`, choice groups use `choiceStyles`,
-	// checkbox uses `checkStyles`, and the Calendar Widget marker uses
-	// `calendarStyles` (CAL-BG-OWNERSHIP: it owns its background via this
-	// key, NOT the global Background token — see AGENTS.md). Unset keys keep
-	// the engine theme look.
+	// checkbox uses `checkStyles`. Unset keys keep the engine theme look.
 	styles?: FieldStyleOverrides;
 	choiceStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
-	calendarStyles?: FieldStyleOverrides;
 }
 
 interface StepConfig {
@@ -5780,12 +5774,12 @@ interface BookingEngineStyleProps {
 	// source of truth for which of the 6 production concepts is used.
 	transition: Transition;
 	transitionVariant?:
-		| "fadeRise"
-		| "blurScale"
-		| "slide"
-		| "zoom"
-		| "verticalSlide"
-		| "blurSlide";
+	| "fadeRise"
+	| "blurScale"
+	| "slide"
+	| "zoom"
+	| "verticalSlide"
+	| "blurSlide";
 }
 
 // ===== Copy =====
@@ -6042,8 +6036,8 @@ interface BookingEngineConfigProps {
 
 interface BookingEngineProps
 	extends BookingEngineStyleProps,
-		BookingEngineConfigProps,
-		BookingEngineCopyProps {}
+	BookingEngineConfigProps,
+	BookingEngineCopyProps { }
 
 // W1-04-L3 fix: the old `[^\s@]+@[^\s@]+\.[^\s@]{2,}` accepted
 // "user@domain..com" (double dot), "user@.com" (no domain) and
@@ -7427,10 +7421,10 @@ function useCalcomSlots(
 					const json = await readJson<
 						| { data?: unknown[] }
 						| {
-								data?: {
-									slots?: Record<string, unknown[]>;
-								};
-						  }
+							data?: {
+								slots?: Record<string, unknown[]>;
+							};
+						}
 						| { slots?: unknown[] }
 						| unknown[]
 					>(res);
@@ -7455,15 +7449,15 @@ function useCalcomSlots(
 							// through to `rawSlots = []` (empty calendar, no
 							// error). Read `data.slots` if present (legacy
 							// nesting), else flatten the date-key map.
-						const slots = (data as { slots?: unknown }).slots;
-						if (slots && typeof slots === "object") {
-							// W1-15-TS-10 fix: normalization happens once at the
-							// mapping step below (normalizeCalSlot), so the raw
-							// shape stays unknown here.
-							rawSlots = Object.values(slots).flat();
-						} else {
-							rawSlots = Object.values(data).flat();
-						}
+							const slots = (data as { slots?: unknown }).slots;
+							if (slots && typeof slots === "object") {
+								// W1-15-TS-10 fix: normalization happens once at the
+								// mapping step below (normalizeCalSlot), so the raw
+								// shape stays unknown here.
+								rawSlots = Object.values(slots).flat();
+							} else {
+								rawSlots = Object.values(data).flat();
+							}
 						} else if (Array.isArray(body.slots)) {
 							rawSlots = body.slots;
 						}
@@ -7581,9 +7575,9 @@ function useCalcomSlots(
 						message =
 							waitSeconds !== undefined && waitSeconds > 0
 								? copy.slotsRateLimitTemplate.replace(
-										"{seconds}",
-										String(Math.min(waitSeconds, 90)),
-									)
+									"{seconds}",
+									String(Math.min(waitSeconds, 90)),
+								)
 								: copy.slotsRateLimitGenericError;
 					} else if (status && status >= 500) {
 						message = copy.slotsUnavailableError;
@@ -7602,7 +7596,7 @@ function useCalcomSlots(
 							plainErr?.message === MALFORMED_JSON_ERROR
 								? copy.slotsFallbackError
 								: plainErr instanceof TypeError ||
-									  plainErr?.name === "TypeError"
+									plainErr?.name === "TypeError"
 									? // DETERMINISTIC-LIFECYCLE (honesty): a TypeError right
 									// after a readable 429 is almost always the browser
 									// blocking a non-CORS 429 response — report the
@@ -8589,7 +8583,7 @@ async function submitCalcomBooking(params: {
 				? copy.malformedResponseError
 				: opaqueAfterRateLimit
 					? copy.slotsRateLimitGenericError
-				: mapCalcomError(
+					: mapCalcomError(
 						errObj?.message || "",
 						errObj?.code || errObj?.errorCode,
 						copy,
@@ -8629,7 +8623,7 @@ async function submitCalcomBooking(params: {
 					? MALFORMED_JSON_ERROR
 					: opaqueAfterRateLimit
 						? "RATE_LIMIT_EXCEEDED"
-					: errObj?.code || errObj?.errorCode || "",
+						: errObj?.code || errObj?.errorCode || "",
 			// W1-06-F-06-4 fix: the string above is already visitor-facing
 			// copy — flag it so handleSubmitBooking's mapCalcomError pass
 			// does not re-map (and degrade) it.
@@ -9118,12 +9112,12 @@ function buildIcsDataUri(
 		`SUMMARY:${escapeIcsText(summary || summaryFallback)}`,
 		...(description
 			? // W1-06-F-06-2 fix: slice the RAW text to 500 chars FIRST, then
-				// escape. The old order (escape → slice) could cut a 2-char
-				// escape sequence in half (e.g. `\;` → dangling `\`), which
-				// strict RFC 5545 parsers may use to drop DESCRIPTION or the
-				// whole VEVENT. Slicing the unescaped source leaves every
-				// escape sequence intact.
-				[`DESCRIPTION:${escapeIcsText(description.slice(0, 500))}`]
+			// escape. The old order (escape → slice) could cut a 2-char
+			// escape sequence in half (e.g. `\;` → dangling `\`), which
+			// strict RFC 5545 parsers may use to drop DESCRIPTION or the
+			// whole VEVENT. Slicing the unescaped source leaves every
+			// escape sequence intact.
+			[`DESCRIPTION:${escapeIcsText(description.slice(0, 500))}`]
 			: []),
 		...(location && location.trim()
 			? [`LOCATION:${escapeIcsText(location.trim())}`]
@@ -9480,13 +9474,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 				validationMessages?.emailError ?? DEFAULT_VALIDATION_COPY.emailError,
 			phoneError:
 				validationMessages?.phoneError ?? DEFAULT_VALIDATION_COPY.phoneError,
-		minLengthError:
-			validationMessages?.minLengthError ??
-			DEFAULT_VALIDATION_COPY.minLengthError,
-		maxLengthError:
-			validationMessages?.maxLengthError ??
-			DEFAULT_VALIDATION_COPY.maxLengthError,
-		pickDateTimeError:
+			minLengthError:
+				validationMessages?.minLengthError ??
+				DEFAULT_VALIDATION_COPY.minLengthError,
+			maxLengthError:
+				validationMessages?.maxLengthError ??
+				DEFAULT_VALIDATION_COPY.maxLengthError,
+			pickDateTimeError:
 				validationMessages?.pickDateTimeError ??
 				DEFAULT_VALIDATION_COPY.pickDateTimeError,
 			pastTimeError:
@@ -9626,7 +9620,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 	const stepTransition: Transition = prefersReducedMotion
 		? ({ type: "tween", duration: 0 } as const)
 		: transition ||
-			({ type: "tween", ease: [0.44, 0, 0.56, 1], duration: 0.4 } as const);
+		({ type: "tween", ease: [0.44, 0, 0.56, 1], duration: 0.4 } as const);
 
 	const allowedTransitionVariants: TransitionVariantId[] = [
 		"fadeRise",
@@ -9859,9 +9853,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 			pinnedIndex !== -1
 				? pinnedIndex
 				: // W1-03-5 fix: the fallback used raw `currentIndex`; the
-					// clamped `safeCurrentIndex` is the semantically correct
-					// value when the pinned ID is stale/missing.
-					Math.min(baseSafeCurrentIndex, baseTotalActive - 1);
+				// clamped `safeCurrentIndex` is the semantically correct
+				// value when the pinned ID is stale/missing.
+				Math.min(baseSafeCurrentIndex, baseTotalActive - 1);
 		if (remapped !== currentIndex) {
 			// W1-03-4 fix: `React.startTransition` deferred the commit —
 			// the "before paint" guarantee this render-phase remap exists
@@ -10244,19 +10238,19 @@ function useBookingEngineState(props: BookingEngineProps) {
 						// refresh mid-flow silently dropped the visitor back to
 						// step 0 (the layout effect below re-clamps the restored
 						// value if the author changed the step count meanwhile).
-					currentIndex: baseSafeCurrentIndex,
-				}),
-			);
-		} catch (err: unknown) {
-			// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
-			// silently swallowed - the visitor believed progress was being
-			// saved while nothing was. Log it; there is no visitor-facing
-			// disclosure for autosave.
-			console.warn(
-				"BookingEngine: failed to save progress (storage full?).",
-				err,
-			);
-		}
+						currentIndex: baseSafeCurrentIndex,
+					}),
+				);
+			} catch (err: unknown) {
+				// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
+				// silently swallowed - the visitor believed progress was being
+				// saved while nothing was. Log it; there is no visitor-facing
+				// disclosure for autosave.
+				console.warn(
+					"BookingEngine: failed to save progress (storage full?).",
+					err,
+				);
+			}
 		}, 300);
 		return () => {
 			if (persistTimerRef.current !== null) {
@@ -10852,7 +10846,7 @@ function useBookingEngineState(props: BookingEngineProps) {
 			if (!field) return;
 			setErrors((prev) => {
 				if (!prev[fieldId]) return prev;
-			const err = validateField(field, nextValue, validationCopy);
+				const err = validateField(field, nextValue, validationCopy);
 				if (err === prev[fieldId]) return prev;
 				return { ...prev, [fieldId]: err };
 			});
@@ -11119,13 +11113,13 @@ function useBookingEngineState(props: BookingEngineProps) {
 			const errorMessage = result.alreadyMapped
 				? (result.error || copy.errorFallbackMessage)
 				: mapCalcomError(
-						result.error || copy.unknownErrorLabel,
-						result.errorCode,
-						errorCopy,
-						copy.errorFallbackMessage,
-						// FINAL-21 fix: last-resort status classification.
-						result.httpStatus,
-					);
+					result.error || copy.unknownErrorLabel,
+					result.errorCode,
+					errorCopy,
+					copy.errorFallbackMessage,
+					// FINAL-21 fix: last-resort status classification.
+					result.httpStatus,
+				);
 			setSubmitError(errorMessage);
 			// FINAL-20 fix: remember the machine code alongside the message.
 			submitErrorCodeRef.current = result.errorCode || null;
@@ -11557,9 +11551,9 @@ function useBookingEngineState(props: BookingEngineProps) {
 	// placeholder substitution now.
 	const stepAnnouncementText = currentStep
 		? (copy.stepAnnouncementTemplate ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE)
-				.replace("{counter}", counterText)
-				.replace("{percent}", String(completePct))
-				.replace("{title}", currentStep.title)
+			.replace("{counter}", counterText)
+			.replace("{percent}", String(completePct))
+			.replace("{title}", currentStep.title)
 		: "";
 	const announcedStepRef = React.useRef(safeCurrentIndex);
 	const [stepAnnouncement, setStepAnnouncement] = React.useState("");
@@ -12133,7 +12127,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                 generated demo grid when credentials are missing. */}
 			{isCanvas && needsCalSetup ? (
 				/* biome-ignore lint/a11y/useSemanticElements: intentional
-                    polite banner live region (W1-13-F-13-9). */
+		    polite banner live region (W1-13-F-13-9). */
 				<div
 					// W1-13-F-13-9 fix: canvas banners were silent divs —
 					// screen-reader-using authors were never told a banner
@@ -12164,7 +12158,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* Canvas-only guardrail for missing name/email fields. */}
 			{isCanvas && needsNameEmailGuardrail ? (
 				/* biome-ignore lint/a11y/useSemanticElements: intentional
-                    polite banner live region (W1-13-F-13-9). */
+		    polite banner live region (W1-13-F-13-9). */
 				<div
 					// W1-13-F-13-9 fix: silent div → polite status region.
 					role="status"
@@ -12193,32 +12187,32 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* Canvas-only warnings for empty steps / empty choice options. */}
 			{isCanvas && emptyStepWarnings.length > 0
 				? emptyStepWarnings.map((msg) => (
-						/* biome-ignore lint/a11y/useSemanticElements: intentional
-                          polite status region (W1-13-F-13-9) — each warning
-                          announces on mount. */
-						<div
-							key={msg}
-							// W1-13-F-13-9 fix: silent div → polite status
-							// region (each warning announces on mount).
-							role="status"
-							aria-live="polite"
-							aria-atomic="true"
-							style={{
-								padding: "10px 14px",
-								marginBottom: 8,
-								borderRadius: borderRadius,
-								background: withAlpha(theme.errorColor, 0.1),
-								// W1-13-F-13-8 fix: missing border, same
-								// invisibility risk as the guardrail banner.
-								border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
-								color: theme.errorColor,
-								fontSize: 12,
-								lineHeight: 1.4,
-							}}
-						>
-							{msg}
-						</div>
-					))
+					/* biome-ignore lint/a11y/useSemanticElements: intentional
+		  polite status region (W1-13-F-13-9) — each warning
+		  announces on mount. */
+					<div
+						key={msg}
+						// W1-13-F-13-9 fix: silent div → polite status
+						// region (each warning announces on mount).
+						role="status"
+						aria-live="polite"
+						aria-atomic="true"
+						style={{
+							padding: "10px 14px",
+							marginBottom: 8,
+							borderRadius: borderRadius,
+							background: withAlpha(theme.errorColor, 0.1),
+							// W1-13-F-13-8 fix: missing border, same
+							// invisibility risk as the guardrail banner.
+							border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
+							color: theme.errorColor,
+							fontSize: 12,
+							lineHeight: 1.4,
+						}}
+					>
+						{msg}
+					</div>
+				))
 				: null}
 
 			{/* W1-20-M6 fix: canvas-only regex preview verdicts (live
@@ -12226,58 +12220,58 @@ export default function BookingEngine(props: BookingEngineProps) {
                 preview or on the published site. */}
 			{isCanvas && regexPreviewVerdicts.length > 0
 				? regexPreviewVerdicts.map((verdict, verdictIdx) => (
-						/* biome-ignore lint/a11y/useSemanticElements: intentional
-                          polite status region (W1-13-F-13-9) for author-facing
-                          verdicts. */
+					/* biome-ignore lint/a11y/useSemanticElements: intentional
+		  polite status region (W1-13-F-13-9) for author-facing
+		  verdicts. */
+					<div
+						key={`${verdict.fieldLabel}-${verdict.pattern}-${verdictIdx}`}
+						// W1-13-F-13-9 fix: silent div → polite status
+						// region for author-facing verdicts.
+						role="status"
+						aria-live="polite"
+						aria-atomic="true"
+						style={{
+							padding: "10px 14px",
+							marginBottom: 8,
+							borderRadius: borderRadius,
+							background: withAlpha(
+								verdict.kind === "ok"
+									? theme.successColor
+									: verdict.kind === "mismatch"
+										? theme.errorColor
+										: theme.accentColor,
+								0.1,
+							),
+							border: `1px solid ${withAlpha(
+								verdict.kind === "ok"
+									? theme.successColor
+									: verdict.kind === "mismatch"
+										? theme.errorColor
+										: theme.accentColor,
+								0.3,
+							)}`,
+							color: theme.textPrimaryColor,
+							fontSize: 12,
+							lineHeight: 1.4,
+						}}
+					>
+						<strong style={{ color: theme.textPrimaryColor }}>
+							{verdict.fieldLabel}
+						</strong>
+						<span style={{ opacity: 0.75 }}> — {verdict.message}</span>
 						<div
-							key={`${verdict.fieldLabel}-${verdict.pattern}-${verdictIdx}`}
-							// W1-13-F-13-9 fix: silent div → polite status
-							// region for author-facing verdicts.
-							role="status"
-							aria-live="polite"
-							aria-atomic="true"
 							style={{
-								padding: "10px 14px",
-								marginBottom: 8,
-								borderRadius: borderRadius,
-								background: withAlpha(
-									verdict.kind === "ok"
-										? theme.successColor
-										: verdict.kind === "mismatch"
-											? theme.errorColor
-											: theme.accentColor,
-									0.1,
-								),
-								border: `1px solid ${withAlpha(
-									verdict.kind === "ok"
-										? theme.successColor
-										: verdict.kind === "mismatch"
-											? theme.errorColor
-											: theme.accentColor,
-									0.3,
-								)}`,
-								color: theme.textPrimaryColor,
-								fontSize: 12,
-								lineHeight: 1.4,
+								fontFamily: "'SF Mono', Consolas, 'Courier New', monospace",
+								fontSize: 11,
+								opacity: 0.7,
+								marginTop: 4,
+								overflowWrap: "anywhere",
 							}}
 						>
-							<strong style={{ color: theme.textPrimaryColor }}>
-								{verdict.fieldLabel}
-							</strong>
-							<span style={{ opacity: 0.75 }}> — {verdict.message}</span>
-							<div
-								style={{
-									fontFamily: "'SF Mono', Consolas, 'Courier New', monospace",
-									fontSize: 11,
-									opacity: 0.7,
-									marginTop: 4,
-									overflowWrap: "anywhere",
-								}}
-							>
-								{verdict.pattern}
-							</div>
+							{verdict.pattern}
 						</div>
-					))
+					</div>
+				))
 				: null}
 
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
@@ -12664,104 +12658,104 @@ export default function BookingEngine(props: BookingEngineProps) {
 						justifyContent: "flex-end",
 					}}
 				>
-				{/* W2-25-F11 fix: Cancel during an in-flight submission —
+					{/* W2-25-F11 fix: Cancel during an in-flight submission —
                     aborts the POST (abortControllerRef) and returns to the
                     review form instead of forcing the visitor to wait out
                     the full FETCH_TIMEOUT_MS spinner or navigate away. */}
-				{isSubmitting ? (
+					{isSubmitting ? (
+						<button
+							type="button"
+							onClick={handleCancelSubmit}
+							style={{
+								minHeight: TOUCH_TARGET_MIN,
+								padding: "10px 18px",
+								borderRadius: borderRadius,
+								border: `1px solid ${theme.borderColor}`,
+								background: "transparent",
+								color: theme.textPrimaryColor,
+								fontFamily: "inherit",
+								fontSize: 14,
+								fontWeight: 600,
+								cursor: "pointer",
+								// W1-18-F1 fix: gated on prefers-reduced-motion.
+								transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
+							}}
+						>
+							{cancelSubmitLabel}
+						</button>
+					) : null}
 					<button
-						type="button"
-						onClick={handleCancelSubmit}
+						// T5-L7 fix: this was type="button", so pressing Enter
+						// inside a text field never submitted the form - the
+						// onSubmit handler was dead code for every multi-field
+						// step. It's the form's submit button now.
+						// W1-04-F-7 cleanup: onClick={handleContinue} was
+						// redundant (the form's onSubmit already fires for a
+						// submit click AND Enter) — one code path now.
+						//
+						// ADVANCE-FIX: this button lives in the sticky footer
+						// nav, OUTSIDE the <form> element. A type="submit"
+						// button with no form owner does nothing when clicked,
+						// so handleContinue() (fired only via the form's
+						// onSubmit) never ran and the step never advanced. The
+						// `form` attribute explicitly links it to the
+						// booking form by its stable id, making it that form's
+						// submit control again.
+						form="be-booking-form"
+						type="submit"
+						disabled={isSubmitting}
+						ref={submitButtonRef}
+						// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
+						// visual spinner told screen reader users nothing in
+						// progress — the button now exposes aria-busy while
+						// the POST is in flight so the update is announced.
+						aria-busy={isSubmitting ? true : undefined}
 						style={{
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
+							padding: "10px 22px",
 							borderRadius: borderRadius,
-							border: `1px solid ${theme.borderColor}`,
-							background: "transparent",
-							color: theme.textPrimaryColor,
+							border: "none",
+							background: theme.accentColor,
+							color: accentTextOnSurface,
 							fontFamily: "inherit",
 							fontSize: 14,
 							fontWeight: 600,
-							cursor: "pointer",
+							cursor: isSubmitting ? "not-allowed" : "pointer",
+							opacity: isSubmitting ? 0.7 : 1,
 							// W1-18-F1 fix: gated on prefers-reduced-motion.
 							transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 8,
 						}}
 					>
-						{cancelSubmitLabel}
+						{isSubmitting ? (
+							<>
+								<span
+									// W1-10-N9 fix: the spinner span is
+									// decorative; the button's aria-busy already
+									// announces progress. aria-hidden stops SRs
+									// from reading the bare rotating disc as
+									// something namable.
+									aria-hidden="true"
+									style={{
+										width: 14,
+										height: 14,
+										borderRadius: "50%",
+										border: `2px solid ${accentTextOnSurface}`,
+										borderTopColor: "transparent",
+										display: "inline-block",
+										animation: prefersReducedMotion
+											? "none"
+											: "be-spin 0.8s linear infinite",
+									}}
+								/>
+								{copy.submittingLabel}
+							</>
+						) : (
+							primaryLabel
+						)}
 					</button>
-				) : null}
-				<button
-					// T5-L7 fix: this was type="button", so pressing Enter
-					// inside a text field never submitted the form - the
-					// onSubmit handler was dead code for every multi-field
-					// step. It's the form's submit button now.
-					// W1-04-F-7 cleanup: onClick={handleContinue} was
-					// redundant (the form's onSubmit already fires for a
-					// submit click AND Enter) — one code path now.
-					//
-					// ADVANCE-FIX: this button lives in the sticky footer
-					// nav, OUTSIDE the <form> element. A type="submit"
-					// button with no form owner does nothing when clicked,
-					// so handleContinue() (fired only via the form's
-					// onSubmit) never ran and the step never advanced. The
-					// `form` attribute explicitly links it to the
-					// booking form by its stable id, making it that form's
-					// submit control again.
-					form="be-booking-form"
-					type="submit"
-					disabled={isSubmitting}
-					ref={submitButtonRef}
-					// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
-					// visual spinner told screen reader users nothing in
-					// progress — the button now exposes aria-busy while
-					// the POST is in flight so the update is announced.
-					aria-busy={isSubmitting ? true : undefined}
-					style={{
-						minHeight: TOUCH_TARGET_MIN,
-						padding: "10px 22px",
-						borderRadius: borderRadius,
-						border: "none",
-						background: theme.accentColor,
-						color: accentTextOnSurface,
-						fontFamily: "inherit",
-						fontSize: 14,
-						fontWeight: 600,
-						cursor: isSubmitting ? "not-allowed" : "pointer",
-						opacity: isSubmitting ? 0.7 : 1,
-						// W1-18-F1 fix: gated on prefers-reduced-motion.
-						transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 8,
-					}}
-				>
-					{isSubmitting ? (
-						<>
-							<span
-								// W1-10-N9 fix: the spinner span is
-								// decorative; the button's aria-busy already
-								// announces progress. aria-hidden stops SRs
-								// from reading the bare rotating disc as
-								// something namable.
-								aria-hidden="true"
-								style={{
-									width: 14,
-									height: 14,
-									borderRadius: "50%",
-									border: `2px solid ${accentTextOnSurface}`,
-									borderTopColor: "transparent",
-									display: "inline-block",
-animation: prefersReducedMotion
-									? "none"
-									: "be-spin 0.8s linear infinite",
-								}}
-							/>
-							{copy.submittingLabel}
-						</>
-					) : (
-						primaryLabel
-					)}
-				</button>
 				</div>
 			</div>
 
@@ -13343,10 +13337,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						borderRadius={borderRadius}
 						isTwoCol={isTwoCol}
 						onFieldChange={onFieldChange}
-					choiceGroupAriaLabel={ariaLabels.choiceGroup}
-					selectOptionLabel={copy.selectOptionLabel}
-					// W1-20-N1 fix: freeze authored fields during the POST.
-					isSubmitting={isSubmitting}
+						choiceGroupAriaLabel={ariaLabels.choiceGroup}
+						selectOptionLabel={copy.selectOptionLabel}
+						// W1-20-N1 fix: freeze authored fields during the POST.
+						isSubmitting={isSubmitting}
 					/>
 				))}
 			</div>
@@ -13373,30 +13367,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		// wherever the "Calendar Widget" marker sits in `step.fields`, so
 		// dragging that marker in the Fields array actually moves the whole
 		// calendar block up or down relative to any custom fields.
-		//
-		// CAL-BG-OWNERSHIP: the Calendar Widget marker owns its own background
-		// through its `calendarStyles` (shared FieldStyleOverrides model) —
-		// NOT the global Background token. The block applies the field's
-		// radius/padding (when authored) and DateAndTimeInline consumes its
-		// background. Unset keys fall back to the theme/radius so an
-		// unconfigured calendar renders exactly as before, and the footer nav
-		// stays transparent (it never consumes any field background).
-		const calendarField = step.fields.find(
-			(candidate) => candidate.fieldType === "calendar-widget",
-		);
-		const calStyles = calendarField?.calendarStyles;
 		const calendarBlock = (
-			<div
-				style={{
-					gridColumn: "1 / -1",
-					...(calStyles?.radius
-						? { borderRadius: resolveFieldRadius(calStyles, borderRadius) }
-						: {}),
-					...(calStyles?.padding
-						? { padding: calStyles.padding }
-						: {}),
-				}}
-			>
+			<div style={{ gridColumn: "1 / -1" }}>
 				{/* Fix #13: surface Cal.com fetch errors as an inline banner.
                     T10-M8 fix: the banner used to be message-only with no way
                     forward except leaving the step — the visitor was stuck if
@@ -13445,12 +13417,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 					</div>
 				) : null}
 				{hasCalConfig &&
-				!slotsLoading &&
-				!slotsError &&
-				slotsForSelectedDate.length === 0 &&
-				selectedDate ? (
+					!slotsLoading &&
+					!slotsError &&
+					slotsForSelectedDate.length === 0 &&
+					selectedDate ? (
 					/* biome-ignore lint/a11y/useSemanticElements: intentional
-                        polite status region (T5-H8 engine-level "no times" banner). */
+			polite status region (T5-H8 engine-level "no times" banner). */
 					<div
 						style={{
 							padding: "10px 14px",
@@ -13474,10 +13446,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 					style={
 						slotError
 							? {
-									borderRadius: borderRadius,
-									border: `1px solid ${theme.errorColor}`,
-									padding: 4,
-								}
+								borderRadius: borderRadius,
+								border: `1px solid ${theme.errorColor}`,
+								padding: 4,
+							}
 							: undefined
 					}
 				>
@@ -13487,56 +13459,48 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         already hard-errors; replace the interactive widget
                         with a dead-ended notice so visitors can't even pick
                         a fake slot. The demo grid stays for canvas editing. */}
-				{hideDemoWhenUnconfigured ? (
-					/* TZ-TIME-UNAVAILABLE-FIX: this "unavailable" state is a
-                       NORMAL, EXPECTED fallback (no Cal.com API config), NOT
-                       an error. It is deliberately styled as a neutral,
-                       informational status message — no error/red tones, no
-                       role="alert" alarm. It simply occupies the same slot
-                       the calendar widget would, so the step heading stays
-                       in its usual position directly under the Progress.
-                       The heading is rendered by the parent above the form
-                       regardless of which branch shows here. */
-					<div
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-						style={{
-							padding: "14px 16px",
-							margin: "4px 0",
-							borderRadius: borderRadius,
-							background: withAlpha(theme.textSecondaryColor, 0.08),
-							border: `1px solid ${withAlpha(theme.borderColor, 0.6)}`,
-							color: theme.textPrimaryColor,
-							fontSize: 14,
-							lineHeight: 1.5,
-						}}
-					>
-						<strong>{errorCopy.unavailableTitle}</strong>
-						<div style={{ marginTop: 4 }}>
-							<span style={{ color: theme.textSecondaryColor }}>
-								{errorCopy.unavailableBody}
-							</span>
+					{hideDemoWhenUnconfigured ? (
+						/* TZ-TIME-UNAVAILABLE-FIX: this "unavailable" state is a
+			       NORMAL, EXPECTED fallback (no Cal.com API config), NOT
+			       an error. It is deliberately styled as a neutral,
+			       informational status message — no error/red tones, no
+			       role="alert" alarm. It simply occupies the same slot
+			       the calendar widget would, so the step heading stays
+			       in its usual position directly under the Progress.
+			       The heading is rendered by the parent above the form
+			       regardless of which branch shows here. */
+						<div
+							role="status"
+							aria-live="polite"
+							aria-atomic="true"
+							style={{
+								padding: "14px 16px",
+								margin: "4px 0",
+								borderRadius: borderRadius,
+								background: withAlpha(theme.textSecondaryColor, 0.08),
+								border: `1px solid ${withAlpha(theme.borderColor, 0.6)}`,
+								color: theme.textPrimaryColor,
+								fontSize: 14,
+								lineHeight: 1.5,
+							}}
+						>
+							<strong>{errorCopy.unavailableTitle}</strong>
+							<div style={{ marginTop: 4 }}>
+								<span style={{ color: theme.textSecondaryColor }}>
+									{errorCopy.unavailableBody}
+								</span>
+							</div>
 						</div>
-					</div>
-				) : (
+					) : (
 						<DateAndTimeInline
 							accentColor={theme.accentColor}
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
 							accentForegroundColor={theme.accentForegroundColor}
-							// CAL-BG-OWNERSHIP: the calendar background is owned by
-							// the Calendar Widget field's Styles (calendarStyles.
-							// backgroundColor), falling back to the global Background
-							// token only when the author never configured it. The
-							// footer nav never consumes this background (it stays
-							// transparent).
-							backgroundColor={
-								calStyles?.backgroundColor ?? theme.backgroundColor
-							}
+							backgroundColor={theme.backgroundColor}
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
-							radius={calStyles?.radius ? resolveFieldRadius(calStyles, borderRadius) : borderRadius}
+							radius={borderRadius}
 							// W1-02-F17 fix: demo-grid times are copy-driven so
 							// the canvas preview isn't stuck at 09:00–17:00.
 							startTime={copy.demoStartTime}
@@ -13732,34 +13696,34 @@ const ReviewStepBody = React.memo(function ReviewStepBody(props: {
 			}
 		});
 		if (values[SELECTED_SLOT_KEY]) {
-		const slot = values[SELECTED_SLOT_KEY];
-		// W1-07-F7 fix: `slot.date` is the calendar CELL's browser-local
-		// midnight — formatting it in the visitor's zone showed a date that
-		// could disagree with the clicked cell (≥12h tz drift) and the ICS
-		// filename. A real Cal.com slot carries its actual UTC instant in
-		// `time24h`; derive the label from that instant instead, falling
-		// back to `slot.date` only for demo mode (minute-steps grid, no
-		// "T" in the value). Formatted in the zone the calendar displayed.
-		const fmtOpts: Intl.DateTimeFormatOptions = {
-			weekday: "long",
-			year: "numeric",
-			month: "long",
-			day: "numeric",
-		};
-		const tzOpts = timeZone ? { timeZone } : undefined;
-		let dateStr: string;
-		try {
-			const slotDate = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-				? new Date(slot.time24h)
-				: slot.date;
-			dateStr = slotDate.toLocaleDateString(pageLocale(), {
-				...fmtOpts,
-				...tzOpts,
-			});
-		} catch {
-			dateStr = slot.date.toLocaleDateString(pageLocale(), fmtOpts);
-		}
-		// T10-H4 fix: "Date"/"Time" row labels come from copy. W1-02-F24:
+			const slot = values[SELECTED_SLOT_KEY];
+			// W1-07-F7 fix: `slot.date` is the calendar CELL's browser-local
+			// midnight — formatting it in the visitor's zone showed a date that
+			// could disagree with the clicked cell (≥12h tz drift) and the ICS
+			// filename. A real Cal.com slot carries its actual UTC instant in
+			// `time24h`; derive the label from that instant instead, falling
+			// back to `slot.date` only for demo mode (minute-steps grid, no
+			// "T" in the value). Formatted in the zone the calendar displayed.
+			const fmtOpts: Intl.DateTimeFormatOptions = {
+				weekday: "long",
+				year: "numeric",
+				month: "long",
+				day: "numeric",
+			};
+			const tzOpts = timeZone ? { timeZone } : undefined;
+			let dateStr: string;
+			try {
+				const slotDate = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
+					? new Date(slot.time24h)
+					: slot.date;
+				dateStr = slotDate.toLocaleDateString(pageLocale(), {
+					...fmtOpts,
+					...tzOpts,
+				});
+			} catch {
+				dateStr = slot.date.toLocaleDateString(pageLocale(), fmtOpts);
+			}
+			// T10-H4 fix: "Date"/"Time" row labels come from copy. W1-02-F24:
 			// the in-component `||` fallbacks were removed (they duplicated the
 			// copy panel's own defaults).
 			list.push({
@@ -14108,9 +14072,8 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		minHeight: fs?.minHeight ?? TOUCH_TARGET_MIN,
 		padding: fsPadding,
 		borderRadius: fsRadius,
-		border: `${fsBorder.width}px ${fsBorder.style} ${
-			error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
-                }`,
+		border: `${fsBorder.width}px ${fsBorder.style} ${error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
+			}`,
 		background: fs?.backgroundColor ?? theme.surfaceColor,
 		color: fs?.textColor ?? theme.textPrimaryColor,
 		fontFamily: fs?.font?.fontFamily ?? "inherit",
@@ -14170,22 +14133,22 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// W1-20-N1 fix: freeze during the POST — an edit after
 						// the payload snapshot would only land in state and
 						// vanish on success.
-					disabled={isSubmitting}
-					onChange={(e) => onFieldChange(field.id, e.target.value)}
-					aria-invalid={!!error}
-					aria-describedby={
-						error ? `be-error-${field.id}` : undefined
-					}
-					rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
-					ref={textareaRef}
-					style={{
-						...inputBaseStyle,
-						minHeight: fs?.minHeight ?? 96,
-						resize: "vertical",
-						fontFamily: fs?.font?.fontFamily ?? "inherit",
-					}}
-				/>
-				{errorEl}
+						disabled={isSubmitting}
+						onChange={(e) => onFieldChange(field.id, e.target.value)}
+						aria-invalid={!!error}
+						aria-describedby={
+							error ? `be-error-${field.id}` : undefined
+						}
+						rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
+						ref={textareaRef}
+						style={{
+							...inputBaseStyle,
+							minHeight: fs?.minHeight ?? 96,
+							resize: "vertical",
+							fontFamily: fs?.font?.fontFamily ?? "inherit",
+						}}
+					/>
+					{errorEl}
 				</div>
 			);
 		case "select":
@@ -14497,28 +14460,28 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// T5-H2 fix: no autocomplete hints at all - the
 						// browser's address bar remembers the visitor's
 						// details, but the form never asked for them.
-					autoComplete={autocompleteToken(field)}
-					// W1-20-N1 fix: freeze during the POST (see textarea).
-					disabled={isSubmitting}
-					// PHONE-INPUT-FILTER fix: phone fields sanitize at the
-					// write point — letters/punctuation outside the phone
-					// charset never reach engine state, so the controlled
-					// input can never display them (typing AND pasting).
-					onChange={(e) =>
-						onFieldChange(
-							field.id,
-							field.fieldType === "phone"
-								? sanitizePhoneInput(e.target.value)
-								: e.target.value,
-						)
-					}
-					aria-invalid={!!error}
-					aria-describedby={
-						error ? `be-error-${field.id}` : undefined
-					}
-					style={inputBaseStyle}
-				/>
-				{errorEl}
+						autoComplete={autocompleteToken(field)}
+						// W1-20-N1 fix: freeze during the POST (see textarea).
+						disabled={isSubmitting}
+						// PHONE-INPUT-FILTER fix: phone fields sanitize at the
+						// write point — letters/punctuation outside the phone
+						// charset never reach engine state, so the controlled
+						// input can never display them (typing AND pasting).
+						onChange={(e) =>
+							onFieldChange(
+								field.id,
+								field.fieldType === "phone"
+									? sanitizePhoneInput(e.target.value)
+									: e.target.value,
+							)
+						}
+						aria-invalid={!!error}
+						aria-describedby={
+							error ? `be-error-${field.id}` : undefined
+						}
+						style={inputBaseStyle}
+					/>
+					{errorEl}
 				</div>
 			);
 	}
@@ -14762,18 +14725,18 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		() =>
 			values[SELECTED_SLOT_KEY]
 				? buildIcsDataUri(
-						values[SELECTED_SLOT_KEY],
-						icsDescription || undefined,
-						icsSummaryLabel,
-						icsProdid,
-						icsSummaryFallback,
-						// W2-23-N1 fix: author-tunable fallback duration.
-						meetingDurationMs,
-						// FINAL-06 fix: author ICS LOCATION (empty omits line).
-						typeof icsLocationLabel === "string" ? icsLocationLabel : "",
-						// FINAL-19 fix: seed from the booking's own Cal.com UID.
-						bookingResult?.uid ?? undefined,
-					)
+					values[SELECTED_SLOT_KEY],
+					icsDescription || undefined,
+					icsSummaryLabel,
+					icsProdid,
+					icsSummaryFallback,
+					// W2-23-N1 fix: author-tunable fallback duration.
+					meetingDurationMs,
+					// FINAL-06 fix: author ICS LOCATION (empty omits line).
+					typeof icsLocationLabel === "string" ? icsLocationLabel : "",
+					// FINAL-19 fix: seed from the booking's own Cal.com UID.
+					bookingResult?.uid ?? undefined,
+				)
 				: "",
 		[
 			values,
@@ -14801,24 +14764,24 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	const googleCalUri =
 		hasIsoSlotTime && slot
 			? buildCalendarDeepLink(
-					"google",
-					slot,
-					icsSummaryLabel,
-					icsDescription || undefined,
-					// W2-23-N1 fix: author-tunable fallback duration.
-					meetingDurationMs,
-				)
+				"google",
+				slot,
+				icsSummaryLabel,
+				icsDescription || undefined,
+				// W2-23-N1 fix: author-tunable fallback duration.
+				meetingDurationMs,
+			)
 			: "";
 	const outlookCalUri =
 		hasIsoSlotTime && slot
 			? buildCalendarDeepLink(
-					"outlook",
-					slot,
-					icsSummaryLabel,
-					icsDescription || undefined,
-					// W2-23-N1 fix: author-tunable fallback duration.
-					meetingDurationMs,
-				)
+				"outlook",
+				slot,
+				icsSummaryLabel,
+				icsDescription || undefined,
+				// W2-23-N1 fix: author-tunable fallback duration.
+				meetingDurationMs,
+			)
 			: "";
 
 	// CC-11 fix: surface the booking reference, when one was returned.
@@ -14831,8 +14794,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 
 	return (
 		/* biome-ignore lint/a11y/useSemanticElements: intentional assertive
-            live region (CC-6) announcing the success screen; <output> is not
-            a screen-level alert container. */
+	    live region (CC-6) announcing the success screen; <output> is not
+	    a screen-level alert container. */
 		<div role="status" aria-live="assertive" aria-atomic="true">
 			{/* CONFIRM-ICON-ANIM: Circle with checkmark — centered, on top.
                     The container enters via the selected Transition Type
@@ -14858,57 +14821,57 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					}
 					transition={reducedMotion ? { duration: 0.15 } : circleTransition}
 				>
-				<div
-					style={{
-						width: CHECKMARK_ICON_SIZE,
-						height: CHECKMARK_ICON_SIZE,
-						borderRadius: "50%",
-						background: successColor,
-						// Fixed foreground for the checkmark stroke. A
-						// constant — never derived from the configured
-						// colours.
-						color: TEXT_ON_ACCENT,
-						display: "inline-flex",
-						alignItems: "center",
-						justifyContent: "center",
-						flexShrink: 0,
-					}}
-					aria-hidden="true"
-				>
-					<svg
-						width="32"
-						height="32"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="3"
-						strokeLinecap="round"
-						strokeLinejoin="round"
+					<div
+						style={{
+							width: CHECKMARK_ICON_SIZE,
+							height: CHECKMARK_ICON_SIZE,
+							borderRadius: "50%",
+							background: successColor,
+							// Fixed foreground for the checkmark stroke. A
+							// constant — never derived from the configured
+							// colours.
+							color: TEXT_ON_ACCENT,
+							display: "inline-flex",
+							alignItems: "center",
+							justifyContent: "center",
+							flexShrink: 0,
+						}}
 						aria-hidden="true"
-						role="presentation"
 					>
-						{animateCheck ? (
-							// Stage 2: path-drawing reveal — the stroke grows
-							// from its start point once the circle has landed.
-							// Path direction matters: it starts at the check's
-							// natural lower-left tail (4,12), passes through
-							// the bottom vertex (9,17) and finishes at the
-							// upper-right tip (20,6). Never reversed.
-							<motion.path
-								d="M4 12 9 17 20 6"
-								initial={{ pathLength: 0 }}
-								animate={{ pathLength: 1 }}
-								transition={{
-									delay: 0.3,
-									duration: 0.45,
-									ease: "easeOut",
-								}}
-							/>
-						) : (
-							<path d="M4 12 9 17 20 6" />
-						)}
-					</svg>
-				</div>
+						<svg
+							width="32"
+							height="32"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="3"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							aria-hidden="true"
+							role="presentation"
+						>
+							{animateCheck ? (
+								// Stage 2: path-drawing reveal — the stroke grows
+								// from its start point once the circle has landed.
+								// Path direction matters: it starts at the check's
+								// natural lower-left tail (4,12), passes through
+								// the bottom vertex (9,17) and finishes at the
+								// upper-right tip (20,6). Never reversed.
+								<motion.path
+									d="M4 12 9 17 20 6"
+									initial={{ pathLength: 0 }}
+									animate={{ pathLength: 1 }}
+									transition={{
+										delay: 0.3,
+										duration: 0.45,
+										ease: "easeOut",
+									}}
+								/>
+							) : (
+								<path d="M4 12 9 17 20 6" />
+							)}
+						</svg>
+					</div>
 				</motion.div>
 			</div>
 
@@ -15558,21 +15521,6 @@ function makeCheckboxFieldStylesControls() {
 	};
 }
 
-// CAL-BG-OWNERSHIP: the Calendar Widget marker owns its own background (and
-// the surrounding block's radius/padding) through this Styles set — NOT the
-// global Background token. Only the controls that are meaningful for the
-// calendar surface are exposed: Background, Radius, and Padding. All are
-// optional (inherit the engine theme when untouched), so an unconfigured
-// calendar renders exactly as before and the footer nav stays transparent
-// (it never consumes any field background, including this one).
-function makeCalendarFieldStylesControls() {
-	return {
-		backgroundColor: fieldStylesColorControl("Background"),
-		radius: fieldStylesRadiusControl(),
-		padding: fieldStylesPaddingControl(),
-	};
-}
-
 function makeFieldObjectControls() {
 	return {
 		label: {
@@ -15777,15 +15725,13 @@ function makeFieldObjectControls() {
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
 		},
-		// FIELD-STYLES (hard rule): the per-field Styles submenu. Four
+		// FIELD-STYLES (hard rule): the per-field Styles submenu. Three
 		// Object controls share the title "Styles"; each is hidden for
 		// disjoint type sets so the panel always shows exactly ONE Styles
 		// item per field type, opening the control set that is meaningful
 		// for it. Plain Object controls hidden by a sibling scalar are the
 		// documented-safe conditional-visibility pattern (Safety Rule #2).
-		// CAL-BG-OWNERSHIP: the Calendar Widget marker exposes a minimal
-		// Styles set (Background/Radius/Padding) so it owns its own
-		// background — it is NOT the global Background token's responsibility.
+		// Calendar Widget renders no field surface, so it gets none.
 		styles: {
 			type: ControlType.Object,
 			title: "Styles",
@@ -15812,15 +15758,6 @@ function makeFieldObjectControls() {
 			optional: true,
 			controls: makeCheckboxFieldStylesControls(),
 			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
-		},
-		calendarStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeCalendarFieldStylesControls(),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
 			type: ControlType.Enum,
