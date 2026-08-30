@@ -5702,14 +5702,18 @@ interface FieldConfig {
 	// (matches / no match / invalid / ReDoS risk) evaluated with the exact
 	// same compiled regex the published flow uses. Never rendered live.
 	regexPreviewInput?: string;
-	// FIELD-STYLES (hard rule): per-field visual overrides. Three keys, ONE
+	// FIELD-STYLES (hard rule): per-field visual overrides. Four keys, ONE
 	// shared model (FieldStyleOverrides) — the panel shows exactly one
 	// "Styles" submenu per field type: input-like fields (text/email/phone/
 	// textarea/select) use `styles`, choice groups use `choiceStyles`,
-	// checkbox uses `checkStyles`. Unset keys keep the engine theme look.
+	// checkbox uses `checkStyles`, and the Calendar Widget marker uses
+	// `calendarStyles` (CAL-BG-OWNERSHIP: it owns its background via this
+	// key, NOT the global Background token — see AGENTS.md). Unset keys keep
+	// the engine theme look.
 	styles?: FieldStyleOverrides;
 	choiceStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
+	calendarStyles?: FieldStyleOverrides;
 }
 
 interface StepConfig {
@@ -13369,8 +13373,30 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		// wherever the "Calendar Widget" marker sits in `step.fields`, so
 		// dragging that marker in the Fields array actually moves the whole
 		// calendar block up or down relative to any custom fields.
+		//
+		// CAL-BG-OWNERSHIP: the Calendar Widget marker owns its own background
+		// through its `calendarStyles` (shared FieldStyleOverrides model) —
+		// NOT the global Background token. The block applies the field's
+		// radius/padding (when authored) and DateAndTimeInline consumes its
+		// background. Unset keys fall back to the theme/radius so an
+		// unconfigured calendar renders exactly as before, and the footer nav
+		// stays transparent (it never consumes any field background).
+		const calendarField = step.fields.find(
+			(candidate) => candidate.fieldType === "calendar-widget",
+		);
+		const calStyles = calendarField?.calendarStyles;
 		const calendarBlock = (
-			<div style={{ gridColumn: "1 / -1" }}>
+			<div
+				style={{
+					gridColumn: "1 / -1",
+					...(calStyles?.radius
+						? { borderRadius: resolveFieldRadius(calStyles, borderRadius) }
+						: {}),
+					...(calStyles?.padding
+						? { padding: calStyles.padding }
+						: {}),
+				}}
+			>
 				{/* Fix #13: surface Cal.com fetch errors as an inline banner.
                     T10-M8 fix: the banner used to be message-only with no way
                     forward except leaving the step — the visitor was stuck if
@@ -13499,10 +13525,18 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
 							accentForegroundColor={theme.accentForegroundColor}
-							backgroundColor={theme.backgroundColor}
+							// CAL-BG-OWNERSHIP: the calendar background is owned by
+							// the Calendar Widget field's Styles (calendarStyles.
+							// backgroundColor), falling back to the global Background
+							// token only when the author never configured it. The
+							// footer nav never consumes this background (it stays
+							// transparent).
+							backgroundColor={
+								calStyles?.backgroundColor ?? theme.backgroundColor
+							}
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
-							radius={borderRadius}
+							radius={calStyles?.radius ? resolveFieldRadius(calStyles, borderRadius) : borderRadius}
 							// W1-02-F17 fix: demo-grid times are copy-driven so
 							// the canvas preview isn't stuck at 09:00–17:00.
 							startTime={copy.demoStartTime}
@@ -15524,6 +15558,21 @@ function makeCheckboxFieldStylesControls() {
 	};
 }
 
+// CAL-BG-OWNERSHIP: the Calendar Widget marker owns its own background (and
+// the surrounding block's radius/padding) through this Styles set — NOT the
+// global Background token. Only the controls that are meaningful for the
+// calendar surface are exposed: Background, Radius, and Padding. All are
+// optional (inherit the engine theme when untouched), so an unconfigured
+// calendar renders exactly as before and the footer nav stays transparent
+// (it never consumes any field background, including this one).
+function makeCalendarFieldStylesControls() {
+	return {
+		backgroundColor: fieldStylesColorControl("Background"),
+		radius: fieldStylesRadiusControl(),
+		padding: fieldStylesPaddingControl(),
+	};
+}
+
 function makeFieldObjectControls() {
 	return {
 		label: {
@@ -15728,13 +15777,15 @@ function makeFieldObjectControls() {
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
 		},
-		// FIELD-STYLES (hard rule): the per-field Styles submenu. Three
+		// FIELD-STYLES (hard rule): the per-field Styles submenu. Four
 		// Object controls share the title "Styles"; each is hidden for
 		// disjoint type sets so the panel always shows exactly ONE Styles
 		// item per field type, opening the control set that is meaningful
 		// for it. Plain Object controls hidden by a sibling scalar are the
 		// documented-safe conditional-visibility pattern (Safety Rule #2).
-		// Calendar Widget renders no field surface, so it gets none.
+		// CAL-BG-OWNERSHIP: the Calendar Widget marker exposes a minimal
+		// Styles set (Background/Radius/Padding) so it owns its own
+		// background — it is NOT the global Background token's responsibility.
 		styles: {
 			type: ControlType.Object,
 			title: "Styles",
@@ -15761,6 +15812,15 @@ function makeFieldObjectControls() {
 			optional: true,
 			controls: makeCheckboxFieldStylesControls(),
 			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
+		},
+		calendarStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeCalendarFieldStylesControls(),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
 			type: ControlType.Enum,
