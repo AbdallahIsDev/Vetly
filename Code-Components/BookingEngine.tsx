@@ -4670,6 +4670,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	props: DateAndTimeInlineProps,
 ) {
 	const {
+		instanceId = "",
 		accentColor,
 		// PRIMARY-FOREGROUND: On-Primary token (legacy constant fallback).
 		accentForegroundColor = TEXT_ON_ACCENT,
@@ -13820,7 +13821,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						</div>
 					) : (
 						<DateAndTimeInline
-							instanceId={reactInstanceId}
+							instanceId={instanceId}
 							accentColor={theme.accentColor}
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
