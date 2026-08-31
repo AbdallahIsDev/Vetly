@@ -899,7 +899,11 @@ function fontPixelSize(value: string | number | undefined): number | undefined {
  *  for visibility). */
 function resolveFieldBorder(
 	fs: FieldStyleOverrides | undefined,
+	fieldType?: FieldType,
 ): { width: number; style: string; color: string | undefined } {
+	const eff = fieldType ? getFieldStylesEffectiveDefaults(fieldType) : null;
+	const defWidth = eff?.borderWidth ?? FIELD_STYLES_BORDER_WIDTH;
+	const defColor = eff?.borderColor ?? FIELD_STYLES_BORDER_COLOR;
 	const b = fs?.border;
 	const compoundSet =
 		b != null &&
@@ -917,34 +921,40 @@ function resolveFieldBorder(
 			b.borderBottomWidth,
 			b.borderLeftWidth,
 		].filter((v): v is number => typeof v === "number" && v > 0);
-		const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? FIELD_STYLES_BORDER_WIDTH);
-		return { width, style: b.borderStyle || "solid", color: b.borderColor };
+		const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? defWidth);
+		return { width, style: b.borderStyle || "solid", color: b.borderColor ?? defColor };
 	}
-	return { width: fs?.borderWidth ?? FIELD_STYLES_BORDER_WIDTH, style: "solid", color: fs?.borderColor };
+	return { width: fs?.borderWidth ?? defWidth, style: "solid", color: fs?.borderColor ?? defColor };
 }
 
 /** Resolve the effective radius: NEW compound BorderRadius string ("12px" or
  *  four per-corner values) wins, the LEGACY number (px) comes next, and the
  *  engine theme radius is the untouched default (theme token may be a number
- *  or a CSS string). */
+ *  or a CSS string). Per-type fallback uses getFieldStylesEffectiveDefaults. */
 function resolveFieldRadius(
 	fs: FieldStyleOverrides | undefined,
 	themeRadius: string | number,
+	fieldType?: FieldType,
 ): string {
 	if (typeof fs?.radius === "string" && fs.radius.trim()) return fs.radius;
 	if (typeof fs?.radius === "number") return `${fs.radius}px`;
+	if (fieldType) return getFieldStylesEffectiveDefaults(fieldType).radius;
 	return typeof themeRadius === "number" ? `${themeRadius}px` : themeRadius;
 }
 
 /** Resolve the effective padding: NEW compound Padding string ("10px 14px",
  *  CSS shorthand order) wins, the LEGACY vertical/horizontal number pair
- *  comes next, then the shared effective default (STYLES-INIT-EFFECTIVE:
- *  same constant the Styles control's defaultValue uses). */
-function resolveFieldPadding(fs: FieldStyleOverrides | undefined): string {
+ *  comes next, then the per-type effective default (STYLES-INIT-EFFECTIVE:
+ *  same constant the Styles control's defaultValue uses, now per field type). */
+function resolveFieldPadding(
+	fs: FieldStyleOverrides | undefined,
+	fieldType?: FieldType,
+): string {
 	if (typeof fs?.padding === "string" && fs.padding.trim()) return fs.padding;
 	if (fs?.paddingY != null || fs?.paddingX != null) {
 		return `${fs?.paddingY ?? 10}px ${fs?.paddingX ?? 14}px`;
 	}
+	if (fieldType) return getFieldStylesEffectiveDefaults(fieldType).padding;
 	return FIELD_STYLES_INPUT_PADDING;
 }
 
@@ -1012,14 +1022,99 @@ const FIXED_ERROR_COLOR = "#DC2626";
 // resolvers below and the control factories (one reusable mechanism, not
 // per-field hacks).
 const FIELD_STYLES_INPUT_PADDING = "10px 14px";
+const FIELD_STYLES_SELECT_PADDING = "10px 14px";
+const FIELD_STYLES_CARDS_PADDING = "10px 8px";
+const FIELD_STYLES_CARDS_COMPACT_PADDING = "10px 6px";
+const FIELD_STYLES_PILLS_PADDING = "10px 12px";
+const FIELD_STYLES_PILLS_COMPACT_PADDING = "10px 10px";
+const FIELD_STYLES_SEGMENTED_PADDING = "11px 10px";
+const FIELD_STYLES_SEGMENTED_COMPACT_PADDING = "10px 6px";
 const FIELD_STYLES_SPACING = 6;
 const FIELD_STYLES_CHECK_SIZE = 18;
 // Matches the shipped shared Radius default (rule 60) and the authored
 // Border control default below, so a materialized field value equals the
 // inherit look under default authoring.
 const FIELD_STYLES_FIELD_RADIUS = "12px";
+const FIELD_STYLES_CARDS_RADIUS = "12px";
+const FIELD_STYLES_PILLS_RADIUS = "999px";
+const FIELD_STYLES_SEGMENTED_RADIUS = "12px";
 const FIELD_STYLES_BORDER_WIDTH = 1;
 const FIELD_STYLES_BORDER_COLOR = "#E5E7EB";
+
+function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
+	padding: string;
+	radius: string;
+	borderWidth: number;
+	borderColor: string;
+	minHeight: number;
+	spacing: number;
+} {
+	switch (fieldType) {
+		case "cards":
+			return {
+				padding: FIELD_STYLES_CARDS_PADDING,
+				radius: FIELD_STYLES_CARDS_RADIUS,
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: TOUCH_TARGET_MIN,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		case "pills":
+			return {
+				padding: FIELD_STYLES_PILLS_PADDING,
+				radius: FIELD_STYLES_PILLS_RADIUS,
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: TOUCH_TARGET_MIN,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		case "segmented":
+			return {
+				padding: FIELD_STYLES_SEGMENTED_PADDING,
+				radius: FIELD_STYLES_SEGMENTED_RADIUS,
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: TOUCH_TARGET_MIN,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		case "select":
+			return {
+				padding: FIELD_STYLES_SELECT_PADDING,
+				radius: FIELD_STYLES_FIELD_RADIUS,
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: TOUCH_TARGET_MIN,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		case "checkbox":
+			return {
+				padding: "0px",
+				radius: "4px",
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: FIELD_STYLES_CHECK_SIZE,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		case "calendar-widget":
+			return {
+				padding: "0px",
+				radius: FIELD_STYLES_FIELD_RADIUS,
+				borderWidth: 0,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: 0,
+				spacing: FIELD_STYLES_SPACING,
+			};
+		default:
+			return {
+				padding: FIELD_STYLES_INPUT_PADDING,
+				radius: FIELD_STYLES_FIELD_RADIUS,
+				borderWidth: FIELD_STYLES_BORDER_WIDTH,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+				minHeight: TOUCH_TARGET_MIN,
+				spacing: FIELD_STYLES_SPACING,
+			};
+	}
+}
 
 // =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
@@ -2479,6 +2574,7 @@ const CalendarCell = React.memo(function CalendarCell({
 });
 
 interface CalendarGridProps {
+	instanceId: string;
 	monthName: string;
 	yearLabel: string;
 	prevMonthLabel: string;
@@ -2523,6 +2619,7 @@ interface CalendarGridProps {
 }
 
 const CalendarGrid = React.memo(function CalendarGrid({
+	instanceId,
 	monthName,
 	yearLabel,
 	prevMonthLabel,
@@ -2565,11 +2662,11 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// W1-10-A4 fix: stable id linking the grid to its month/year heading
 	// (aria-labelledby). SSR/hydration fix: Framer serves real browsers a
 	// headless-prerendered HTML where effects have ALREADY run, so ANY
-	// state/effect/useId-derived value mismatches the hydrating client's
-	// first render (#425/#418/#422). This id is a plain constant — the
-	// same in the prerender, in renderToString, and on the first client
-	// render — so nothing derived from it can ever mismatch.
-	const gridLabelId = "be-calendar-grid-label";
+	// INSTANCE-ISOLATION: was a plain constant, so two engines on one page
+	// shared the same id (duplicate IDs). Now per-instance via the stable
+	// reactInstanceId prefix ("" on first render of both server and client,
+	// then "be-engine-1" etc. after effect), so each grid's label is unique.
+	const gridLabelId = instanceId ? `${instanceId}-be-calendar-grid-label` : "be-calendar-grid-label";
 	// MONTH-ANNOUNCE dedupe: the visible month/year header below carries the
 	// role="status" live region that announces month changes; the former
 	// SECOND sr-only region (plus its ref/state/effect) announced the exact
@@ -4502,6 +4599,8 @@ interface DateAndTimeInlineProps {
 	 *  empty month — we don't yet know whether it's genuinely empty or the
 	 *  fetch just hasn't resolved. */
 	slotsLoading?: boolean;
+	/** INSTANCE-ISOLATION: per-engine id for DOM ids (gridLabelId, field ids). */
+	instanceId?: string;
 	/** CC-13 completion: the timezone slot labels are displayed in. Grid
 	 *  date keys and slot availability marks are derived through this zone
 	 *  so a slot's calendar day always matches its label's day. When
@@ -4891,7 +4990,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// transparent footer.
 	const surfaceBackground =
 		calendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
-	const surfaceRadius = resolveFieldRadius(calendarStyles, radius);
+	const surfaceRadius = resolveFieldRadius(calendarStyles, radius, "calendar-widget" as FieldType);
 	const surfacePadding =
 		typeof calendarStyles?.padding === "string" && calendarStyles.padding.trim()
 			? calendarStyles.padding
@@ -5503,6 +5602,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					}}
 				>
 					<CalendarGrid
+						instanceId={instanceId || ""}
 						monthName={monthName}
 						yearLabel={yearLabel}
 						prevMonthLabel={prevMonthLabel}
@@ -12659,14 +12759,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 				// ADVANCE-FIX: the sticky footer nav (and its Continue
 				// submit button) lives OUTSIDE this <form> element, so a
 				// descendant type="submit" button could never submit it.
-				// This stable id lets the Continue button associate with
-				// the form via the `form` HTML attribute (form-owner
-				// resolution) — restoring both click-to-submit and
-				// Enter-to-submit without moving the sticky footer. Plain
-				// constant (like gridLabelId) so SSR/first-client-render
-				// always agree; multi-instance pages may share the id
-				// (harmless — one engine is visible per page at a time).
-				id="be-booking-form"
+				// INSTANCE-ISOLATION: form id is per-instance via reactInstanceId
+				// (hydration-safe: "" on first render of both server and client,
+				// then "be-engine-1", "be-engine-2" etc. after effect). Two
+				// engines on one page must not share the same form id, otherwise
+				// the `form` attribute on the Continue button would submit the
+				// first engine's form regardless of which instance was clicked.
+				id={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
 				// W1-04-F-8 fix: without noValidate the browser's native
 				// validation fired before onSubmit for required/email
 				// fields — browser tooltip UX vs the engine's inline
@@ -12903,10 +13002,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 						// button with no form owner does nothing when clicked,
 						// so handleContinue() (fired only via the form's
 						// onSubmit) never ran and the step never advanced. The
-						// `form` attribute explicitly links it to the
-						// booking form by its stable id, making it that form's
-						// submit control again.
-						form="be-booking-form"
+						// INSTANCE-ISOLATION: must match the form's per-instance id above.
+						form={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
 						type="submit"
 						disabled={isSubmitting}
 						ref={submitButtonRef}
@@ -13723,6 +13820,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						</div>
 					) : (
 						<DateAndTimeInline
+							instanceId={reactInstanceId}
 							accentColor={theme.accentColor}
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
@@ -14313,9 +14411,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// still work, untouched fields fall back to the engine theme. The error
 	// border still wins over a custom border color (functional, not
 	// decorative), and the coarse-pointer ≥16px font guard always wins.
-	const fsBorder = resolveFieldBorder(fs);
-	const fsRadius = resolveFieldRadius(fs, borderRadius);
-	const fsPadding = resolveFieldPadding(fs);
+	const fsBorder = resolveFieldBorder(fs, field.fieldType);
+	const fsRadius = resolveFieldRadius(fs, borderRadius, field.fieldType);
+	const fsPadding = resolveFieldPadding(fs, field.fieldType);
 	const inputBaseStyle: React.CSSProperties = {
 		width: "100%",
 		minHeight: fs?.minHeight ?? TOUCH_TARGET_MIN,
@@ -14510,7 +14608,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				: null;
 			const fsAuthorRadius =
 				typeof fs?.radius === "string" || typeof fs?.radius === "number"
-					? resolveFieldRadius(fs, borderRadius)
+					? resolveFieldRadius(fs, borderRadius, field.fieldType)
 					: undefined;
 			const fsAuthorBorderWidth = fs?.border
 				? fsBorder.width
@@ -14554,7 +14652,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						mutedTextColor={fsOptionMuted}
 						backgroundColor={fs?.backgroundColor ?? theme.surfaceColor}
 						borderColor={fsBorder.color ?? theme.borderColor}
-						radius={resolveFieldRadius(fs, borderRadius)}
+						radius={resolveFieldRadius(fs, borderRadius, field.fieldType)}
 						fontSize={fontPixelSize(fs?.font?.fontSize) ?? 14}
 						selectedBackgroundColor={fs?.selectedBackgroundColor}
 						selectedTextColor={fs?.selectedTextColor}
@@ -15752,26 +15850,33 @@ function fieldStylesPaddingControl() {
 }
 
 function makeInputFieldStylesControls() {
+	// Per-type effective defaults: text/select use INPUT_PADDING, textarea same.
+	// Using the shared helper keeps one reusable mechanism, not per-field hacks.
+	const eff = getFieldStylesEffectiveDefaults("text");
 	return {
 		font: fieldStylesFontControl("Font"),
 		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
-		// PLACEHOLDER-STYLE (hard rule): a first-class option that renders
-		// for real — the .be-input::placeholder CSS-variable rule and the
-		// select's empty-hint branch consume it.
 		placeholderColor: fieldStylesColorControl("Placeholder"),
 		backgroundColor: fieldStylesColorControl("Background"),
 		border: fieldStylesBorderControl(),
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
 		focusBorderColor: fieldStylesColorControl("Focus Border"),
-		minHeight: fieldStylesNumberControl("Height", 24, 200, TOUCH_TARGET_MIN),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
+		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
 	};
 }
 
 function makeChoiceFieldStylesControls() {
+	// Choice groups share the same control set, but their effective padding
+	// differs per variant (cards 10px 8px, pills 10px 12px, segmented 11px 10px).
+	// The control's defaultValue is the generic INPUT_PADDING, but the runtime
+	// resolver falls back to the per-variant value, so opening Styles on a
+	// cards field still shows its real 10px 8px, not a forced 10px 14px.
+	// Explicit 0 is preserved via ?? checks.
+	const eff = getFieldStylesEffectiveDefaults("cards");
 	return {
 		font: fieldStylesFontControl("Font"),
 		labelFont: fieldStylesFontControl("Label Font"),
@@ -15781,8 +15886,8 @@ function makeChoiceFieldStylesControls() {
 		border: fieldStylesBorderControl(),
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
-		minHeight: fieldStylesNumberControl("Height", 24, 200, TOUCH_TARGET_MIN),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
+		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
@@ -15790,22 +15895,18 @@ function makeChoiceFieldStylesControls() {
 }
 
 function makeCheckboxFieldStylesControls() {
+	const eff = getFieldStylesEffectiveDefaults("checkbox");
 	return {
 		labelFont: fieldStylesFontControl("Label Font"),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
-		checkSize: fieldStylesNumberControl("Size", 12, 32, FIELD_STYLES_CHECK_SIZE),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, FIELD_STYLES_SPACING),
+		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
+		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
 	};
 }
 
-// CAL-BG-OWNERSHIP: the Calendar Widget's own Styles set — the SAME shared
-// architecture (FieldStyleOverrides + the factories above), narrowed to the
-// three properties that genuinely apply to the calendar surface (Background,
-// Radius, Padding). No input/label/choice controls are exposed for it. The
-// Background here owns the calendar surface; the global Styles has no
-// Background control (rule 90 + STYLES-INIT rule).
 function makeCalendarFieldStylesControls() {
+	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
 		backgroundColor: fieldStylesColorControl("Background"),
 		radius: fieldStylesRadiusControl(),
