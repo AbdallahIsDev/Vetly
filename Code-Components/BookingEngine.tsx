@@ -6196,8 +6196,10 @@ interface ButtonInteractionState {
 	opacity?: number;
 	textColor?: string;
 	backgroundColor?: string;
-	/** Border COLOR only — width/style always come from base. */
-	borderColor?: string;
+	/** Full Framer Border submenu (color + width + style, like the base
+	 *  button Border). Width 0 (the default) means "keep the button's
+	 *  normal border" — set 1+ to override it in this state. */
+	border?: FramerBorderStyle;
 	/** Applied only when a real shadow (see shadowStyle). */
 	shadow?: string;
 }
@@ -6956,17 +6958,15 @@ function validatePhone(str: string, vc: ValidationCopy): string | null {
 	return null;
 }
 
-// PHONE-INPUT-RAW fix: type="tel" / inputMode="tel" are only KEYBOARD
+// PHONE-NUMBERS-ONLY fix: type="tel" / inputMode="tel" are only KEYBOARD
 // HINTS — desktop and external keyboards still accept letters. The phone
-// field stores RAW keystrokes (visible while typing) and validatePhone
-// rejects non-phone content on Continue (rule 81: submit-driven, so
-// typing never gains a first-time error). Sanitizing lives ONLY at the
-// payload boundary (buildBookingFieldsResponses / buildNotesPayload) so
-// Cal.com receives clean digits. Never reintroduce write-point
-// sanitizing: it silently swallowed letters, misreporting "required"
-// for "abc" and letting optional "abc" pass as empty.
-// The allowed set is exactly what PHONE_REGEX/validatePhone
-// accept: digits, a leading-formatting "+ ( ) - . " and spaces.
+// field strips everything outside the phone charset at its single write
+// point (FieldRenderer's onChange), so letters never enter engine state
+// and — the input is controlled — never appear in the field, typing AND
+// pasting (author direction: numbers only, nothing else visible). The
+// allowed set is exactly what PHONE_REGEX/validatePhone accept: digits,
+// a leading-formatting "+ ( ) - . " and spaces. The payload builders
+// sanitize once more at the boundary (defense in depth, no-op by then).
 const PHONE_DISALLOWED_CHARS = /[^0-9+()\-. ]/g;
 function sanitizePhoneInput(value: string): string {
 	return value.replace(PHONE_DISALLOWED_CHARS, "");
@@ -8570,19 +8570,17 @@ async function submitCalcomBooking(params: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${apiKey}`,
 				"cal-api-version": apiVer,
-				// W1-06-F-06-4 fix: VERIFIED against Cal.com v2's published
-				// OpenAPI (POST /v2/bookings) — `X-Idempotency-Key` is NOT a
-				// documented parameter. The header is sent anyway as a harmless
-				// best-effort (unknown headers are ignored), but it must NOT be
-				// relied on for duplicate protection: without documented server
-				// support, a retry that replays the same key (T3-H2 keeps the
-				// key across retries by design) could in principle create a
-				// second booking if the first POST actually succeeded server-side
-				// but its response was lost. Mitigations: the client NEVER
-				// auto-retries a POST (no retry loop exists), and the visitor
-				// re-submitting manually after an ambiguous failure is the only
-				// residual exposure.
-				...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
+				// CORS-BLOCK fix: `X-Idempotency-Key` is NOT sent. The old
+				// comment assumed unknown headers are ignored — false in
+				// browsers: any non-safelisted header forces a CORS
+				// preflight, and Cal.com's Access-Control-Allow-Headers
+				// does not list it, so the preflight fails and EVERY live
+				// booking dies with "Failed to fetch" (only reproducible
+				// on the published site, never in canvas). The key
+				// generation/reset machinery below is now dormant (kept,
+				// harmless) until Cal.com documents the header; duplicate
+				// protection stays what it was: the client never
+				// auto-retries a POST.
 			},
 			body: JSON.stringify({
 				eventTypeId: parsedEventTypeId,
@@ -13454,8 +13452,11 @@ const RootShell = React.memo(function RootShell(props: {
 		const onPointerDown = () => setPointerActive(true);
 		const onKeyDown = (e: KeyboardEvent) => {
 			// A keyboard navigation key means the user is reaching the
-			// form with the keyboard — restore the ring.
-			if (e.key === "Tab" || e.key.startsWith("Arrow")) {
+			// form with the keyboard — restore the ring. `?.` because this
+			// capture-phase root listener also sees synthetic/dispatched
+			// events whose `key` can be undefined (prod crash: reading
+			// 'startsWith' of undefined).
+			if (e.key === "Tab" || e.key?.startsWith("Arrow")) {
 				setPointerActive(false);
 			}
 		};
@@ -14769,17 +14770,22 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						autoComplete={autocompleteToken(field)}
 						// W1-20-N1 fix: freeze during the POST (see textarea).
 						disabled={isSubmitting}
-						// PHONE-INPUT-RAW fix: phone fields store the RAW keystrokes
-						// (letters visible while typing) and validate them on
-						// Continue (rule 81 — submit-driven, never live). The
-						// old write-point sanitize swallowed letters silently,
-						// so "abc" in a required field misreported "required"
-						// and in an optional field passed as empty. Now raw
-						// "abc" fails validatePhone with the phone error, and
-						// sanitizing happens only at the payload boundary
-						// (buildBookingFieldsResponses / notes) so Cal.com
-						// receives clean digits.
-						onChange={(e) => onFieldChange(field.id, e.target.value)}
+						// PHONE-NUMBERS-ONLY fix: the phone field accepts phone
+						// characters only — letters/symbols outside the phone
+						// charset are stripped at this single write point, so
+						// they never enter engine state and (controlled
+						// input) never appear in the field — typing AND
+						// pasting. The allowed set is exactly what
+						// PHONE_REGEX/validatePhone accept: digits and phone
+						// formatting "+ ( ) - . " plus spaces.
+						onChange={(e) =>
+							onFieldChange(
+								field.id,
+								field.fieldType === "phone"
+									? sanitizePhoneInput(e.target.value)
+									: e.target.value,
+							)
+						}
 						aria-invalid={!!error}
 						aria-describedby={
 							error ? errorDomId : undefined
@@ -16073,7 +16079,22 @@ function makeButtonInteractionControls() {
 		},
 		textColor: fieldStylesColorControl("Text Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
-		borderColor: fieldStylesColorControl("Border Color"),
+		// Full Framer Border submenu, like the base button Border —
+		// NOT color-only. Width 0 (the default) keeps the button's
+		// normal border (see applyButtonInteraction); set 1+ to
+		// override color/width/style in this state.
+		border: {
+			type: ControlType.Border,
+			title: "Border",
+			optional: true,
+			description:
+			 "0 keeps the button's normal border — set 1 or more to override it here.",
+			defaultValue: {
+				borderWidth: 0,
+				borderStyle: "solid",
+				borderColor: "",
+			},
+		},
 		shadow: fieldStylesShadowControl(),
 	};
 }
@@ -16178,8 +16199,9 @@ function resolveButtonStyle(
 // BUTTON-INTERACTION runtime: pressed wins over hover; both are deltas
 // over the resolved base. Untouched (undefined) state objects return the
 // base style object untouched — zero behavior change for existing
-// canvases. Border override reuses the borderColor CSS key AFTER the
-// `border` shorthand so width/style from base survive.
+// canvases. Border override replaces the shorthand wholesale (width 0 =
+// inherit base); style/color fall back to the base border's own parts
+// (splitBorderParts), then button text.
 // BUTTON-INTERACTION transition: Framer's native Transition value
 // drives the inline-style swap (inline styles cannot run springs, so
 // spring/physics types resolve to their timed equivalent — duration
@@ -16193,6 +16215,13 @@ const INTERACTION_ANIMATED_PROPS = [
 	"opacity",
 	"transform",
 ];
+// BUTTON-INTERACTION border: our own resolved `border` strings always
+// have exactly three parts (width style color) or are "none", so this
+// split is total for values we generate — never parse author CSS here.
+function splitBorderParts(border: string): [string, string, string] | null {
+	const m = /^(\S+)\s+(\S+)\s+(.+)$/.exec(border.trim());
+	return m ? [m[1], m[2], m[3]] : null;
+}
 function cssEaseName(name: string): string {
 	switch (name) {
 		case "linear":
@@ -16259,7 +16288,20 @@ function applyButtonInteraction(
 	if (st) {
 		if (st.backgroundColor) out.background = st.backgroundColor;
 		if (st.textColor) out.color = st.textColor;
-		if (st.borderColor) out.borderColor = st.borderColor;
+		// Full Border submenu: width 0 (the default) keeps the base
+		// border entirely. A positive width replaces it wholesale —
+		// style/color fall back to the base border's own parts, then to
+		// the button text, so setting only "width 2" keeps the current
+		// look but thicker instead of snapping to an arbitrary color.
+		const hb = st.border;
+		const hbWidth = hb?.borderWidth ?? 0;
+		if (hb && hbWidth > 0) {
+			const baseParts =
+				typeof base.border === "string" ? splitBorderParts(base.border) : null;
+			const baseColor =
+				typeof base.color === "string" && base.color ? base.color : null;
+			out.border = `${hbWidth}px ${hb.borderStyle || (baseParts ? baseParts[1] : "solid")} ${hb.borderColor || (baseParts ? baseParts[2] : null) || baseColor || "currentColor"}`;
+		}
 		if (st.opacity != null) out.opacity = st.opacity;
 		if (st.scale != null && st.scale !== 1) {
 			out.transform = `scale(${st.scale})`;
