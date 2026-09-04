@@ -6482,10 +6482,18 @@ interface BookingEngineConfigProps {
 	// LOCALE-REMOVED: the `locale` Property Control (FINAL-12) was removed:
 	// date formatting always follows <html lang>, then the browser default.
 	// There is no author locale override and no such prop.
+	// PERSISTENCE-IDENTITY (rule 106): optional stable per-instance id.
+	// Set a unique value per component when 2+ engines share a page
+	// (e.g. "main-booking", "sidebar-booking") so each gets an isolated
+	// autosave namespace. Empty (default) falls back to the deterministic
+	// config fingerprint — automatic isolation for differently-configured
+	// instances, shared session for config-identical siblings.
+	instanceId?: string;
 	// SESSION-KEY-REMOVED: the `sessionStorageKey` Property Control
 	// (FINAL-14) was removed: the base autosave key is always
-	// "booking-engine:session", namespaced per instance by DOM position
-	// (INSTANCE-ISOLATION). Autosave itself is always-on (AGENTS.md rule 7).
+	// "booking-engine:session", and per-instance namespaces derive from
+	// `instanceId` / the config fingerprint (PERSISTENCE-IDENTITY).
+	// Autosave itself is always-on (AGENTS.md rule 7).
 	// DURATION-SOURCE (hard rule): removed — Cal.com event metadata is the
 	// single source of truth for the meeting duration. There is no
 	// author-facing duration fallback control and no props fallback; see
@@ -9861,21 +9869,156 @@ function StepVisibilityWrapper(props: {
 // Framer canvas remounts) must not wipe answers — this lives outside
 // any component instance. sessionStorage remains the reload path.
 //
-// INSTANCE-ISOLATION (rule 91): one snapshot PER PERSISTENCE IDENTITY,
-// never a page-wide singleton. The old module-level single object let
-// Instance A's answers/step seed Instance B's initial state (and gated
-// B's own storage restore away) — the root cause of instances steering
-// each other. Keys are the per-instance storage identity (see
-// instanceKeyRef below): two engines on one page have two identities, so
-// each seeds/clamps/persists only its own session. Any number of
-// instances is supported; deliberately-identical author-set storage keys
-// intentionally share a session (documented behavior).
+// INSTANCE-ISOLATION (rule 91) + PERSISTENCE-IDENTITY (rule 106): one
+// snapshot PER PERSISTENCE IDENTITY, never a page-wide singleton. Keys are
+// the render-computed per-instance identity (`instanceId` slug or config
+// fingerprint — never DOM position): two engines on one page have two
+// identities, so each seeds/clamps/persists only its own session. Any
+// number of instances is supported; config-identical siblings with no
+// `instanceId` deterministically share one session (documented limitation,
+// collision diagnostic fires).
 type InSessionFormSnapshot = {
 	values: BookingValues;
 	currentIndex: number;
 	timeFormat: "12h" | "24h";
 };
 const inSessionFormSnapshots = new Map<string, InSessionFormSnapshot>();
+
+// PERSISTENCE-IDENTITY (AGENTS.md rule 106): per-instance browser-autosave
+// isolation. The old model derived the storage key from DOM position among
+// `[data-be-engine-root]` roots ("first instance keeps the plain key"), so
+// inserting an instance above — or reordering — moved saved progress from
+// one component to another. Identity must NEVER depend on DOM/render order,
+// array index, which instance renders first, a per-mount random id, or a
+// module counter.
+//
+// Framer-limitation note (§3 investigation): the Framer code-component
+// runtime exposes NO stable per-instance identifier to the component — the
+// `framer` package surface is props + RenderTarget + static-renderer
+// detection + Data + fonts (see Code-Components/Docs/SKILL.md). React ids
+// (useId, mount counters) are reload-unstable and order-dependent, so they
+// are unusable here. The safest available architecture is therefore an
+// explicit, deterministic chain (no DOM reads anywhere in key derivation):
+//   1. author-set `instanceId` control → `booking-engine:instance:<slug>`
+//      (stable across reloads, reorders, remounts — required when two
+//      identically-configured engines share a page);
+//   2. otherwise a deterministic fingerprint of the AUTHORED pipeline
+//      (steps/fields + Cal.com event id) → `booking-engine:cfg:<hash>`
+//      (reload-stable, reorder-proof, zero-config; differently-configured
+//      instances isolate automatically).
+// Documented limit: two config-identical instances with no `instanceId`
+// deterministically SHARE one key (same input → same key by construction;
+// nothing order-dependent, so a reorder can never TRANSFER data — but a
+// fresh identical sibling sees the shared session). The collision
+// diagnostic + runtime guard below make that state loud instead of silent.
+// Pre-isolation saves under the plain legacy key migrate once (see restore).
+const LEGACY_SESSION_KEY = "booking-engine:session";
+const PERSIST_INSTANCE_PREFIX = "booking-engine:instance:";
+const PERSIST_CONFIG_PREFIX = "booking-engine:cfg:";
+
+// Mount registry: how many live mounts currently claim each effective key.
+// Keyed BY the effective key itself (never by position) — in-memory only,
+// reload path stays sessionStorage. A count > 1 means config-identical
+// siblings share a session (see limitation above) and fires the collision
+// diagnostic once per key per page session.
+const beMountedPersistenceKeys = new Map<string, number>();
+const beCollisionWarnedKeys = new Set<string>();
+// One-time claim so at most one mount per page session adopts a
+// pre-isolation legacy payload (see restore effect).
+let beLegacyMigrated = false;
+
+// Deterministic JSON with sorted object keys; drops functions/symbols/
+// undefined so equivalent author configs stringify identically regardless
+// of property insertion order. Depth + breadth capped (author configs are
+// small; this only bounds hostile shapes).
+function stableStringify(value: unknown, depth = 0): string {
+	if (value === null || value === undefined) return "null";
+	const t = typeof value;
+	if (t === "number" || t === "boolean") return JSON.stringify(value);
+	if (t === "string") return JSON.stringify((value as string).slice(0, 2000));
+	if (t !== "object") return "null";
+	if (depth > 8) return "null";
+	if (Array.isArray(value)) {
+		return `[${(value as unknown[]).slice(0, 200).map((v) => stableStringify(v, depth + 1)).join(",")}]`;
+	}
+	const entries = Object.entries(value as Record<string, unknown>)
+		.filter(([, v]) => v !== undefined && typeof v !== "function" && typeof v !== "symbol")
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.slice(0, 200);
+	return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v, depth + 1)}`).join(",")}}`;
+}
+
+// FNV-1a 32-bit — tiny, dependency-free, deterministic across reloads.
+function fnv1a(str: string, seed: number): string {
+	let h = seed >>> 0;
+	for (let i = 0; i < str.length; i++) {
+		h ^= str.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+// Canonical author-config digest. Covers exactly the authored pipeline the
+// saved payload refers to (step shape + fields + Cal.com event universe).
+// Deliberately EXCLUDES: `style` (responsive sizes change with viewport —
+// including it would orphan progress on resize), theme/style/copy/button
+// labels (visual tweaks must not orphan progress), Cal.com API key/base URL
+// (rotation must not orphan). Field style overrides are excluded for the
+// same stability reason (purely visual).
+function fingerprintEngineConfig(
+	stepCount: number,
+	steps: StepConfig[],
+	calEventTypeId: unknown,
+): string {
+	const shape = {
+		n: stepCount,
+		e: String(calEventTypeId ?? ""),
+		steps: steps.map((s) => ({
+			t: s.stepType,
+			on: s.enabled !== false,
+			ti: s.title,
+			st: s.subtitle ?? "",
+			l: s.layout,
+			f: (s.fields || []).map((f) => ({
+				lb: f.label,
+				ft: f.fieldType,
+				rq: !!f.required,
+				ph: f.placeholder ?? "",
+				op: f.options ?? [],
+				ov: f.optionValues ?? [],
+				cf: f.calFieldId ?? "",
+				pn: !!f.isPrimaryName,
+				do: f.defaultOption ?? "",
+				w: f.width,
+			})),
+		})),
+	};
+	const s = stableStringify(shape);
+	return `${fnv1a(s, 2166136261)}${fnv1a(s, 424242)}`.slice(0, 12);
+}
+
+function slugifyInstanceId(raw: unknown): string {
+	return String(raw ?? "")
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 64);
+}
+
+interface PersistenceIdentity {
+	key: string;
+	via: "instance-id" | "config-fingerprint";
+}
+
+function resolvePersistenceKey(
+	instanceId: unknown,
+	fingerprint: string,
+): PersistenceIdentity {
+	const slug = slugifyInstanceId(instanceId);
+	if (slug) return { key: `${PERSIST_INSTANCE_PREFIX}${slug}`, via: "instance-id" };
+	return { key: `${PERSIST_CONFIG_PREFIX}${fingerprint}`, via: "config-fingerprint" };
+}
 
 function useBookingEngineState(
 	props: BookingEngineProps,
@@ -9905,6 +10048,7 @@ function useBookingEngineState(
 		calApiKey,
 		calEventTypeId,
 		onAnalytics,
+		instanceId: instanceIdProp,
 	} = props;
 
 	// SYN-01 fix: the addPropertyControls `validation` group is nested
@@ -10418,55 +10562,108 @@ function useBookingEngineState(
 	// below — that is a per-viewer preference, not an author preset.)
 	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">("12h");
 
-	// INSTANCE-ISOLATION (rule 91): per-instance persistence identity.
-	// The base key is the fixed historical key "booking-engine:session"
-	// (the `sessionStorageKey` author control was removed). The EFFECTIVE
-	// identity is derived from this root's position
-	// among all `[data-be-engine-root]` elements: the FIRST instance keeps
-	// the plain historical key (existing single-engine saved progress stays
-	// reachable — rules 13/20 preserved), every ADDITIONAL instance gets a
-	// positional suffix. The identity is mount-stable (DOM order of the
-	// roots does not change across re-renders), supports any number of
-	// instances, involves no "top/bottom" detection, and never renders
-	// into markup (layout effect only) so hydration stays byte-identical.
-	const baseSessionKey = "booking-engine:session";
-	const instanceKeyRef = React.useRef<string>(baseSessionKey);
+	// PERSISTENCE-IDENTITY (rule 106): per-instance storage identity.
+	// Render-computed from author props only → deterministic, identical on
+	// server + client (hydration-safe), stable across reloads, reorders,
+	// remounts, and step navigation. No DOM reads, no render-order input,
+	// no per-mount randomness, no module counter. The `[data-be-engine-root]`
+	// marker below is now used ONLY for subtree-scoped queries/handlers and
+	// for count-only diagnostics — never for identity.
+	const persistenceFingerprint = React.useMemo(
+		() =>
+			fingerprintEngineConfig(
+				stepCount,
+				[step1, step2, step3, step4, step5, step6, step7, step8, step9, step10].slice(
+					0,
+					Math.max(0, Math.min(10, Math.floor(stepCount || 0))),
+				),
+				calEventTypeId,
+			),
+		[
+			stepCount,
+			step1,
+			step2,
+			step3,
+			step4,
+			step5,
+			step6,
+			step7,
+			step8,
+			step9,
+			step10,
+			calEventTypeId,
+		],
+	);
+	const persistenceIdentity = React.useMemo(
+		() => resolvePersistenceKey(instanceIdProp, persistenceFingerprint),
+		[instanceIdProp, persistenceFingerprint],
+	);
+	const persistenceKey = persistenceIdentity.key;
+	const persistenceVia = persistenceIdentity.via;
+	const instanceKeyRef = React.useRef<string>(persistenceKey);
+	// BE-DEBUG-PERSIST (temporary diagnostics for the isolation rollout):
+	// concise storage-identity trace. Never logs visitor values or secrets —
+	// only the derived key, the derivation path, the restored step, and
+	// collision/migration events, so a live test can see whether two
+	// instances share a key.
+	const bePersistDiag = React.useCallback(
+		(msg: string) => {
+			console.info(`[BE persist] ${msg}`);
+		},
+		[],
+	);
 	// Runs as the FIRST layout effect of the hook (declared before the
-	// snapshot write + restore effects): resolve identity, then seed this
-	// instance's own in-session snapshot pre-paint (rule 16 — no Step-1
-	// flash on remount). Seeding is scoped to THIS instance's key, so
-	// Instance A's step/values can never seed Instance B.
+	// snapshot write + restore effects): publish the render-computed
+	// identity to the ref mirror, register this mount for the collision
+	// guard, then seed this instance's own in-session snapshot pre-paint
+	// (rule 16 — no Step-1 flash on remount). Seeding is scoped to THIS
+	// instance's key, so Instance A's step/values can never seed Instance B.
 	useIsomorphicLayoutEffect(() => {
-		if (typeof document === "undefined") return;
-		const root = engineRootRef?.current;
-		if (root) {
-			const roots = Array.from(
-				document.querySelectorAll<HTMLElement>("[data-be-engine-root]"),
-			);
-			const idx = roots.indexOf(root);
-			instanceKeyRef.current =
-				idx <= 0 ? baseSessionKey : `${baseSessionKey}#${idx + 1}`;
+		instanceKeyRef.current = persistenceKey;
+		const claimed = (beMountedPersistenceKeys.get(persistenceKey) ?? 0) + 1;
+		beMountedPersistenceKeys.set(persistenceKey, claimed);
+		let rootCount = 0;
+		if (typeof document !== "undefined") {
+			rootCount = document.querySelectorAll("[data-be-engine-root]").length;
 		}
-		const snap = inSessionFormSnapshots.get(instanceKeyRef.current);
-		if (!snap) return;
-		setValues({ ...snap.values });
-		setCurrentIndex(
-			Math.min(snap.currentIndex, Math.max(0, baseTotalActive - 1)),
+		bePersistDiag(
+			`resolve key=${persistenceKey} via=${persistenceVia} instancesOnKey=${claimed} enginesOnPage=${rootCount}`,
 		);
-		setTimeFormat(snap.timeFormat);
-		// Mirror the storage-restore month handling: keep the calendar on
-		// the month of the seeded selection (M3 fix parity).
-		const snapSlot = snap.values[SELECTED_SLOT_KEY];
-		if (snapSlot && typeof snapSlot === "object" && "date" in snapSlot) {
-			const d = (snapSlot as { date?: unknown }).date;
-			if (d instanceof Date && !Number.isNaN(d.getTime())) {
-				setPickedDate(d);
-				setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+		if (claimed > 1 && !beCollisionWarnedKeys.has(persistenceKey)) {
+			beCollisionWarnedKeys.add(persistenceKey);
+			console.warn(
+				`[BE persist] COLLISION key=${persistenceKey} is claimed by ${claimed} mounted engines — ` +
+					`they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`,
+			);
+		}
+		// Seeding is scoped to THIS instance's key, so Instance A's
+		// step/values can never seed Instance B.
+		const snap = inSessionFormSnapshots.get(instanceKeyRef.current);
+		if (snap) {
+			setValues({ ...snap.values });
+			setCurrentIndex(
+				Math.min(snap.currentIndex, Math.max(0, baseTotalActive - 1)),
+			);
+			setTimeFormat(snap.timeFormat);
+			// Mirror the storage-restore month handling: keep the calendar on
+			// the month of the seeded selection (M3 fix parity).
+			const snapSlot = snap.values[SELECTED_SLOT_KEY];
+			if (snapSlot && typeof snapSlot === "object" && "date" in snapSlot) {
+				const d = (snapSlot as { date?: unknown }).date;
+				if (d instanceof Date && !Number.isNaN(d.getTime())) {
+					setPickedDate(d);
+					setVisibleMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+				}
 			}
 		}
-		// baseSessionKey/root identity only; the seed reads the map once.
+		return () => {
+			const left = (beMountedPersistenceKeys.get(persistenceKey) ?? 1) - 1;
+			if (left <= 0) beMountedPersistenceKeys.delete(persistenceKey);
+			else beMountedPersistenceKeys.set(persistenceKey, left);
+		};
+		// Render-computed identity only; the seed reads the map once.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [baseSessionKey, baseTotalActive]);
+	}, [persistenceKey, baseTotalActive]);
 
 	// Keep this instance's snapshot in lockstep so a remount (animation
 	// unmount, Framer canvas) rehydrates from memory, not empty useState.
@@ -10518,7 +10715,32 @@ function useBookingEngineState(
 		// instance's snapshot must never gate our restore.
 		if (inSessionFormSnapshots.has(instanceKeyRef.current)) return;
 		try {
-			const raw = window.sessionStorage.getItem(instanceKeyRef.current);
+			let raw = window.sessionStorage.getItem(instanceKeyRef.current);
+			// One-time upgrade path for saves written before per-instance
+			// isolation (plain legacy key). Adopted only when this mount is
+			// the single engine on the page and no sibling already claimed
+			// the legacy payload this session — a multi-engine page never
+			// adopts, so pre-isolation shared data can never transfer into
+			// a namespaced session. (Same-commit co-mounts all see both
+			// roots, so neither adopts; separate-commit co-mounts are the
+			// documented residual edge — first claim wins, once.)
+			let migratedLegacy = false;
+			if (!raw && !beLegacyMigrated) {
+				let roots = 0;
+				try {
+					roots = document.querySelectorAll("[data-be-engine-root]").length;
+				} catch {
+					roots = 0;
+				}
+				if (roots <= 1) {
+					const legacyRaw = window.sessionStorage.getItem(LEGACY_SESSION_KEY);
+					if (legacyRaw) {
+						raw = legacyRaw;
+						migratedLegacy = true;
+						beLegacyMigrated = true;
+					}
+				}
+			}
 			if (!raw) return;
 			// F-12-6 fix (merge) + F-12-8 fix (reviver removal): the old global
 			// reviver converted ANY property named "date" holding an ISO string
@@ -10660,19 +10882,32 @@ function useBookingEngineState(
 					// (same-origin DoS); bound the iteration to the number of
 					// active steps before re-validating prior steps.
 					// Uses base pipeline; auto-injected step not yet known at restore time.
-					let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length);
-					for (let i = 0; i < restoredIndex; i++) {
-						const prior = baseActiveSteps[i];
-						if (
-							prior &&
-							!validateStep(prior, filteredValues, validationCopy)
-								.valid
-						) {
-							restoredIndex = i;
-							break;
-						}
+				let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length);
+				for (let i = 0; i < restoredIndex; i++) {
+					const prior = baseActiveSteps[i];
+					if (
+						prior &&
+						!validateStep(prior, filteredValues, validationCopy)
+							.valid
+					) {
+						restoredIndex = i;
+						break;
 					}
-					setCurrentIndex(restoredIndex);
+				}
+				setCurrentIndex(restoredIndex);
+				if (migratedLegacy) {
+					try {
+						window.sessionStorage.removeItem(LEGACY_SESSION_KEY);
+					} catch {
+						// non-fatal
+					}
+					bePersistDiag(
+						`legacy-migrate ${LEGACY_SESSION_KEY} -> key=${instanceKeyRef.current} step=${restoredIndex}`,
+					);
+				}
+				bePersistDiag(
+					`restore key=${instanceKeyRef.current} step=${restoredIndex} hasValues=${restoredEntries.length > 0 ? "yes" : "no"}${migratedLegacy ? " (legacy)" : ""}`,
+				);
 				}
 			}
 		} catch (err: unknown) {
@@ -10687,13 +10922,16 @@ function useBookingEngineState(
 				console.warn("BookingEngine: failed to purge corrupt saved progress.");
 			}
 		}
-	}, [persistState, isStaticRender]);
+	}, [persistState, isStaticRender, persistenceKey]);
 
 	// Persist on every change while in-progress.
 	// T6-M1 fix: the write used to run synchronously on EVERY keystroke
 	// (JSON.stringify + sessionStorage.setItem per character). Debounce by
 	// 300ms so a typing burst serializes once, after the pause.
 	const persistTimerRef = React.useRef<number | null>(null);
+	// BE-DEBUG-PERSIST: last step a save was logged for (step-transition
+	// logging only — never per keystroke).
+	const lastLoggedPersistStep = React.useRef<number>(-1);
 	// T7-H6 fix: the 0ms focus timers are stored here so they can be cancelled
 	// on unmount - previously they were fire-and-forget and could run against
 	// a detached DOM node.
@@ -10767,8 +11005,22 @@ function useBookingEngineState(
 						// step 0 (the layout effect below re-clamps the restored
 						// value if the author changed the step count meanwhile).
 						currentIndex: baseSafeCurrentIndex,
+						// PERSISTENCE-IDENTITY: fingerprint of the authored
+						// pipeline this payload belongs to (diagnostic aid;
+						// schema version intentionally unchanged so the
+						// one-time legacy migration in the restore effect
+						// still accepts pre-isolation payloads).
+						fp: persistenceFingerprint,
 					}),
 				);
+				// BE-DEBUG-PERSIST: log saves only on step transitions, never
+				// per keystroke (no values, no secrets — key + step only).
+				if (lastLoggedPersistStep.current !== baseSafeCurrentIndex) {
+					lastLoggedPersistStep.current = baseSafeCurrentIndex;
+					bePersistDiag(
+						`save key=${instanceKeyRef.current} step=${baseSafeCurrentIndex}`,
+					);
+				}
 			} catch (err: unknown) {
 				// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
 				// silently swallowed - the visitor believed progress was being
@@ -10795,6 +11047,7 @@ function useBookingEngineState(
 		timeFormat,
 		baseSafeCurrentIndex,
 		isStaticRender,
+		persistenceFingerprint,
 	]);
 
 	// W2-29-N2 fix: the focusTimerRef cleanup used to live inside the
@@ -12280,11 +12533,13 @@ function useBookingEngineState(
  * @framerDisableUnlink
  */
 export default function BookingEngine(props: BookingEngineProps) {
-	// INSTANCE-ISOLATION (rule 91): the engine root ref is created BEFORE
-	// the state hook so the hook can (a) derive a mount-stable per-instance
-	// persistence identity from this root's DOM position and (b) scope
-	// queries/handlers (focus restoration, Escape) to this instance's own
-	// subtree. Declared before the destructure — hooks order is stable.
+	// INSTANCE-ISOLATION (rule 91) + PERSISTENCE-IDENTITY (rule 106):
+	// the engine root ref is created BEFORE the state hook so the hook can
+	// scope queries/handlers (focus restoration, Escape) to this instance's
+	// own subtree. Persistence identity is render-computed from author props
+	// (never DOM position) — the root marker below serves subtree scoping
+	// and count-only diagnostics. Declared before the destructure — hooks
+	// order is stable.
 	const engineRootRef = React.useRef<HTMLDivElement | null>(null);
 	const {
 		activeSteps,
@@ -13646,12 +13901,12 @@ const RootShell = React.memo(function RootShell(props: {
 						: "be-motion-root"
 				}
 				ref={setRootRef}
-				// INSTANCE-ISOLATION (rule 91): constant marker attribute — every
-				// Booking Engine root carries it so the engine can derive a
-				// mount-stable, per-instance persistence identity (DOM position)
-				// and scope queries/handlers to its own subtree. Plain constant:
-				// hydration-safe (nothing id-derived, nothing per-instance in
-				// the markup itself).
+				// PERSISTENCE-IDENTITY (rule 106): constant marker attribute —
+				// every Booking Engine root carries it so the engine can scope
+				// queries/handlers to its own subtree and count co-mounted
+				// engines for diagnostics. Plain constant: hydration-safe
+				// (nothing id-derived, nothing per-instance in the markup
+				// itself). It is NEVER an input to storage identity.
 				data-be-engine-root=""
 				style={{
 					position: "relative",
@@ -16945,6 +17200,18 @@ addPropertyControls(BookingEngine, {
 	step9: makeStepControl(8, makeDefaultBlankFormStep(9)),
 	step10: makeStepControl(9, makeDefaultBlankFormStep(10)),
 
+	// PERSISTENCE-IDENTITY (rule 106): stable per-instance autosave
+	// namespace. Required (unique per instance) when 2+ engines share a
+	// page with identical configuration; optional otherwise.
+	instanceId: {
+		type: ControlType.String,
+		title: "Instance ID",
+		placeholder: "e.g. main-booking",
+		description:
+			"Unique per instance when 2+ booking engines share a page. Isolates saved progress.",
+		defaultValue: "",
+	},
+
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
 		type: ControlType.Object,
@@ -17774,8 +18041,8 @@ addPropertyControls(BookingEngine, {
 	// (see AGENTS.md).
 	//
 	// SESSION-KEY-REMOVED: the `sessionStorageKey` author control was
-	// removed: the base autosave key is always "booking-engine:session",
-	// namespaced per instance by DOM position (see AGENTS.md).
+	// removed: per-instance namespaces derive from `instanceId` / the
+	// config fingerprint (PERSISTENCE-IDENTITY, see AGENTS.md).
 	// DURATION-SOURCE (hard rule): the "Default Meeting Duration (ms)"
 	// Property Control is removed — Cal.com event metadata is the single
 	// source of truth for duration. No renamed/replacement fallback
