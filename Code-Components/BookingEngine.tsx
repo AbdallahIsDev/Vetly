@@ -6243,6 +6243,14 @@ interface BookingEngineStyleProps {
 	// Per-surface heading typography (step + success + error titles).
 	// The base `font` above stays the body control.
 	headingFont?: FramerFont;
+	// TYPOGRAPHY-GROUP: `font` + `headingFont` live in the "Font" panel
+	// group (`typography.*`). Read the nested path first; fall back to
+	// the legacy top-level props for instances saved before the grouping
+	// (same pattern as SYN-01 `validation`). Legacy carriers below.
+	typography?: {
+		font?: FramerFont;
+		headingFont?: FramerFont;
+	};
 	// Animation — variant (style) + duration (speed). Variant is the single
 	// source of truth for which of the 6 production concepts is used.
 	transition: Transition;
@@ -10113,8 +10121,7 @@ function useBookingEngineState(
 		buttonLabels,
 		progressBar,
 		styles,
-		font,
-		headingFont,
+		typography,
 		transition,
 		transitionVariant,
 		copy,
@@ -10123,6 +10130,13 @@ function useBookingEngineState(
 		onAnalytics,
 		advanced,
 	} = props;
+
+	// TYPOGRAPHY-GROUP: read the nested Font-group path first; fall back
+	// to the legacy top-level props for instances saved before the
+	// grouping (same pattern as SYN-01 `validation` above). Resolved once
+	// here so every downstream consumer is unchanged.
+	const font = typography?.font ?? props.font;
+	const headingFont = typography?.headingFont ?? props.headingFont;
 
 	// PERSISTENCE-IDENTITY: read the nested Advanced path first; fall back
 	// to the legacy top-level prop for instances saved before the control
@@ -17589,33 +17603,47 @@ addPropertyControls(BookingEngine, {
 			},
 		},
 	},
-	font: {
-		type: ControlType.Font,
-		title: "Body Font",
-		controls: "extended",
-		defaultFontType: "sans-serif",
-		defaultValue: {
-			fontSize: "15px",
-			variant: "Regular",
-			letterSpacing: "0em",
-			lineHeight: "1.4em",
-			textAlign: "left",
-		},
-	},
-	// Per-surface heading typography (step + success + error titles).
-	// Body text keeps the control above; buttons keep their per-button
-	// Font rows. Defaults equal the previous hardcoded titles.
-	headingFont: {
-		type: ControlType.Font,
-		title: "Heading Font",
-		controls: "extended",
-		defaultFontType: "sans-serif",
-		defaultValue: {
-			fontSize: "22px",
-			variant: "Bold",
-			letterSpacing: "0em",
-			lineHeight: "1.2em",
-			textAlign: "left",
+	// TYPOGRAPHY-GROUP: Body + Head fonts live in the "Font" panel
+	// submenu. Control types, values, and defaults are unchanged — only
+	// the panel organization moved (nested `typography.*`, legacy
+	// top-level props still read as fallback).
+	typography: {
+		type: ControlType.Object,
+		title: "Font",
+		icon: "font",
+		buttonTitle: "Font",
+		controls: {
+			font: {
+				type: ControlType.Font,
+				title: "Body Font",
+				controls: "extended",
+				defaultFontType: "sans-serif",
+				defaultValue: {
+					fontSize: "15px",
+					variant: "Regular",
+					letterSpacing: "0em",
+					lineHeight: "1.4em",
+					textAlign: "left",
+				},
+			},
+			// Per-surface heading typography (step + success + error titles).
+			// Body text keeps the control above; buttons keep their per-button
+			// Font rows. Defaults equal the previous hardcoded titles.
+			// Titled "Head Font" (not "Heading Font") so the full label fits
+			// the Framer panel.
+			headingFont: {
+				type: ControlType.Font,
+				title: "Head Font",
+				controls: "extended",
+				defaultFontType: "sans-serif",
+				defaultValue: {
+					fontSize: "22px",
+					variant: "Bold",
+					letterSpacing: "0em",
+					lineHeight: "1.2em",
+					textAlign: "left",
+				},
+			},
 		},
 	},
 
