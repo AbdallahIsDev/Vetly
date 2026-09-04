@@ -458,17 +458,11 @@ function withAlpha(color: string, alpha: number, background?: string): string {
 // (<html lang>), not the browser's default locale - they can differ (e.g. a
 // German site visited from a browser set to English). Falls back to the
 // browser default when the page declares no lang.
-// FINAL-12 fix: an author-set `locale` Property Control wins over both.
-// Module-level (not React state) because pageLocale() is read from 22 call
-// sites across nested helpers and pure functions that have no access to
-// props; the engine applies it synchronously during its own render, before
-// any child renders. Author config is static per instance, so a plain
-// idempotent string assignment cannot cause tearing. Pathological
-// same-page multi-instance setups with DIFFERENT locales resolve to the
-// last-rendered instance — acceptable for an authoring override.
-let PAGE_LOCALE_OVERRIDE = "";
+// LOCALE-REMOVED: the author-set `locale` Property Control (FINAL-12) was
+// removed: there is no locale override. Module function (not React state)
+// because pageLocale() is read from 22 call sites across nested helpers
+// and pure functions that have no access to props.
 function pageLocale(): string | undefined {
-	if (PAGE_LOCALE_OVERRIDE) return PAGE_LOCALE_OVERRIDE;
 	return typeof document !== "undefined"
 		? document.documentElement.lang || undefined
 		: undefined;
@@ -483,7 +477,7 @@ const DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL = "Reschedule or cancel";
 const DEFAULT_COPY_EDIT_LABEL = "Edit";
 const DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL = "Pick a date to see times";
 const DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL = "No available times";
-const DEFAULT_COPY_SELECT_OPTION_LABEL = "Select an option…";
+const DEFAULT_COPY_SELECT_OPTION_LABEL = "Choose an option…";
 const DEFAULT_COPY_STEP_PROGRESS_TEMPLATE = "{pct}% complete";
 const DEFAULT_COPY_UNKNOWN_ERROR_LABEL = "Unknown error";
 const DEFAULT_COPY_SUBMIT_ERROR_FALLBACK =
@@ -875,11 +869,14 @@ function innerRadiusValue(
 // FIELD-STYLES helper: Framer's Font control emits fontSize as a number OR a
 // CSS string ("14px"). Returns the numeric pixel size, or undefined when the
 // key is unset so callers can fall back to their own defaults per key.
+// Non-positive sizes also resolve to undefined: a 0px font is never an
+// intentional style, and treating it as unset keeps activation-time
+// materialization from blanking text.
 function fontPixelSize(value: string | number | undefined): number | undefined {
-	if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+	if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : undefined;
 	if (typeof value === "string") {
 		const parsed = Number.parseFloat(value);
-		return Number.isFinite(parsed) ? parsed : undefined;
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 	}
 	return undefined;
 }
@@ -956,6 +953,63 @@ function resolveFieldPadding(
 	}
 	if (fieldType) return getFieldStylesEffectiveDefaults(fieldType).padding;
 	return FIELD_STYLES_INPUT_PADDING;
+}
+
+// FIELD-STYLES (override layer): normalize + merge helpers. One reusable
+// mechanism for every field type, not per-type hacks.
+//
+// normalizeStyleOverrides strips values that can never be a real explicit
+// choice, so Framer activation-time materialization can never sneak one
+// past the theme fallbacks: empty-string colors ("" paints nothing, so
+// every consumer's ?? fallback is the honest render). Real values pass
+// through untouched, including explicit 0 and "0px" for padding, radius,
+// border width, and spacing, which stay live overrides through the ??
+// and typeof resolvers. Non-positive font sizes are already unset by
+// fontPixelSize above.
+const STYLE_OVERRIDE_COLOR_KEYS: Array<keyof FieldStyleOverrides> = [
+	"labelColor",
+	"textColor",
+	"placeholderColor",
+	"backgroundColor",
+	"focusBorderColor",
+	"selectedBackgroundColor",
+	"selectedTextColor",
+	"selectedBorderColor",
+	"accentColor",
+	"borderColor",
+];
+function normalizeStyleOverrides(
+	fs: FieldStyleOverrides | undefined,
+): FieldStyleOverrides | undefined {
+	if (!fs) return fs;
+	let out: FieldStyleOverrides | null = null;
+	for (const key of STYLE_OVERRIDE_COLOR_KEYS) {
+		if (fs[key] === "") {
+			out ??= { ...fs };
+			delete out[key];
+		}
+	}
+	return out ?? fs;
+}
+
+// Legacy merge: variant-specific Styles keys (segmentedStyles and friends)
+// take precedence per property over the shared legacy choiceStyles object,
+// so instances saved before the per-variant split keep every override live.
+// Granularity is per property: only keys set on the variant object win; the
+// rest keep inheriting from the legacy object, then from the engine theme.
+function mergeStyleOverrides(
+	base: FieldStyleOverrides | undefined,
+	over: FieldStyleOverrides | undefined,
+): FieldStyleOverrides | undefined {
+	if (!base) return over;
+	if (!over) return base;
+	const out: FieldStyleOverrides = { ...base };
+	const record = out as Record<string, unknown>;
+	for (const key of Object.keys(over)) {
+		const value: unknown = (over as Record<string, unknown>)[key];
+		if (value !== undefined) record[key] = value;
+	}
+	return out;
 }
 
 /** Horizontal padding (px) from a resolved CSS padding string — used by the
@@ -4989,12 +5043,13 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// the calendar's appearance, and a configured value replaces exactly
 	// one of these without touching the global Background token or the
 	// transparent footer.
+	const normalizedCalendarStyles = normalizeStyleOverrides(calendarStyles);
 	const surfaceBackground =
-		calendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
-	const surfaceRadius = resolveFieldRadius(calendarStyles, radius, "calendar-widget" as FieldType);
+		normalizedCalendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
+	const surfaceRadius = resolveFieldRadius(normalizedCalendarStyles, radius, "calendar-widget" as FieldType);
 	const surfacePadding =
-		typeof calendarStyles?.padding === "string" && calendarStyles.padding.trim()
-			? calendarStyles.padding
+		typeof normalizedCalendarStyles?.padding === "string" && normalizedCalendarStyles.padding.trim()
+			? normalizedCalendarStyles.padding
 			: undefined;
 	// W1-11-NEW-FIND-2 fix: the `focusInset` shadow memo is gone —
 	// focus rings come from the CSS :focus-visible rule alone.
@@ -5901,6 +5956,15 @@ interface FieldConfig {
 	// checkbox uses `checkStyles`. Unset keys keep the engine theme look.
 	styles?: FieldStyleOverrides;
 	choiceStyles?: FieldStyleOverrides;
+	// STYLES-INIT-PER-VARIANT: segmented/pills/cards/radio each own a
+	// Styles key whose control defaults equal that variant's effective
+	// defaults. choiceStyles stays select's live key and the legacy
+	// fallback merged underneath the variant keys (see
+	// mergeStyleOverrides), so saved instances keep every override.
+	segmentedStyles?: FieldStyleOverrides;
+	pillsStyles?: FieldStyleOverrides;
+	cardsStyles?: FieldStyleOverrides;
+	radioStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
 	// CAL-BG-OWNERSHIP: the Calendar Widget marker's own Styles set. Its
 	// Background/Radius/Padding own the calendar surface — the global
@@ -6212,17 +6276,13 @@ interface BookingEngineConfigProps {
 	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
 	// deployments use the engine without forking. Default: Cal.com cloud.
 	calApiBaseUrl?: string;
-	// FINAL-12 fix: author-forced BCP-47 locale for date formatting.
-	// Empty/omitted keeps the historical behavior — <html lang>, then the
-	// browser default. Applied as a module-level override read by
-	// pageLocale() (22 call sites across nested helpers make prop drilling
-	// impractical in a single-file component).
-	locale?: string;
-	// FINAL-14 fix: per-instance sessionStorage key. Only needed when the
-	// SAME page embeds several BookingEngine instances — give each a
-	// distinct key so their autosaved sessions don't collide. Autosave
-	// itself is always-on (AGENTS.md rule 7); this only namespaces it.
-	sessionStorageKey?: string;
+	// LOCALE-REMOVED: the `locale` Property Control (FINAL-12) was removed:
+	// date formatting always follows <html lang>, then the browser default.
+	// There is no author locale override and no such prop.
+	// SESSION-KEY-REMOVED: the `sessionStorageKey` Property Control
+	// (FINAL-14) was removed: the base autosave key is always
+	// "booking-engine:session", namespaced per instance by DOM position
+	// (INSTANCE-ISOLATION). Autosave itself is always-on (AGENTS.md rule 7).
 	// DURATION-SOURCE (hard rule): removed — Cal.com event metadata is the
 	// single source of truth for the meeting duration. There is no
 	// author-facing duration fallback control and no props fallback; see
@@ -6351,7 +6411,7 @@ function makeDefaultFormStep(): StepConfig {
 			{
 				label: "Full Name",
 				fieldType: "text",
-				placeholder: "Jane Doe",
+				placeholder: "Jane Smith",
 				required: true,
 				isPrimaryName: true,
 				width: "full",
@@ -6359,14 +6419,14 @@ function makeDefaultFormStep(): StepConfig {
 			{
 				label: "Email",
 				fieldType: "email",
-				placeholder: "jane@example.com",
+				placeholder: "jane.smith@example.com",
 				required: true,
 				width: "full",
 			},
 			{
 				label: "Phone",
 				fieldType: "phone",
-				placeholder: "+1 (555) 555-5555",
+				placeholder: "+1 (555) 123-4567",
 				required: false,
 				width: "full",
 			},
@@ -6415,7 +6475,7 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
 			{
 				label: "Notes",
 				fieldType: "textarea",
-				placeholder: "Anything we should know?",
+				placeholder: "Anything we should know before your appointment?",
 				required: false,
 				width: "full",
 			},
@@ -9952,6 +10012,10 @@ function useBookingEngineState(
 			accentForegroundColor,
 			surfaceColor,
 			textPrimaryColor,
+			// BORDER is an authored token (rule 90) — it must be a memo dep or
+			// Border-only edits render a stale theme (the derived/fixed
+			// tokens below recompute from these same inputs).
+			borderColor,
 			sanitizedRadius,
 		],
 	);
@@ -10160,8 +10224,9 @@ function useBookingEngineState(
 	const [timeFormat, setTimeFormat] = React.useState<"12h" | "24h">("12h");
 
 	// INSTANCE-ISOLATION (rule 91): per-instance persistence identity.
-	// The base key is the author's storage key (historical default when
-	// unset). The EFFECTIVE identity is derived from this root's position
+	// The base key is the fixed historical key "booking-engine:session"
+	// (the `sessionStorageKey` author control was removed). The EFFECTIVE
+	// identity is derived from this root's position
 	// among all `[data-be-engine-root]` elements: the FIRST instance keeps
 	// the plain historical key (existing single-engine saved progress stays
 	// reachable — rules 13/20 preserved), every ADDITIONAL instance gets a
@@ -10169,10 +10234,7 @@ function useBookingEngineState(
 	// roots does not change across re-renders), supports any number of
 	// instances, involves no "top/bottom" detection, and never renders
 	// into markup (layout effect only) so hydration stays byte-identical.
-	const baseSessionKey =
-		typeof props.sessionStorageKey === "string" && props.sessionStorageKey.trim()
-			? props.sessionStorageKey.trim()
-			: "booking-engine:session";
+	const baseSessionKey = "booking-engine:session";
 	const instanceKeyRef = React.useRef<string>(baseSessionKey);
 	// Runs as the FIRST layout effect of the hook (declared before the
 	// snapshot write + restore effects): resolve identity, then seed this
@@ -12117,11 +12179,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		calEventMetaStatus,
 	} = useBookingEngineState(props, engineRootRef);
 
-	// FINAL-12 fix: apply the author's locale override before any child
-	// renders (pageLocale() reads it during first paint of this render
-	// pass). Idempotent string assignment — safe during render.
-	PAGE_LOCALE_OVERRIDE =
-		typeof props.locale === "string" ? props.locale.trim() : "";
+	// LOCALE-REMOVED: no locale override: pageLocale() follows <html lang>.
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
 	// "Cancel" — the only footer button not driven by buttonLabels. Use the
@@ -14320,16 +14378,37 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// native-control fields keep the real label↔input association.
 	const isChoiceFieldType = CHOICE_FIELD_TYPES.includes(field.fieldType);
 
-	// FIELD-STYLES (hard rule): resolve this field's own override object —
-	// exactly one Styles submenu exists per field type, so exactly one key
-	// can carry data. Undefined everywhere = default engine look.
+	// FIELD-STYLES (hard rule): resolve this field's own override object.
+	// Segmented/pills/cards/radio each own a variant Styles key whose
+	// control defaults equal that variant's effective defaults; the shared
+	// legacy choiceStyles object merges underneath per property, so
+	// instances saved before the split keep every override live. Select
+	// keeps choiceStyles as its live key. Undefined everywhere = default
+	// engine look. normalizeStyleOverrides strips values that can never be
+	// real choices (empty-string colors), so activation-time
+	// materialization can never sneak one past the theme fallbacks.
+	const variantStyles: FieldStyleOverrides | undefined =
+		field.fieldType === "segmented"
+			? field.segmentedStyles
+			: field.fieldType === "pills"
+				? field.pillsStyles
+				: field.fieldType === "cards"
+					? field.cardsStyles
+					: field.fieldType === "radio"
+						? field.radioStyles
+						: undefined;
 	const fieldStyleOverrides: FieldStyleOverrides | undefined =
 		field.fieldType === "checkbox"
 			? field.checkStyles
-			: isChoiceFieldType
+			: field.fieldType === "select"
 				? field.choiceStyles
-				: field.styles;
-	const fs = fieldStyleOverrides;
+				: field.fieldType === "segmented" ||
+					  field.fieldType === "pills" ||
+					  field.fieldType === "cards" ||
+					  field.fieldType === "radio"
+					? mergeStyleOverrides(field.choiceStyles, variantStyles)
+					: field.styles;
+	const fs = normalizeStyleOverrides(fieldStyleOverrides);
 	const fsOptionMuted = fs?.textColor
 		? withAlpha(fs.textColor, 0.6)
 		: theme.textSecondaryColor;
@@ -15755,11 +15834,9 @@ type ProgressBarControlProps = Pick<
 // undefined and never overrides the engine theme / field default, and each
 // field type exposes exactly the set that is meaningful for it (no fake
 // controls). The Calendar Widget marker exposes `calendarStyles` (see below).
-const FIELD_STYLE_INPUT_TYPES = ["text", "email", "phone", "textarea", "select"];
+const FIELD_STYLE_INPUT_TYPES = ["text", "email", "phone", "textarea"];
 const isFieldStyleInputType = (fieldType?: string) =>
 	FIELD_STYLE_INPUT_TYPES.includes(fieldType || "");
-const isFieldStyleChoiceType = (fieldType?: string) =>
-	CHOICE_FIELD_TYPES.includes(fieldType || "");
 
 function fieldStylesColorControl(title: string) {
 	return { type: ControlType.Color, title, optional: true };
@@ -15828,25 +15905,26 @@ function fieldStylesBorderControl() {
 		},
 	};
 }
-function fieldStylesRadiusControl() {
+function fieldStylesRadiusControl(defaultValue: string = FIELD_STYLES_FIELD_RADIUS) {
 	return {
 		type: ControlType.BorderRadius,
 		title: "Radius",
 		optional: true,
-		// STYLES-INIT-EFFECTIVE: the shipped shared Radius default (rule 60);
-		// an explicit author-entered 0 still applies as 0 (`??`/typeof
-		// resolvers — never falsy checks).
-		defaultValue: FIELD_STYLES_FIELD_RADIUS,
+		// STYLES-INIT-EFFECTIVE: the caller's own effective radius default
+		// (per-variant for choice sets); an explicit author-entered 0 still
+		// applies as 0 (`??`/typeof resolvers, never falsy checks).
+		defaultValue,
 	};
 }
-function fieldStylesPaddingControl() {
+function fieldStylesPaddingControl(defaultValue: string = FIELD_STYLES_INPUT_PADDING) {
 	return {
 		type: ControlType.Padding,
 		title: "Padding",
 		optional: true,
-		// STYLES-INIT-EFFECTIVE: the same constant resolveFieldPadding falls
-		// back to — opening Styles shows the field's real padding.
-		defaultValue: FIELD_STYLES_INPUT_PADDING,
+		// STYLES-INIT-EFFECTIVE: the caller's own effective padding default,
+		// same constant the runtime resolver falls back to, so opening
+		// Styles shows the field's real padding.
+		defaultValue,
 	};
 }
 
@@ -15870,14 +15948,18 @@ function makeInputFieldStylesControls() {
 	};
 }
 
-function makeChoiceFieldStylesControls() {
-	// Choice groups share the same control set, but their effective padding
-	// differs per variant (cards 10px 8px, pills 10px 12px, segmented 11px 10px).
-	// The control's defaultValue is the generic INPUT_PADDING, but the runtime
-	// resolver falls back to the per-variant value, so opening Styles on a
-	// cards field still shows its real 10px 8px, not a forced 10px 14px.
-	// Explicit 0 is preserved via ?? checks.
-	const eff = getFieldStylesEffectiveDefaults("cards");
+function makeVariantChoiceStylesControls(
+	variant: "select" | "segmented" | "pills" | "cards" | "radio",
+) {
+	// One reusable factory for every choice-based Styles set: the numeric
+	// and compound defaults are this variant's own effective defaults (the
+	// same constants the runtime resolvers fall back to), so activating
+	// Styles materializes the inherit look and only an author-entered value
+	// becomes an override. Cards (10px 8px), pills (10px 12px, 999px),
+	// segmented (11px 10px) and select/radio (10px 14px) each keep their
+	// own real values here instead of sharing one generic set. Explicit 0
+	// is preserved via ?? checks.
+	const eff = getFieldStylesEffectiveDefaults(variant);
 	return {
 		font: fieldStylesFontControl("Font"),
 		labelFont: fieldStylesFontControl("Label Font"),
@@ -15885,8 +15967,8 @@ function makeChoiceFieldStylesControls() {
 		textColor: fieldStylesColorControl("Text Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
 		border: fieldStylesBorderControl(),
-		radius: fieldStylesRadiusControl(),
-		padding: fieldStylesPaddingControl(),
+		radius: fieldStylesRadiusControl(eff.radius),
+		padding: fieldStylesPaddingControl(eff.padding),
 		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
 		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
@@ -15910,8 +15992,8 @@ function makeCalendarFieldStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
 		backgroundColor: fieldStylesColorControl("Background"),
-		radius: fieldStylesRadiusControl(),
-		padding: fieldStylesPaddingControl(),
+		radius: fieldStylesRadiusControl(eff.radius),
+		padding: fieldStylesPaddingControl(eff.padding),
 	};
 }
 
@@ -16025,7 +16107,7 @@ function makeFieldObjectControls() {
 			type: ControlType.String,
 			title: "Test Input (canvas)",
 			defaultValue: "",
-			placeholder: "Type sample text…",
+			placeholder: "Text to test the pattern…",
 			hidden: (p: FieldControlProps) =>
 				(p?.validationRule ?? "type") !== "custom-regex",
 		},
@@ -16089,7 +16171,7 @@ function makeFieldObjectControls() {
 			control: {
 				type: ControlType.String,
 				defaultValue: "",
-				placeholder: "Distinct form value (blank = use label)",
+				placeholder: "Custom value (blank uses the label)",
 			},
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
@@ -16102,7 +16184,7 @@ function makeFieldObjectControls() {
 			control: {
 				type: ControlType.String,
 				defaultValue: "",
-				placeholder: "https://… image URL",
+				placeholder: "e.g. https://…/badge.png",
 			},
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
@@ -16142,8 +16224,44 @@ function makeFieldObjectControls() {
 			buttonTitle: "Styles",
 			icon: "effect",
 			optional: true,
-			controls: makeChoiceFieldStylesControls(),
-			hidden: (p: FieldControlProps) => !isFieldStyleChoiceType(p?.fieldType),
+			controls: makeVariantChoiceStylesControls("select"),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "select",
+		},
+		segmentedStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeVariantChoiceStylesControls("segmented"),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "segmented",
+		},
+		pillsStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeVariantChoiceStylesControls("pills"),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "pills",
+		},
+		cardsStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeVariantChoiceStylesControls("cards"),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "cards",
+		},
+		radioStyles: {
+			type: ControlType.Object,
+			title: "Styles",
+			buttonTitle: "Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeVariantChoiceStylesControls("radio"),
+			hidden: (p: FieldControlProps) => p?.fieldType !== "radio",
 		},
 		checkStyles: {
 			type: ControlType.Object,
@@ -16179,7 +16297,7 @@ function makeFieldObjectControls() {
 			type: ControlType.String,
 			title: "Cal Field ID",
 			defaultValue: "",
-			placeholder: "e.g. customWish",
+			placeholder: "e.g. pet-name",
 			hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
 		},
 	};
@@ -16366,7 +16484,7 @@ addPropertyControls(BookingEngine, {
 				type: ControlType.String,
 				title: "Home URL",
 				defaultValue: DEFAULT_CONFIRM_HOME_URL,
-				placeholder: "/ or https://your-site.com",
+				placeholder: "/ or a full https://… URL",
 			},
 		},
 	},
@@ -16603,7 +16721,7 @@ addPropertyControls(BookingEngine, {
 				type: ControlType.String,
 				title: "Support Contact",
 				defaultValue: "",
-				placeholder: "email@clinic.com, +1 555 0100, or https://…",
+				placeholder: "Email, phone, or https://… support link",
 			},
 			timeZoneLabel: {
 				type: ControlType.String,
@@ -16679,7 +16797,7 @@ addPropertyControls(BookingEngine, {
 				title: "Privacy Notice",
 				defaultValue:
 					"Your answers are saved in this browser so you can continue later. Cleared when you finish or press “Clear my saved answers”.",
-				placeholder: "e.g. We only use your details to confirm your booking.",
+				placeholder: "e.g. Your details are only used to arrange this booking.",
 				displayTextArea: true,
 			},
 			// T10-L1 fix: explanation of the required-field asterisk.
@@ -16967,7 +17085,7 @@ addPropertyControls(BookingEngine, {
 					httpStatusTemplate: {
 						type: ControlType.String,
 						title: "HTTP Error Template",
-						placeholder: "use {status} for the HTTP code",
+						placeholder: "Include {status} where the HTTP code should appear",
 						defaultValue: ERROR_COPY_DEFAULTS.httpStatusTemplate,
 					},
 					slotsTimeoutError: {
@@ -16983,7 +17101,7 @@ addPropertyControls(BookingEngine, {
 					slotsRateLimitTemplate: {
 						type: ControlType.String,
 						title: "Rate Limited Template",
-						placeholder: "use {seconds} for the wait time",
+						placeholder: "Include {seconds} where the wait time should appear",
 						defaultValue: ERROR_COPY_DEFAULTS.slotsRateLimitTemplate,
 					},
 					slotsRateLimitGenericError: {
@@ -17112,13 +17230,13 @@ addPropertyControls(BookingEngine, {
 		obscured: true,
 		// CONFIRM-CRED-PLACEHOLDER: tells the author where the key comes
 		// from without shipping a real-looking credential.
-		placeholder: "Paste your key — Cal.com → Settings → Developer",
+		placeholder: "Paste a key from Cal.com Settings → Developer",
 	},
 	calEventTypeId: {
 		type: ControlType.String,
 		title: "Cal.com Event ID",
 		defaultValue: "",
-		placeholder: "Numeric ID from your Cal.com event type URL",
+		placeholder: "The number in your event type URL",
 	},
 	// TZ-TIME-HARD-RULE: the "Initial Time Format" control was removed — the
 	// 12h/24h format always defaults to 12h and is toggled by the END USER on
@@ -17138,20 +17256,13 @@ addPropertyControls(BookingEngine, {
 		title: "Cal.com API Base URL",
 		defaultValue: DEFAULT_CAL_API_BASE_URL,
 	},
-	// FINAL-12 fix: force a specific BCP-47 locale for date formatting.
-	// Empty = follow <html lang> (historical behavior).
-	locale: {
-		type: ControlType.String,
-		title: "Locale",
-		defaultValue: "",
-		placeholder: "e.g. en-US, de-DE (empty = page language)",
-	},
-	// FINAL-14 fix: distinct autosave key for multi-instance pages.
-	sessionStorageKey: {
-		type: ControlType.String,
-		title: "Session Storage Key",
-		defaultValue: "booking-engine:session",
-	},
+	// LOCALE-REMOVED: the `locale` author override was removed: date
+	// formatting always follows <html lang>, then the browser default
+	// (see AGENTS.md).
+	//
+	// SESSION-KEY-REMOVED: the `sessionStorageKey` author control was
+	// removed: the base autosave key is always "booking-engine:session",
+	// namespaced per instance by DOM position (see AGENTS.md).
 	// DURATION-SOURCE (hard rule): the "Default Meeting Duration (ms)"
 	// Property Control is removed — Cal.com event metadata is the single
 	// source of truth for duration. No renamed/replacement fallback
