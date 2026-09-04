@@ -495,9 +495,6 @@ const DEFAULT_COPY_NOTES_TIME_PREFIX = "Time: ";
 const DEFAULT_COPY_STEP_COUNTER_TEMPLATE = "Step {current} of {total}";
 // W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 const DEFAULT_COPY_TIMEFORMAT_LABEL = "Time format";
-// W1-10-N4 fix: live-region template announced when a slot is picked.
-// `{time}` is replaced with the slot's formatted label.
-const DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE = "{time} selected";
 const DEFAULT_DEMO_START_TIME = "09:00";
 const DEFAULT_DEMO_END_TIME = "17:00";
 const DEFAULT_DEMO_INTERVAL = 30;
@@ -505,8 +502,12 @@ const DEFAULT_DEMO_INTERVAL = 30;
 // "{counter}, {percent}% complete — {title}" that diverged from the
 // localized visible progress label. Placeholders: {counter}, {percent},
 // {title}.
+// A11Y-ANNOUNCE: the step change ALSO moves focus to the step heading,
+// which announces the title — so the default template carries counter +
+// percent only (announcing the title twice). {title} is still replaced
+// for author-customized templates that keep it.
 const DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE =
-	"{counter}, {percent}% complete — {title}";
+	"{counter}, {percent}% complete";
 // W1-02-F5 fix: the success-screen "Done" link and the font-stack fallback
 // were inline literals; now shared constants the schema and runtime share.
 const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
@@ -1279,10 +1280,11 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 						disabled={disabled}
 						onClick={() => !disabled && onChange(opt.value)}
 						onKeyDown={(e) => {
-							if (e.key === " ") {
-								e.preventDefault();
-								return;
-							}
+							// A11Y-KEYS: arrows/Home/End move FOCUS only —
+							// they never commit (selection-follows-focus is
+							// a radiogroup/tablist contract, not a group of
+							// presses). Commit happens via Enter/Space
+							// (native button activation) or click.
 							let targetIdx: number | null = null;
 							if (e.key === "ArrowRight") targetIdx = (idx + 1) % count;
 							else if (e.key === "ArrowLeft") targetIdx = (idx - 1 + count) % count;
@@ -1291,8 +1293,6 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 							if (targetIdx !== null) {
 								e.preventDefault();
 								buttonRefs.current[targetIdx]?.focus();
-								const targetOpt = options[targetIdx];
-								if (targetOpt && !disabled) onChange(targetOpt.value);
 							}
 						}}
 						style={{
@@ -1582,6 +1582,18 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 			: internalSelected;
 	const formValue =
 		controlledValue !== undefined ? controlledValue : internalSelected;
+	// A11Y-ROVING: the single tab stop skips disabled options — a
+	// disabled Tab stop is focusable but inoperable, with no spoken
+	// reason, and moveFocus already skips them on arrows. Selected (when
+	// enabled) wins, else the first enabled option; -1 when every option
+	// is disabled (nothing operable left to stop on).
+	const tabbableOptionIndex = (() => {
+		const selIdx = parsedOptions.findIndex(
+			(o) => optionValue(o) === selected && !o.disabled,
+		);
+		if (selIdx >= 0) return selIdx;
+		return parsedOptions.findIndex((o) => !o.disabled);
+	})();
 
 	React.useEffect(() => {
 		// Only re-seed internal state when uncontrolled.
@@ -1920,9 +1932,10 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				// on individual radio roles — propagating it to each
 				// option button was spec-invalid and screen readers
 				// already hear the group-level requirement).
-				// Fix #17: roving tabindex — only the selected (or first)
-				// option is tabbable; Arrow keys move focus between options.
-				tabIndex={isSelected || (!selected && index === 0) ? 0 : -1}
+				// Fix #17: roving tabindex — exactly one enabled option is
+				// tabbable (selected when enabled, else first enabled);
+				// Arrow keys move focus between options (skipping disabled).
+				tabIndex={index === tabbableOptionIndex ? 0 : -1}
 				// W1-08-F-08-06 fix: pass the option object (not just its
 				// label) so selectOption resolves the `value` round-trip.
 				onClick={() => selectOption(option)}
@@ -2784,17 +2797,19 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					const isEmptyLeadingCell =
 						!isInMonth && date.getTime() < visibleMonth.getTime() && (isPast || !hasAvailability(date));
 					if (isEmptyLeadingCell) {
-						return (
-							<div
-								key={`empty-${dateKey}`}
-								role="gridcell"
-								aria-disabled="true"
-								style={{
-									minHeight: TOUCH_TARGET_MIN,
-									minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
-								}}
-							/>
-						);
+					return (
+						// A11Y: blank placeholders carry no state — the old
+						// aria-disabled="true" announced meaningless noise.
+						<div
+							key={`empty-${dateKey}`}
+							role="gridcell"
+							aria-hidden="true"
+							style={{
+								minHeight: TOUCH_TARGET_MIN,
+								minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
+							}}
+						/>
+					);
 					}
 					// CAL-ADJ-INDICATOR: one shared helper drives BOTH the
 					// previous-month and next-month abbreviations — only the
@@ -2937,7 +2952,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						onMouseEnter={() => canGoPrev && setHoveredNav("prev")}
 						onMouseLeave={() => setHoveredNav((v) => (v === "prev" ? null : v))}
 						disabled={!canGoPrev}
-						tabIndex={0}
 						style={{
 							appearance: "none",
 							background: hoveredNav === "prev" && canGoPrev ? borderColor : "transparent",
@@ -2982,7 +2996,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 						onMouseEnter={() => canGoNext && setHoveredNav("next")}
 						onMouseLeave={() => setHoveredNav((v) => (v === "next" ? null : v))}
 						disabled={!canGoNext}
-						tabIndex={0}
 						style={{
 							appearance: "none",
 							background: hoveredNav === "next" && canGoNext ? borderColor : "transparent",
@@ -3415,6 +3428,23 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		() => timeOptions.findIndex((time) => !isTimeElapsed(time)),
 		[timeOptions, isTimeElapsed],
 	);
+	// A11Y-SCROLLER: the list hides its scrollbar (rule 53) — magnifier
+	// and keyboard users get no "more below" affordance otherwise. When
+	// the content overflows, the region becomes a labelled tab stop and
+	// gains a bottom fade (a mask, not a scrollbar). No overflow → no
+	// extra stop, no fade, byte-identical to before.
+	const scrollerRef = React.useRef<HTMLDivElement | null>(null);
+	const [scrollerOverflows, setScrollerOverflows] = React.useState(false);
+	React.useEffect(() => {
+		const el = scrollerRef.current;
+		if (!el) return;
+		const measure = () => {
+			setScrollerOverflows(el.scrollHeight > el.clientHeight + 1);
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		return () => window.removeEventListener("resize", measure);
+	}, [timeOptions, isNarrow]);
 	// FINAL-68 fix: runtime guard for pathological author configs (e.g.
 	// 5-minute steps over 24h = 288 slots) — the list is intentionally not
 	// virtualized, so surface the degradation instead of shipping silent jank.
@@ -3611,6 +3641,9 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			>
 				<div
 					className="be-dt-scroll"
+					ref={scrollerRef}
+					tabIndex={scrollerOverflows ? 0 : undefined}
+					aria-label={scrollerOverflows ? availableTimesAriaLabel : undefined}
 					style={
 						isNarrow
 							? { minWidth: 0 }
@@ -3619,6 +3652,14 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								inset: 0,
 								overflowY: "auto",
 								minWidth: 0,
+								...(scrollerOverflows
+									? {
+										WebkitMaskImage:
+											"linear-gradient(to bottom, black 88%, transparent)",
+										maskImage:
+											"linear-gradient(to bottom, black 88%, transparent)",
+									}
+									: {}),
 							}
 					}
 				>
@@ -4754,8 +4795,6 @@ interface DateAndTimeInlineProps {
 	slotErrorId?: string;
 	// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 	timeFormatLabel: string;
-	// W1-10-N4 fix: live-region template for slot picks.
-	timeSlotSelectedTemplate: string;
 	// CAL-EVENT-META: normalized Cal.com event/profile metadata. Absent
 	// (undefined/null) on demo grids, unconfigured instances or fetch
 	// failure — in every one of those cases the info panel simply does not
@@ -4823,8 +4862,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		slotErrorId,
 		// W1-10-N3 fix: toggle group label.
 		timeFormatLabel,
-		// W1-10-N4 fix: slot-pick announcement template.
-		timeSlotSelectedTemplate,
 		// CAL-EVENT-META: optional Cal.com event/profile metadata + the
 		// author duration fallback for the info panel.
 		eventMeta,
@@ -4989,34 +5026,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		timeZone,
 	});
 
-	// W1-10-N4 fix: mouse-clicking a slot only flipped aria-checked on the
-	// focused element — keyboard users heard nothing either when re-picking
-	// via pointer. Announce "{time} selected" into a polite live region,
-	// skipping repeats of the same pick (a fresh region text is what makes
-	// SRs speak).
-	const [slotAnnouncement, setSlotAnnouncement] = React.useState<string | null>(
-		null,
-	);
-	const announcedSlotRef = React.useRef<string | null>(null);
-	const announceSlotPick = React.useCallback(
-		(time: string) => {
-			if (announcedSlotRef.current === time) return;
-			announcedSlotRef.current = time;
-			const opt = timeOptions.find((o) => o.value === time);
-			if (opt) {
-				setSlotAnnouncement(
-					timeSlotSelectedTemplate.replace("{time}", opt.label),
-				);
-			}
-		},
-		[timeOptions, timeSlotSelectedTemplate],
-	);
 	const handleSlotSelect = React.useCallback(
 		(time: string) => {
-			announceSlotPick(time);
 			handleTimeSelect(time);
 		},
-		[announceSlotPick, handleTimeSelect],
+		[handleTimeSelect],
 	);
 
 	const [hoveredDateKey, setHoveredDateKey] = React.useState<string | null>(
@@ -5860,27 +5874,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					// W1-10-N3 fix: toggle group label.
 					timeFormatLabel={timeFormatLabel}
 				/>
-				{/* W1-10-N4 fix: visually-hidden polite region that speaks
-                    "{time} selected" on slot pick (mouse or keyboard). */}
-				{/* biome-ignore lint/a11y/useSemanticElements: intentional
-                    visually-hidden polite live region (W1-10-N4) — <output>
-                    carries implicit form-calculation semantics that would be
-                    wrong for a selection announcement. */}
-				<div
-					role="status"
-					aria-live="polite"
-					aria-atomic="true"
-					style={{
-						position: "absolute",
-						width: 1,
-						height: 1,
-						overflow: "hidden",
-						clip: "rect(0 0 0 0)",
-						whiteSpace: "nowrap",
-					}}
-				>
-					{slotAnnouncement}
-				</div>
+				{/* A11Y-ANNOUNCE: the W1-10-N4 polite "{time} selected" region
+                    lived here — removed. Native radio semantics already
+                    announce selection (aria-checked) on pick, so the extra
+                    region double-spoke every choice. */}
 			</div>
 		</div>
 	);
@@ -6287,8 +6284,6 @@ interface BookingEngineCopyProps {
 		stepCounterTemplate: string;
 		// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 		timeFormatLabel: string;
-		// W1-10-N4 fix: live-region template for slot picks ("{time} selected").
-		timeSlotSelectedTemplate: string;
 		availabilityErrorLabel: string;
 		dateLabel: string;
 		timeLabel: string;
@@ -14045,11 +14040,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							timeFormatLabel={
 								copy.timeFormatLabel ?? DEFAULT_COPY_TIMEFORMAT_LABEL
 							}
-							// W1-10-N4 fix: slot-pick announcement template.
-							timeSlotSelectedTemplate={
-								copy.timeSlotSelectedTemplate ??
-								DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE
-							}
 							// CAL-EVENT-META: info panel data (datetime step
 							// only; null → panel hidden, calendar unchanged).
 							eventMeta={eventMeta}
@@ -14171,6 +14161,40 @@ interface FieldRendererProps {
 	// commit for the whole pair — exactly like the skip-link's
 	// `be-skip-end-${reactInstanceId}`.
 	instanceId: string;
+}
+
+// A11Y-ANNOUNCE: field errors assert ONCE, then go polite. The message
+// element stays mounted while the visitor corrects the field (rule 81's
+// cleanup path re-renders it per keystroke) — a static role="alert"
+// re-interrupted typing with every letter. First appearance asserts;
+// every later update (same error instance) is a polite status. Clearing
+// unmounts, so a brand-new error asserts again.
+function FieldErrorMessage({
+	domId,
+	message,
+	color,
+}: {
+	domId: string;
+	message: string;
+	color: string;
+}) {
+	const announcedRef = React.useRef(false);
+	const firstAppearance = !announcedRef.current;
+	React.useEffect(() => {
+		announcedRef.current = true;
+	}, []);
+	return (
+		<div
+			id={domId}
+			style={{
+				color,
+				fontSize: 12,
+			}}
+			role={firstAppearance ? "alert" : "status"}
+		>
+			{message}
+		</div>
+	);
 }
 
 const FieldRenderer = React.memo(function FieldRenderer(
@@ -14324,16 +14348,7 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	);
 
 	const errorEl = error ? (
-		<div
-			id={errorDomId}
-			style={{
-				color: theme.errorColor,
-				fontSize: 12,
-			}}
-			role="alert"
-		>
-			{error}
-		</div>
+		<FieldErrorMessage domId={errorDomId} message={error} color={theme.errorColor} />
 	) : null;
 
 	const containerStyle: React.CSSProperties = {
@@ -15153,10 +15168,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	}
 
 	return (
-		/* biome-ignore lint/a11y/useSemanticElements: intentional assertive
-	    live region (CC-6) announcing the success screen; <output> is not
-	    a screen-level alert container. */
-		<div role="status" aria-live="assertive" aria-atomic="true">
+		// A11Y-ANNOUNCE: plain wrapper — the focus move to the heading
+		// below already announces the screen. The previous assertive live
+		// region re-announced the whole page on top of focus (double
+		// announcement on every successful booking).
+		<div>
 			{/* CONFIRM-ICON-ANIM: Circle with checkmark — centered, on top.
                     The container enters via the selected Transition Type
                     family; the check then draws itself as an SVG path.
@@ -15559,7 +15575,11 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	}, []);
 
 	return (
-		<div role="alert" aria-live="assertive" aria-atomic="true">
+		// A11Y-ANNOUNCE: plain wrapper — the focus move to the heading
+		// below already announces the screen. The previous assertive live
+		// region re-announced the error page on top of focus (double
+		// announcement on every failure).
+		<div>
 			{/* ERROR-STATE-DESIGN: centered premium layout on the same 320px
 				floor as the form (rule 18) — the component never collapses
 				around this short content. Column centers both axes;
@@ -17151,12 +17171,6 @@ addPropertyControls(BookingEngine, {
 				type: ControlType.String,
 				title: "Time Format Toggle Label",
 				defaultValue: DEFAULT_COPY_TIMEFORMAT_LABEL,
-			},
-			// W1-10-N4 fix: slot-pick live announcement template.
-			timeSlotSelectedTemplate: {
-				type: ControlType.String,
-				title: "Time Selected Announcement",
-				defaultValue: DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE,
 			},
 			detectedTimeZonePrefix: {
 				type: ControlType.String,
