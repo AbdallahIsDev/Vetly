@@ -15780,16 +15780,28 @@ function fieldStylesNumberControl(
 		defaultValue,
 	};
 }
-// STYLES-INIT: no defaultValue — an untouched font control must pass
-// undefined so the field's native size/weight/family is preserved (a
-// defaultValue here would materialize as an explicit size on activation
-// and override per-type defaults, exactly the bug STYLES-INIT fixes).
-function fieldStylesFontControl(title: string) {
+// FONT-EFFECTIVE-DEFAULTS (rules 90/93/96): a Font control with NO
+// defaultValue materializes Framer's generic font on activation (the
+// reported bug: enabling Styles restyled text even before touching
+// anything). Every Font row therefore carries a defaultValue equal to
+// the size/weight the field REALLY renders with, resolved per usage:
+//   - input + choice option text → 14px Regular (inputBaseStyle /
+//     effectiveFontSize floor; coarse-pointer 16px guard still wins)
+//   - input + choice field labels → 13px Medium (labelEl fallbacks)
+//   - checkbox labels → 14px Regular (check-label fallbacks)
+// Weight comes via `variant` (the control resolves it to fontWeight,
+// which is what the runtime reads). Family/spacing/line-height stay
+// unset so page inheritance is preserved until the author picks one.
+function fieldStylesFontControl(
+	title: string,
+	defaultValue?: { fontSize: string; variant: "Regular" | "Medium" },
+) {
 	return {
 		type: ControlType.Font,
 		title,
 		controls: "extended" as const,
 		defaultFontType: "sans-serif" as const,
+		...(defaultValue ? { defaultValue } : {}),
 	};
 }
 // FIELD-STYLES (native compound controls): the Border / Radius / Padding
@@ -15852,8 +15864,16 @@ function makeInputFieldStylesControls() {
 	// Using the shared helper keeps one reusable mechanism, not per-field hacks.
 	const eff = getFieldStylesEffectiveDefaults("text");
 	return {
-		font: fieldStylesFontControl("Font"),
-		labelFont: fieldStylesFontControl("Label Font"),
+		// STYLES-ORDER: Label Font first, input Font second (author
+		// expectation — the label is what they look at first).
+		labelFont: fieldStylesFontControl("Label Font", {
+			fontSize: "13px",
+			variant: "Medium",
+		}),
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Regular",
+		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		placeholderColor: fieldStylesColorControl("Placeholder"),
@@ -15863,7 +15883,7 @@ function makeInputFieldStylesControls() {
 		padding: fieldStylesPaddingControl(),
 		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
+		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
 
@@ -15880,8 +15900,15 @@ function makeVariantChoiceStylesControls(
 	// is preserved via ?? checks.
 	const eff = getFieldStylesEffectiveDefaults(variant);
 	return {
-		font: fieldStylesFontControl("Font"),
-		labelFont: fieldStylesFontControl("Label Font"),
+		// STYLES-ORDER: Label Font first (see makeInputFieldStylesControls).
+		labelFont: fieldStylesFontControl("Label Font", {
+			fontSize: "13px",
+			variant: "Medium",
+		}),
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Regular",
+		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
@@ -15889,7 +15916,7 @@ function makeVariantChoiceStylesControls(
 		radius: fieldStylesRadiusControl(eff.radius),
 		padding: fieldStylesPaddingControl(eff.padding),
 		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
+		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
@@ -15899,11 +15926,14 @@ function makeVariantChoiceStylesControls(
 function makeCheckboxFieldStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("checkbox");
 	return {
-		labelFont: fieldStylesFontControl("Label Font"),
+		labelFont: fieldStylesFontControl("Label Font", {
+			fontSize: "14px",
+			variant: "Regular",
+		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
 		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
-		spacing: fieldStylesNumberControl("Spacing", 0, 24, eff.spacing),
+		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
 
