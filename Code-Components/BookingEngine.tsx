@@ -501,28 +501,12 @@ const DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE = "{time} selected";
 const DEFAULT_DEMO_START_TIME = "09:00";
 const DEFAULT_DEMO_END_TIME = "17:00";
 const DEFAULT_DEMO_INTERVAL = 30;
-// SYN-02 fix: persistence-disclosure strings (rendered when persistState is
-// ON) now live behind the copy panel instead of inline JSX literals.
-const DEFAULT_COPY_SAVED_ANSWERS_LABEL = "Answers are saved in this browser.";
-const DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL = "Clear my saved answers";
-const DEFAULT_COPY_SAVE_FAILED_MESSAGE =
-	"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected.";
-// W1-12-NEW-4 fix: when persistState is ON the disclosure must never go
-// blank — an author can empty the `privacyNotice` control and create a
-// fresh-mount consent gap. This fallback keeps a disclosure on record
-// whenever storage is active and the author text is empty.
-const DEFAULT_COPY_PRIVACY_NOTICE =
-	"Your progress is saved in this browser tab so you can return later.";
 // W1-02-F4 fix: sr-only step announcement — was a hardcoded
 // "{counter}, {percent}% complete — {title}" that diverged from the
 // localized visible progress label. Placeholders: {counter}, {percent},
 // {title}.
 const DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE =
 	"{counter}, {percent}% complete — {title}";
-// W1-02-F6 fix: character-counter format ({current}/{max}).
-const DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE = "{current}/{max}";
-// W1-02-F7 fix: required-field marker (some designs prefer "(required)").
-const DEFAULT_COPY_REQUIRED_FIELD_MARKER = "*";
 // W1-02-F5 fix: the success-screen "Done" link and the font-stack fallback
 // were inline literals; now shared constants the schema and runtime share.
 const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
@@ -6099,12 +6083,10 @@ interface BookingEngineCopyProps {
 		// exposed too. The PropertyControl defaults are the single source
 		// (W1-02-F24 — no in-component `||` fallbacks left to drift).
 		stepCounterTemplate: string;
-		timeZoneSelectLabel: string;
 		// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 		timeFormatLabel: string;
 		// W1-10-N4 fix: live-region template for slot picks ("{time} selected").
 		timeSlotSelectedTemplate: string;
-		detectedTimeZonePrefix: string;
 		availabilityErrorLabel: string;
 		dateLabel: string;
 		timeLabel: string;
@@ -6112,18 +6094,6 @@ interface BookingEngineCopyProps {
 		// screen, alongside the .ics download.
 		googleCalendarLabel: string;
 		outlookCalendarLabel: string;
-		// T10-M2 fix: optional privacy note rendered under the form when PII
-		// fields are present. Empty value hides the notice entirely.
-		privacyNotice: string;
-		// T10-L1 fix: explanation of the required-field marker. Rendered
-		// whenever at least one field in the flow is required.
-		requiredFieldsHint: string;
-		// SYN-02 fix: GDPR/CCPA persistence disclosures — previously inline
-		// JSX literals, so they could not be localized. Rendered whenever
-		// persistState is ON / a save failed.
-		savedAnswersLabel: string;
-		clearSavedAnswersLabel: string;
-		saveFailedMessage: string;
 		// W1-02-F9–F23 fix (bundle 14): confirmation/manage-link labels,
 		// empty-state copy, AM/PM suffixes, .ics PRODID/SUMMARY, notes
 		// section headers, error fallbacks and the demo-grid times.
@@ -6137,8 +6107,6 @@ interface BookingEngineCopyProps {
 		// W1-02-F4/F6/F7 fix: announcement template + counter format +
 		// required marker are now copy-driven (see constants).
 		stepAnnouncementTemplate: string;
-		characterCountTemplate: string;
-		requiredFieldMarker: string;
 		unknownErrorLabel: string;
 		errorFallbackMessage: string;
 		amLabel: string;
@@ -16762,6 +16730,12 @@ addPropertyControls(BookingEngine, {
 				title: "Detected Time Zone Prefix",
 				defaultValue: "Detected: ",
 			},
+			// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
+			// required-fields-hint, saved-answers, save-failed, character-
+			// count and required-marker controls were removed with their
+			// (never-rendered) copy — the component is hard-ruled against
+			// rendering those features, so the controls only promised
+			// output that could never appear. No replacement exists.
 			availabilityErrorLabel: {
 				type: ControlType.String,
 				title: "Availability Error",
@@ -16788,42 +16762,11 @@ addPropertyControls(BookingEngine, {
 				title: "Outlook Button",
 				defaultValue: "Add to Outlook",
 			},
-			// T10-M2 fix: optional privacy note under the form. Empty hides it.
-			// W2-31-A-31-2 fix: ship with a disclosure default that actually
-			// explains the opt-in behavior, instead of an empty string that
-			// undermined the F-12-2 consent flow. Authors can edit or remove.
-			privacyNotice: {
-				type: ControlType.String,
-				title: "Privacy Notice",
-				defaultValue:
-					"Your answers are saved in this browser so you can continue later. Cleared when you finish or press “Clear my saved answers”.",
-				placeholder: "e.g. Your details are only used to arrange this booking.",
-				displayTextArea: true,
-			},
-			// T10-L1 fix: explanation of the required-field asterisk.
-			requiredFieldsHint: {
-				type: ControlType.String,
-				title: "Required Fields Hint",
-				defaultValue: "Fields marked * are required",
-			},
-			// SYN-02 fix: persistence disclosures rendered when persistState
-			// is ON (saved-progress row) or a save failed (storage quota).
-			savedAnswersLabel: {
-				type: ControlType.String,
-				title: "Saved Answers Note",
-				defaultValue: DEFAULT_COPY_SAVED_ANSWERS_LABEL,
-			},
-			clearSavedAnswersLabel: {
-				type: ControlType.String,
-				title: "Clear Saved Answers",
-				defaultValue: DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL,
-			},
-			saveFailedMessage: {
-				type: ControlType.String,
-				title: "Save Failed Message",
-				defaultValue: DEFAULT_COPY_SAVE_FAILED_MESSAGE,
-				displayTextArea: true,
-			},
+			// DEAD CONTROL REMOVAL (rules 4/5/7) — see the note above
+			// availabilityErrorLabel: privacyNotice, requiredFieldsHint,
+			// savedAnswersLabel, clearSavedAnswersLabel, saveFailedMessage,
+			// characterCountTemplate and requiredFieldMarker are gone;
+			// neither the controls nor their copy remain.
 			// CONFIRM-ACTIONS: the "Done" label moved to the Buttons group
 			// (doneLabel) together with Home URL — see the Buttons group.
 			// W1-02-F9–F23 fix (bundle 14): the remaining visitor-facing
@@ -16873,16 +16816,6 @@ addPropertyControls(BookingEngine, {
 				title: "Step Announcement Template",
 				defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
 				displayTextArea: true,
-			},
-			characterCountTemplate: {
-				type: ControlType.String,
-				title: "Character Count Format",
-				defaultValue: DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE,
-			},
-			requiredFieldMarker: {
-				type: ControlType.String,
-				title: "Required Field Marker",
-				defaultValue: DEFAULT_COPY_REQUIRED_FIELD_MARKER,
 			},
 			unknownErrorLabel: {
 				type: ControlType.String,
