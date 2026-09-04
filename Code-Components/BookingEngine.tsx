@@ -699,6 +699,29 @@ function getCachedDateTimeFormat(
 	return dtf;
 }
 
+// BOOKABLE-DAY (rule 107): day-level availability means "at least one
+// FUTURE Cal.com slot", never mere day-presence. Cal.com filters past
+// slots server-side at fetch time, but a tab held open across the day's
+// final slot (cache TTL, slow ticks) must not keep offering a dead day as
+// bookable/selected. nowMs null (first render both sides, prerender) means
+// "nothing elapsed yet" — identical markup server + client (rule 42).
+function buildFutureAwareAvailableDates(
+	slots: Array<{ value: string }>,
+	timeZone: string,
+	nowMs: number | null,
+): Set<string> {
+	const set = new Set<string>();
+	for (const slot of slots) {
+		if (nowMs !== null) {
+			const start = new Date(slot.value).getTime();
+			if (!Number.isFinite(start) || start <= nowMs) continue;
+		}
+		const key = slotDateKeyInTimeZone(slot.value, timeZone);
+		if (key) set.add(key);
+	}
+	return set;
+}
+
 // SLOT-KEY-CACHE (perf): instant-level date-key cache so the availability
 // memos (availableDates set-build, slotsForSelectedDate filter) never pay
 // `new Date()` + formatToParts per slot on repeat runs (date picks,
@@ -4781,6 +4804,11 @@ interface DateAndTimeInlineProps {
 	 *  empty month — we don't yet know whether it's genuinely empty or the
 	 *  fetch just hasn't resolved. */
 	slotsLoading?: boolean;
+	/** SETTLED-GATE (rule 107): the one-shot default decision defers while
+	 *  false — the current window's fetch hasn't settled yet, so an empty
+	 *  availability set proves nothing. Defaults true (standalone/demo
+	 *  wiring without a fetch lifecycle keeps the historical behavior). */
+	availabilitySettled?: boolean;
 	/** INSTANCE-ISOLATION: per-engine id for DOM ids (gridLabelId, field ids). */
 	instanceId?: string;
 	/** CC-13 completion: the timezone slot labels are displayed in. Grid
@@ -4868,6 +4896,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		availableTimes,
 		availableDates,
 		slotsLoading = false,
+		availabilitySettled = true,
 		loadingLabel = "Loading availability…",
 		timeZone,
 		onSelectionReady,
@@ -5262,34 +5291,38 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// WAI-ARIA grid/roving-tabindex contract.
 	const activeDateKey = selectedOrFirstDateKey;
 
-	// DEFAULT-SELECTION algorithm (hard rules 77/78 — never an isToday
-	// mirror, never an unavailable date):
+	// DEFAULT-SELECTION algorithm (hard rules 77/78 + rule 107 — never an
+	// isToday mirror, never an unavailable date, never a day whose slots
+	// all elapsed):
 	//
 	//   visitor-local today
-	//   → today available/selectable  → select today
-	//   → otherwise → select the FIRST AVAILABLE date on/after today anywhere
-	//     in the loaded grid window (firstAvailableDateFromToday); when that
-	//     date lives in the adjacent-month window and the visitor has not
-	//     paged away, advance the visible month so the selection is in view
-	//   → no available future date in the loaded range → NO selected date
+	//   → today has ≥1 FUTURE bookable slot → select today
+	//   → otherwise → select the FIRST FUTURE BOOKABLE date on/after today
+	//     anywhere in the loaded grid window (firstAvailableDateFromToday);
+	//     when that date lives in the adjacent-month window and the visitor
+	//     has not paged away, advance the visible month so the selection
+	//     is in view
+	//   → no future bookable date in the loaded range → NO selected date
 	//
 	// Today (the dot marker) stays on the real visitor-local date in every
 	// branch — Today and Selected are independent states. The decision runs
 	// once per fresh visit (placeholderSelectedRef gate): a restored/saved
-	// date always wins and short-circuits this effect. Availability comes
-	// from the same normalized Cal.com set the grid renders, deferred while
-	// the fetch is in flight.
+	// date always wins and short-circuits this effect. Availability is the
+	// future-slot-aware Cal.com set the grid renders. SETTLED-GATE: while
+	// the current window's fetch hasn't settled, an empty set proves
+	// nothing — defer without touching the gate, so the pre-fetch transient
+	// can never strand the calendar with availability but no selection.
 	useIsomorphicLayoutEffect(() => {
 		if (!clockReady) return;
 		if (!placeholderSelectedRef.current) return;
 		// Still on placeholder (2024-01-01) means today not yet swapped in.
 		if (today.getFullYear() === 2024 && today.getMonth() === 0 && today.getDate() === 1) return;
-		// For Cal.com, wait for availability to be known before deciding.
-		// availableDates === undefined means no Cal.com config (demo) -> all dates considered available.
-		// If slots are still loading, defer the decision.
+		// For Cal.com, wait for the current window's availability to settle
+		// before deciding. availableDates === undefined means no Cal.com
+		// config (demo) -> all dates considered available.
 		const isCalcom = availableDates !== undefined;
-		const isLoading = typeof slotsLoading !== "undefined" ? slotsLoading : false;
-		if (isCalcom && isLoading) return;
+		const availabilityKnown = availabilitySettled;
+		if (isCalcom && !availabilityKnown) return;
 		const todayAvailable = hasKnownAvailability(today);
 		const defaultDate = todayAvailable ? today : firstAvailableDateFromToday;
 		if (defaultDate) {
@@ -5323,14 +5356,14 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					),
 				);
 			}
-		} else if (isCalcom && !isLoading) {
-			// No available future date anywhere in the loaded window ->
+		} else if (isCalcom && availabilityKnown) {
+			// No future bookable date anywhere in the loaded window ->
 			// leave NO selected date (never select an unavailable date).
 			// The visitor can page forward to load further months.
 			placeholderSelectedRef.current = false;
 			setSelectedDate(null);
 		}
-	}, [clockReady, today, hasKnownAvailability, firstAvailableDateFromToday, availableDates, slotsLoading, visibleMonth, setVisibleMonth, onDateChange]);
+	}, [clockReady, today, hasKnownAvailability, firstAvailableDateFromToday, availableDates, slotsLoading, availabilitySettled, visibleMonth, setVisibleMonth, onDateChange]);
 
 	// STALE-SELECTION fix: a picked date can go invalid mid-session — the
 	// 30s midnight poll rolls `today` past it, or the availability fetch
@@ -5350,8 +5383,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		if (placeholderSelectedRef.current) return;
 		if (!selectedDate) return;
 		const isCalcom = availableDates !== undefined;
-		const isLoading = typeof slotsLoading !== "undefined" ? slotsLoading : false;
-		if (isCalcom && isLoading) return;
+		if (isCalcom && !availabilitySettled) return;
 		const past = startOfDay(selectedDate).getTime() < today.getTime();
 		const unavailable = isCalcom && !hasKnownAvailability(selectedDate);
 		if (!past && !unavailable) return;
@@ -5366,7 +5398,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				setSelectedDate(null);
 			}
 		});
-	}, [clockReady, selectedDate, today, availableDates, slotsLoading, hasKnownAvailability, firstAvailableDateFromToday, onDateChange]);
+	}, [clockReady, selectedDate, today, availableDates, slotsLoading, availabilitySettled, hasKnownAvailability, firstAvailableDateFromToday, onDateChange]);
 
 	// Diagnostics for initial-date logic (enable via window.__BE_DIAGNOSTICS__ = true or ?beDiagnostics=1)
 	React.useEffect(() => {
@@ -5385,8 +5417,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			firstAvailableKey: firstAvailKey,
 			clockReady,
 			hasKnownAvailability: !!availableDates,
+			availabilitySettled,
 		});
-	}, [timeZone, today, selectedDate, firstAvailableDate, hasKnownAvailability, availableDates, clockReady]);
+	}, [timeZone, today, selectedDate, firstAvailableDate, hasKnownAvailability, availableDates, clockReady, availabilitySettled]);
 
 	const getPayload = React.useCallback(
 		(date: Date, time: string): BookingPayload => {
@@ -11167,17 +11200,49 @@ function useBookingEngineState(
 	// (not `slotsForSelectedDate`, which only covers the currently picked
 	// day). `undefined` while there's no Cal.com config, so the no-config
 	// demo grid keeps every date selectable.
+	//
+	// BOOKABLE-NOW (rule 107): visitor-instant ticker on the existing 30s
+	// cadence. Day membership below means "≥1 slot still in the future",
+	// so selection/grid/stale-migration all react when today's final slot
+	// passes — not at midnight, and not up to a cache-TTL later.
+	const [availabilityNowMs, setAvailabilityNowMs] = React.useState<
+		number | null
+	>(null);
+	useIsomorphicLayoutEffect(() => {
+		if (typeof window === "undefined") return;
+		if (isStaticRender) return;
+		setAvailabilityNowMs(Date.now());
+		const id = window.setInterval(
+			() => setAvailabilityNowMs(Date.now()),
+			30000,
+		);
+		return () => window.clearInterval(id);
+	}, [isStaticRender]);
 	const availableDates = React.useMemo(() => {
 		if (!hasCalConfig) return undefined;
-		const set = new Set<string>();
-		for (const slot of slots) {
-			// SLOT-KEY-CACHE: no `new Date()` / Intl per run — repeat
-			// runs (date picks, same-month refetches) hit the map.
-			const key = slotDateKeyInTimeZone(slot.value, timeZone);
-			if (key) set.add(key);
-		}
-		return set;
-	}, [hasCalConfig, slots, timeZone]);
+		return buildFutureAwareAvailableDates(slots, timeZone, availabilityNowMs);
+	}, [hasCalConfig, slots, timeZone, availabilityNowMs]);
+
+	// SETTLED-GATE (rule 107): the child's one-shot default decision must
+	// never judge a TRANSIENT empty set — monthStart is null until the
+	// visitor reaches the datetime step AND a month is known, and the fetch
+	// effect's null-month pass settles `loading=false` with zero slots.
+	// Judging that moment closed the gate (select-null) before the first
+	// real fetch, stranding the calendar with availability but no
+	// selection. Settle only when a fetch was actually attempted for the
+	// current window (or no fetch is ever needed).
+	const availabilitySettled = React.useMemo(() => {
+		if (!hasCalConfig) return true;
+		if (!hasDatetimeStep || !reachedDatetimeStep) return true;
+		if (!visibleMonth) return false;
+		return !slotsLoading;
+	}, [
+		hasCalConfig,
+		hasDatetimeStep,
+		reachedDatetimeStep,
+		visibleMonth,
+		slotsLoading,
+	]);
 
 	// Filter slots to the selected date (if a date is picked).
 	const slotsForSelectedDate = React.useMemo(() => {
@@ -12387,6 +12452,7 @@ function useBookingEngineState(
 		accentColor,
 		activeSteps,
 		availableDates,
+		availabilitySettled,
 		backLabel,
 		bookingResult,
 		borderColor,
@@ -12544,6 +12610,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const {
 		activeSteps,
 		availableDates,
+		availabilitySettled,
 		backLabel,
 		bookingResult,
 		borderRadius,
@@ -13381,6 +13448,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								fieldGap={fieldGap}
 								hasCalConfig={hasCalConfig}
 								slotsLoading={slotsLoading}
+								availabilitySettled={availabilitySettled}
 								slotsError={slotsError}
 								slotsForSelectedDate={slotsForSelectedDate}
 								availableDates={availableDates}
@@ -13992,6 +14060,11 @@ interface StepBodyProps {
 	fieldGap: number;
 	hasCalConfig: boolean;
 	slotsLoading: boolean;
+	/** SETTLED-GATE (rule 107): true once a fetch was attempted for the
+	 *  current month window (or no fetch is ever needed). The calendar's
+	 *  one-shot default decision must not judge the transient pre-fetch
+	 *  empty set. */
+	availabilitySettled?: boolean;
 	/** Fix #13: surface Cal.com fetch errors as an inline banner. */
 	slotsError: string | null;
 	slotsForSelectedDate: Array<{
@@ -14117,6 +14190,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		slotsError,
 		slotsForSelectedDate,
 		availableDates,
+		availabilitySettled,
 		selectedDate,
 		visibleMonth,
 		timeZone,
@@ -14391,6 +14465,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							availableTimes={hasCalConfig ? slotsForSelectedDate : undefined}
 							availableDates={availableDates}
 							slotsLoading={slotsLoading}
+							availabilitySettled={availabilitySettled}
 							loadingLabel={copy.loadingAvailabilityLabel}
 							onSelectionReady={onSlotReady}
 							onDateChange={onDateChange}
