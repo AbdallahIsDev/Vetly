@@ -1188,10 +1188,13 @@ interface SegmentedControlProps {
 	thumbBorderColor?: string;
 	optionPaddingX?: number;
 	optionFont?: FramerFont;
+	/** DECOR: track shadow/blur (segmented choice variant). */
+	trackShadow?: string;
+	trackBlur?: number;
 }
 
 const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedControlProps) {
-	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled, trackBackground, thumbBorderColor, optionPaddingX, optionFont } = props;
+	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled, trackBackground, thumbBorderColor, optionPaddingX, optionFont, trackShadow, trackBlur } = props;
 	const isStaticRender = useIsStaticRenderer();
 	const prefersReducedMotion = useReducedMotion();
 	const count = options.length;
@@ -1223,6 +1226,9 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 				gap: 0,
 				minHeight: 32,
 				boxSizing: "border-box",
+				// DECOR: track shadow/blur only when configured.
+				...shadowStyle(trackShadow),
+				...backdropStyle(trackBlur),
 			}}
 		>
 			{isStaticRender ? (
@@ -1421,6 +1427,10 @@ interface ChoiceGroupInlineProps {
 	optionPaddingX?: number;
 	optionMinHeight?: number;
 	optionFont?: FramerFont;
+	/** DECOR: option shadow/blur layers (pills/cards/radio buttons and
+	 *  the segmented track). Undefined/“none”/0 = untouched. */
+	optionShadow?: string;
+	optionBlur?: number;
 	/** Segmented variant only: track surface override (thumb uses
 	 *  selectedBackgroundColor via backgroundColor). */
 	trackBackground?: string;
@@ -1515,6 +1525,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		optionPaddingX,
 		optionMinHeight,
 		optionFont,
+		optionShadow,
+		optionBlur,
 		trackBackground,
 	} = props;
 
@@ -1960,9 +1972,19 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					// indicator (gated on isKeyboardModality) was removed —
 					// focus rings now come solely from that CSS rule. The
 					// remaining ring marks SELECTED state only.
-					boxShadow: isSelected
-						? `inset 0 0 0 1px ${selectedRing}`
-						: "none",
+					// DECOR: author shadow layers UNDER the selected-state
+					// ring (comma-composed); "none"/unset adds nothing.
+					boxShadow: [
+						isSelected ? `inset 0 0 0 1px ${selectedRing}` : null,
+						optionShadow &&
+						optionShadow.trim() &&
+						optionShadow.trim().toLowerCase() !== "none"
+							? optionShadow
+							: null,
+					]
+						.filter(Boolean)
+						.join(", ") || "none",
+					...backdropStyle(optionBlur),
 					fontFamily: optionFont?.fontFamily ?? "inherit",
 					fontSize: effectiveFontSize,
 					lineHeight: 1.2,
@@ -2226,6 +2248,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					thumbBorderColor={selectedRing}
 					optionPaddingX={optionPaddingX}
 					optionFont={optionFont}
+					trackShadow={optionShadow}
+					trackBlur={optionBlur}
 					borderColor={borderColor}
 					ariaLabel={label || choiceGroupAriaLabel || inputName}
 					disabled={isSubmitting}
@@ -5571,6 +5595,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				borderRadius: surfaceRadius,
 				background: surfaceBackground,
 				...(surfacePadding ? { padding: surfacePadding } : {}),
+				// DECOR: calendar-surface shadow/blur from the marker
+				// field's Calendar Styles — only when configured.
+				...shadowStyle(normalizedCalendarStyles?.shadow),
+				...backdropStyle(normalizedCalendarStyles?.backgroundBlur),
 				color: textColor,
 				border: subtleBorder,
 				overflow: "hidden",
@@ -5985,6 +6013,14 @@ interface FieldStyleOverrides {
 	/** Native checkbox accent + square size. */
 	accentColor?: string;
 	checkSize?: number;
+	/** DECOR: native Framer box-shadow string. Applied only when set to
+	 *  a real shadow — "none"/empty means no shadow layer, so state
+	 *  rings (selected/hover/focus) are never stomped and unopened
+	 *  groups change nothing. */
+	shadow?: string;
+	/** DECOR: backdrop-blur radius in px (frosted glass over imagery).
+	 *  Applied only when > 0; 0/unset means no backdrop layer. */
+	backgroundBlur?: number;
 }
 
 interface FieldConfig {
@@ -6149,6 +6185,22 @@ interface BookingEngineStyleProps {
 // canvases render byte-identically. `text` falls back to the legacy
 // flat label key (author customizations from before the grouping
 // survive), then to the shipped default.
+// BUTTON-INTERACTION: per-state overrides inside a button group (Hover
+// / Pressed submenus). Every key is a delta over the button's base
+// style — unset means "same as base". No layout-affecting rows (no
+// font/size swaps that would shift layout on hover).
+interface ButtonInteractionState {
+	/** 1 = no zoom. Applied as transform: scale(). */
+	scale?: number;
+	/** 1 = fully opaque. */
+	opacity?: number;
+	textColor?: string;
+	backgroundColor?: string;
+	/** Border COLOR only — width/style always come from base. */
+	borderColor?: string;
+	/** Applied only when a real shadow (see shadowStyle). */
+	shadow?: string;
+}
 interface ButtonStyleGroup {
 	text?: string;
 	textColor?: string;
@@ -6165,6 +6217,11 @@ interface ButtonStyleGroup {
 	radius?: string | number;
 	padding?: string;
 	font?: FramerFont;
+	/** DECOR: see FieldStyleOverrides.shadow/backgroundBlur. */
+	shadow?: string;
+	backgroundBlur?: number;
+	hover?: ButtonInteractionState;
+	pressed?: ButtonInteractionState;
 }
 // ===== Copy =====
 interface BookingEngineCopyProps {
@@ -14302,6 +14359,10 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		...(fs?.focusBorderColor
 			? ({ "--be-focus-color": fs.focusBorderColor } as React.CSSProperties)
 			: {}),
+		// DECOR: shadow/blur layers ride along only when configured —
+		// unopened groups (and "none"/0) leave the surface untouched.
+		...shadowStyle(fs?.shadow),
+		...backdropStyle(fs?.backgroundBlur),
 		// W1-18-F1 fix: gated on prefers-reduced-motion.
 		// FOCUS-STATE-COMPOSE fix: the inset focus ring is a box-shadow —
 		// fade it with the border so state changes never pop.
@@ -14533,6 +14594,8 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						optionPaddingX={fsPaddingAxes?.x ?? fs?.paddingX}
 						optionMinHeight={fs?.minHeight}
 						optionFont={fs?.font}
+						optionShadow={fs?.shadow}
+						optionBlur={fs?.backgroundBlur}
 						trackBackground={fs?.backgroundColor}
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
@@ -14616,6 +14679,10 @@ const FieldRenderer = React.memo(function FieldRenderer(
 								height: checkSize,
 								accentColor: checkAccent,
 								cursor: "pointer",
+								// DECOR: box shadow/blur on the check box
+								// only when configured.
+								...shadowStyle(fs?.shadow),
+								...backdropStyle(fs?.backgroundBlur),
 							}}
 						/>
 						<span>{field.label}</span>
@@ -15716,6 +15783,52 @@ function fieldStylesPaddingControl(defaultValue: string = FIELD_STYLES_INPUT_PAD
 		defaultValue,
 	};
 }
+// DECOR: Framer's NATIVE shadow control (ControlType.BoxShadow — not a
+// custom-built one). defaultValue "none" = the surface's real current
+// look (nothing has a base shadow), so opening Styles changes nothing;
+// the runtime applies the value only when it names a real shadow.
+function fieldStylesShadowControl() {
+	return {
+		type: ControlType.BoxShadow,
+		title: "Shadow",
+		defaultValue: "none",
+	};
+}
+// DECOR: backdrop-blur only (not the full CSS filter set — blurring the
+// element itself, hue/saturate/invert etc. have no booking-UI use case;
+// backdrop blur gives the frosted-glass panel over imagery). Number, so
+// the materialized 0 is provably off (numbers honor defaults).
+function fieldStylesBackgroundBlurControl() {
+	return {
+		type: ControlType.Number,
+		title: "Background Blur",
+		optional: true,
+		min: 0,
+		max: 40,
+		step: 1,
+		unit: "px",
+		defaultValue: 0,
+	};
+}
+// DECOR runtime: shadow applies only for a real shadow value — "none"
+// (the control default), "" and unset all mean "no shadow layer", which
+// keeps state rings (selected/hover/focus boxShadows) intact and makes
+// unopened groups zero-impact.
+function shadowStyle(shadow: string | undefined): React.CSSProperties {
+	return shadow && shadow.trim() && shadow.trim().toLowerCase() !== "none"
+		? { boxShadow: shadow }
+		: {};
+}
+// DECOR runtime: backdrop blur applies only above 0px (both the standard
+// property and the WebKit-prefixed one Safari still needs).
+function backdropStyle(px: number | undefined): React.CSSProperties {
+	return typeof px === "number" && px > 0
+		? {
+				backdropFilter: `blur(${px}px)`,
+				WebkitBackdropFilter: `blur(${px}px)`,
+			}
+		: {};
+}
 
 function makeInputFieldStylesControls() {
 	// Per-type effective defaults: text/select use INPUT_PADDING, textarea same.
@@ -15747,6 +15860,8 @@ function makeInputFieldStylesControls() {
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
@@ -15784,6 +15899,8 @@ function makeVariantChoiceStylesControls(
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
@@ -15802,6 +15919,8 @@ function makeCheckboxFieldStylesControls() {
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
 		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
@@ -15812,6 +15931,8 @@ function makeCalendarFieldStylesControls() {
 		backgroundColor: fieldStylesColorControl("Background"),
 		radius: fieldStylesRadiusControl(eff.radius),
 		padding: fieldStylesPaddingControl(eff.padding),
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 	};
 }
 
@@ -15822,6 +15943,36 @@ function makeCalendarFieldStylesControls() {
 // values (four-value padding — PADDING-FOUR-VALUE — or Framer drops them
 // to 0 on activation); color keys stay default-free so unset buttons
 // track the live theme tokens (rules 90/93/96/98).
+// BUTTON-INTERACTION: shared rows for the Hover / Pressed submenus —
+// deltas over the button's base style (unset = same as base). Scale and
+// opacity materialize as provable no-ops (1); colors stay default-free
+// like every color row; border is color-only (width/style inherit base,
+// so no static default can fight a dynamic base); shadow applies only
+// when real (see shadowStyle).
+function makeButtonInteractionControls() {
+	return {
+		scale: {
+			type: ControlType.Number,
+			title: "Scale",
+			defaultValue: 1,
+			min: 0.5,
+			max: 1.5,
+			step: 0.01,
+		},
+		opacity: {
+			type: ControlType.Number,
+			title: "Opacity",
+			defaultValue: 1,
+			min: 0,
+			max: 1,
+			step: 0.01,
+		},
+		textColor: fieldStylesColorControl("Text Color"),
+		backgroundColor: fieldStylesColorControl("Background"),
+		borderColor: fieldStylesColorControl("Border Color"),
+		shadow: fieldStylesShadowControl(),
+	};
+}
 function makeButtonGroupControls(defaults: {
 	text: string;
 	padding: string;
@@ -15847,6 +15998,26 @@ function makeButtonGroupControls(defaults: {
 			fontSize: "14px",
 			variant: "Semibold",
 		}),
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
+		hover: {
+			type: ControlType.Object,
+			title: "Hover",
+			buttonTitle: "Hover",
+			icon: "interaction",
+			optional: true,
+			description: "Style deltas while the pointer hovers the button.",
+			controls: makeButtonInteractionControls(),
+		},
+		pressed: {
+			type: ControlType.Object,
+			title: "Pressed",
+			buttonTitle: "Pressed",
+			icon: "interaction",
+			optional: true,
+			description: "Style deltas while the button is held down.",
+			controls: makeButtonInteractionControls(),
+		},
 	};
 }
 
@@ -15895,6 +16066,61 @@ function resolveButtonStyle(
 			? { letterSpacing: font.letterSpacing }
 			: {}),
 		...(font?.lineHeight != null ? { lineHeight: font.lineHeight } : {}),
+		// DECOR: shadow/blur layers ride along only when configured —
+		// unopened groups (and "none"/0) leave the surface untouched.
+		...shadowStyle(group?.shadow),
+		...backdropStyle(group?.backgroundBlur),
+	};
+}
+
+// BUTTON-INTERACTION runtime: pressed wins over hover; both are deltas
+// over the resolved base. Untouched (undefined) state objects return the
+// base style object untouched — zero behavior change for existing
+// canvases. Border override reuses the borderColor CSS key AFTER the
+// `border` shorthand so width/style from base survive.
+function applyButtonInteraction(
+	base: React.CSSProperties,
+	hover: ButtonInteractionState | undefined,
+	pressed: ButtonInteractionState | undefined,
+	state: { hovered: boolean; pressed: boolean },
+	animate: boolean,
+): React.CSSProperties {
+	const st = state.pressed ? pressed : state.hovered ? hover : undefined;
+	if (!st) return base;
+	const out: React.CSSProperties = { ...base };
+	if (st.backgroundColor) out.background = st.backgroundColor;
+	if (st.textColor) out.color = st.textColor;
+	if (st.borderColor) out.borderColor = st.borderColor;
+	if (st.opacity != null) out.opacity = st.opacity;
+	if (st.scale != null && st.scale !== 1) {
+		out.transform = `scale(${st.scale})`;
+	}
+	Object.assign(out, shadowStyle(st.shadow));
+	out.transition = animate
+		? "background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease"
+		: "none";
+	return out;
+}
+
+// One interaction state per button (hovering Done must not light up the
+// ICS link). Disabled native buttons never fire mouse events, so no
+// disabled guard is needed — and :hover-less touch/keyboard users simply
+// see the base style.
+function useButtonInteraction() {
+	const [hovered, setHovered] = React.useState(false);
+	const [pressed, setPressed] = React.useState(false);
+	return {
+		hovered,
+		pressed,
+		bind: {
+			onMouseEnter: () => setHovered(true),
+			onMouseLeave: () => {
+				setHovered(false);
+				setPressed(false);
+			},
+			onMouseDown: () => setPressed(true),
+			onMouseUp: () => setPressed(false),
+		},
 	};
 }
 
@@ -16302,7 +16528,6 @@ addPropertyControls(BookingEngine, {
 				buttonTitle: "Continue",
 				icon: "object",
 				optional: true,
-				description: "Primary action on every step except the last.",
 				controls: makeButtonGroupControls({
 					text: "Continue",
 					padding: "10px 22px 10px 22px",
@@ -16317,7 +16542,6 @@ addPropertyControls(BookingEngine, {
 				icon: "object",
 				optional: true,
 				description:
-					"Primary action on the LAST step only — its text and style replace Continue's there.",
 				controls: makeButtonGroupControls({
 					text: "Book Now",
 					padding: "10px 22px 10px 22px",
