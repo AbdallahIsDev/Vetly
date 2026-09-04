@@ -15552,12 +15552,30 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 
 	return (
 		<div role="alert" aria-live="assertive" aria-atomic="true">
+			{/* ERROR-STATE-DESIGN: centered premium layout on the same 320px
+				floor as the form (rule 18) — the component never collapses
+				around this short content. Column centers both axes;
+				max-widths keep lines composed on wide embeds. */}
 			<div
 				style={{
 					display: "flex",
+					flexDirection: "column",
 					alignItems: "center",
-					gap: 12,
+					justifyContent: "center",
+					textAlign: "center",
+					minHeight: 320,
+					padding: "24px 16px",
+					boxSizing: "border-box",
+				}}
+			>
+			<div
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					gap: 6,
 					marginBottom: 16,
+					maxWidth: 520,
 				}}
 			>
 				<div
@@ -15565,14 +15583,17 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						width: ERROR_ICON_SIZE,
 						height: ERROR_ICON_SIZE,
 						borderRadius: "50%",
-						background: withAlpha(errorColor, 0.15),
+						background: withAlpha(errorColor, 0.12),
+						// Soft halo ring for a composed, premium mark.
+						boxShadow: `0 0 0 8px ${withAlpha(errorColor, 0.06)}`,
 						color: errorColor,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
-						fontSize: 22,
+						fontSize: 24,
 						fontWeight: 700,
 						flexShrink: 0,
+						marginBottom: 10,
 					}}
 					aria-hidden="true"
 				>
@@ -15584,7 +15605,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						tabIndex={-1}
 						className="be-focus-target"
 						style={{
-							fontSize: 20,
+							fontSize: 22,
 							fontWeight: 700,
 							color: textPrimaryColor,
 							lineHeight: 1.2,
@@ -15597,9 +15618,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					</h2>
 					<div
 						style={{
-							fontSize: 13,
+							fontSize: 14,
 							color: textSecondaryColor,
-							marginTop: 2,
+							marginTop: 6,
+							lineHeight: 1.5,
 						}}
 					>
 						{errorSubtitle}
@@ -15608,14 +15630,17 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 			</div>
 			<div
 				style={{
-					padding: "14px 16px",
+					padding: "14px 18px",
 					borderRadius: borderRadius,
 					background: withAlpha(errorColor, 0.08),
 					border: `1px solid ${withAlpha(errorColor, 0.3)}`,
 					color: textPrimaryColor,
 					fontSize: 14,
 					lineHeight: 1.5,
-					marginBottom: 16,
+					marginBottom: 20,
+					width: "100%",
+					maxWidth: 520,
+					boxSizing: "border-box",
 				}}
 			>
 				{message}
@@ -15626,6 +15651,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					gap: 8,
 					flexWrap: "wrap",
 					alignItems: "center",
+					justifyContent: "center",
 				}}
 			>
 				<button
@@ -15683,6 +15709,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						{supportContactLabel}
 					</a>
 				) : null}
+			</div>
 			</div>
 		</div>
 	);
