@@ -6526,11 +6526,20 @@ interface BookingEngineConfigProps {
 	// date formatting always follows <html lang>, then the browser default.
 	// There is no author locale override and no such prop.
 	// PERSISTENCE-IDENTITY (rule 106): optional stable per-instance id.
-	// Set a unique value per component when 2+ engines share a page
-	// (e.g. "main-booking", "sidebar-booking") so each gets an isolated
-	// autosave namespace. Empty (default) falls back to the deterministic
-	// config fingerprint — automatic isolation for differently-configured
-	// instances, shared session for config-identical siblings.
+	// Lives in the Advanced group at the bottom of the panel (deliberately
+	// secondary — most pages never need it). Set a unique value per
+	// component when 2+ engines share a page (e.g. "main-booking",
+	// "sidebar-booking") so each gets an isolated autosave namespace.
+	// Empty (default) falls back to the deterministic config fingerprint —
+	// automatic isolation for differently-configured instances, shared
+	// session for config-identical siblings.
+	advanced?: {
+		instanceId?: string;
+	};
+	// Legacy carrier: Instance ID previously lived at top level before it
+	// moved into `advanced` (same SYN-01 nesting pattern as `validation`).
+	// No control — read as fallback so instances saved with a top-level ID
+	// keep their existing autosave namespace. Never re-add the control.
 	instanceId?: string;
 	// SESSION-KEY-REMOVED: the `sessionStorageKey` Property Control
 	// (FINAL-14) was removed: the base autosave key is always
@@ -10112,8 +10121,13 @@ function useBookingEngineState(
 		calApiKey,
 		calEventTypeId,
 		onAnalytics,
-		instanceId: instanceIdProp,
+		advanced,
 	} = props;
+
+	// PERSISTENCE-IDENTITY: read the nested Advanced path first; fall back
+	// to the legacy top-level prop for instances saved before the control
+	// moved into `advanced` (same pattern as SYN-01 `validation` above).
+	const instanceIdProp = advanced?.instanceId ?? props.instanceId ?? "";
 
 	// SYN-01 fix: the addPropertyControls `validation` group is nested
 	// inside the `copy` object control, so author edits are persisted to
@@ -17325,18 +17339,6 @@ addPropertyControls(BookingEngine, {
 	step9: makeStepControl(8, makeDefaultBlankFormStep(9)),
 	step10: makeStepControl(9, makeDefaultBlankFormStep(10)),
 
-	// PERSISTENCE-IDENTITY (rule 106): stable per-instance autosave
-	// namespace. Required (unique per instance) when 2+ engines share a
-	// page with identical configuration; optional otherwise.
-	instanceId: {
-		type: ControlType.String,
-		title: "Instance ID",
-		placeholder: "e.g. main-booking",
-		description:
-			"Unique per instance when 2+ booking engines share a page. Isolates saved progress.",
-		defaultValue: "",
-	},
-
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
 		type: ControlType.Object,
@@ -18176,4 +18178,25 @@ addPropertyControls(BookingEngine, {
 	// controls are gone by author direction — "Done" always navigates to
 	// the website root (DEFAULT_CONFIRM_HOME_URL). Same explicit
 	// visitor-action behavior — no auto-redirect (see AGENTS.md).
+	// ----- Advanced (rare-use settings; last in the panel) -----
+	advanced: {
+		type: ControlType.Object,
+		title: "Advanced",
+		icon: "object",
+		buttonTitle: "Advanced",
+		controls: {
+			// PERSISTENCE-IDENTITY (rule 106): stable per-instance autosave
+			// namespace. Optional and deliberately secondary — only needed
+			// (unique per instance) when 2+ engines share a page with
+			// identical configuration.
+			instanceId: {
+				type: ControlType.String,
+				title: "Instance ID",
+				placeholder: "e.g. main-booking",
+				description:
+					"Use a unique ID when multiple identical Booking Engines share a page.",
+				defaultValue: "",
+			},
+		},
+	},
 });
