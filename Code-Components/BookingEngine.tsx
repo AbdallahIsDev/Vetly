@@ -6162,6 +6162,9 @@ interface BookingEngineStyleProps {
 		gap?: number;
 	};
 	font: FramerFont;
+	// Per-surface heading typography (step + success + error titles).
+	// The base `font` above stays the body control.
+	headingFont?: FramerFont;
 	// Animation — variant (style) + duration (speed). Variant is the single
 	// source of truth for which of the 6 production concepts is used.
 	transition: Transition;
@@ -9820,6 +9823,7 @@ function useBookingEngineState(
 		progressBar,
 		styles,
 		font,
+		headingFont,
 		transition,
 		transitionVariant,
 		copy,
@@ -11976,11 +11980,13 @@ function useBookingEngineState(
 			// fallback — the font itself stays a Framer FontFamily
 			// control, so a second fallback control would just shadow it).
 			fontFamily: font?.fontFamily ?? DEFAULT_FONT_FAMILY,
-			fontSize: font?.fontSize || 15,
-			lineHeight: font?.lineHeight || 1.4,
-			letterSpacing: font?.letterSpacing || 0,
-			fontWeight: font?.fontWeight || 400,
-			fontStyle: font?.fontStyle || "normal",
+			// A11Y-SYSTEM: explicit values use ?? (never ||) so a stored
+			// 0 can't collapse a token.
+			fontSize: font?.fontSize ?? 15,
+			lineHeight: font?.lineHeight ?? 1.4,
+			letterSpacing: font?.letterSpacing ?? 0,
+			fontWeight: font?.fontWeight ?? 400,
+			fontStyle: font?.fontStyle ?? "normal",
 		}),
 		[font],
 	);
@@ -12084,6 +12090,7 @@ function useBookingEngineState(
 		focusFirstInvalidField,
 		focusTimerRef,
 		font,
+		headingFont,
 		fontStack,
 		handleBack,
 		handleCancelSubmit,
@@ -12228,6 +12235,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		errors,
 		flowStatus,
 		fontStack,
+		headingFont,
 		handleBack,
 		handleCancelSubmit,
 		handleContinue,
@@ -12563,6 +12571,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					onRestart={handleRestart}
 					successTitle={copy.successTitle}
 					successSubtitle={copy.successSubtitle}
+					headingFont={headingFont}
 					// CONFIRM-ACTIONS: confirmation button labels come from
 					// the Buttons group now.
 					addToCalendarLabel={addToCalendarButtonLabel}
@@ -12625,6 +12634,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					onRetry={handleRetry}
 					errorTitle={copy.errorTitle}
 					errorSubtitle={copy.errorSubtitle}
+					headingFont={headingFont}
 					retryLabel={copy.retryLabel}
 					supportContactLabel={copy.supportContactLabel}
 					supportContactValue={copy.supportContactValue}
@@ -12992,10 +13002,21 @@ export default function BookingEngine(props: BookingEngineProps) {
 								className="be-focus-target"
 								style={{
 									color: theme.textPrimaryColor,
-									fontSize: 22,
-									fontWeight: 700,
+									// Per-surface Heading Font (Body control
+									// stays the base). Unset = previous look.
+									fontFamily: headingFont?.fontFamily ?? "inherit",
+									fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+									fontWeight: headingFont?.fontWeight ?? 700,
+									...(headingFont?.fontStyle
+										? { fontStyle: headingFont.fontStyle }
+										: {}),
+									...(headingFont?.letterSpacing != null
+										? { letterSpacing: headingFont.letterSpacing }
+										: {}),
+									...(headingFont?.lineHeight != null
+										? { lineHeight: headingFont.lineHeight }
+										: { lineHeight: 1.2 }),
 									marginBottom: 4,
-									lineHeight: 1.2,
 									marginTop: 0,
 									// FINAL-43 fix: inline `outline:"none"` removed —
 									// it killed every indicator when JS moved focus
@@ -14026,11 +14047,11 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
 							radius={borderRadius}
-							// W1-02-F17 fix: demo-grid times are copy-driven so
-							// the canvas preview isn't stuck at 09:00–17:00.
-							startTime={copy.demoStartTime}
-							endTime={copy.demoEndTime}
-							interval={copy.demoInterval}
+							// W1-02-F17 fix: demo-grid times run the fixed
+							// DEFAULT_DEMO_* constants (no author controls).
+							startTime={copy.demoStartTime ?? DEFAULT_DEMO_START_TIME}
+							endTime={copy.demoEndTime ?? DEFAULT_DEMO_END_TIME}
+							interval={copy.demoInterval ?? DEFAULT_DEMO_INTERVAL}
 							timeFormat={timeFormat}
 							initialDate={selectedDate}
 							initialTime={
@@ -14885,6 +14906,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	onRestart: () => void;
 	successTitle: string;
 	successSubtitle: string;
+	// Per-surface Heading Font (shared with step + error titles).
+	headingFont?: FramerFont;
 	// CONFIRM-ACTIONS: labels come from the Buttons group now.
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
@@ -14948,6 +14971,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		onRestart,
 		successTitle,
 		successSubtitle,
+		headingFont,
 		addToCalendarLabel,
 		bookAnotherLabel,
 		doneLabel,
@@ -15292,10 +15316,18 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				tabIndex={-1}
 				className="be-focus-target"
 				style={{
-					fontSize: 22,
-					fontWeight: 700,
+					// Per-surface Heading Font (unset = previous look).
+					fontFamily: headingFont?.fontFamily ?? "inherit",
+					fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+					fontWeight: headingFont?.fontWeight ?? 700,
+					...(headingFont?.fontStyle
+						? { fontStyle: headingFont.fontStyle }
+						: {}),
+					...(headingFont?.letterSpacing != null
+						? { letterSpacing: headingFont.letterSpacing }
+						: {}),
+					lineHeight: headingFont?.lineHeight ?? 1.2,
 					color: textPrimaryColor,
-					lineHeight: 1.2,
 					textAlign: "center",
 					marginBottom: 4,
 					marginTop: 0,
@@ -15576,6 +15608,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	onRetry: () => void;
 	errorTitle: string;
 	errorSubtitle: string;
+	// Per-surface Heading Font (shared with step + success titles).
+	headingFont?: FramerFont;
 	retryLabel: string;
 	// T3-L3 fix: optional support-contact path (empty value → hidden).
 	supportContactLabel: string;
@@ -15596,6 +15630,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		onRetry,
 		errorTitle,
 		errorSubtitle,
+		headingFont,
 		retryLabel,
 		supportContactLabel,
 		supportContactValue,
@@ -15667,17 +15702,25 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						ref={headingRef}
 						tabIndex={-1}
 						className="be-focus-target"
-						style={{
-							fontSize: 22,
-							fontWeight: 700,
-							color: textPrimaryColor,
-							lineHeight: 1.2,
-							marginTop: 0,
-							marginBottom: 0,
-							// FINAL-43 fix: outline:none removed (see .be-focus-target).
-						}}
-					>
-						{errorTitle}
+					style={{
+						// Per-surface Heading Font (unset = previous look).
+						fontFamily: headingFont?.fontFamily ?? "inherit",
+						fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+						fontWeight: headingFont?.fontWeight ?? 700,
+						...(headingFont?.fontStyle
+							? { fontStyle: headingFont.fontStyle }
+							: {}),
+						...(headingFont?.letterSpacing != null
+							? { letterSpacing: headingFont.letterSpacing }
+							: {}),
+						lineHeight: headingFont?.lineHeight ?? 1.2,
+						color: textPrimaryColor,
+						marginTop: 0,
+						marginBottom: 0,
+						// FINAL-43 fix: outline:none removed (see .be-focus-target).
+					}}
+				>
+					{errorTitle}
 					</h2>
 					<div
 						style={{
@@ -16860,8 +16903,6 @@ addPropertyControls(BookingEngine, {
 				buttonTitle: "Final Action",
 				icon: "object",
 				optional: true,
-				description:
-					"Primary action on the LAST step only — its text and style replace Continue's there.",
 				controls: makeButtonGroupControls({
 					text: "Book Now",
 					padding: "10px 22px 10px 22px",
@@ -16917,7 +16958,6 @@ addPropertyControls(BookingEngine, {
 				buttonTitle: "Done",
 				icon: "object",
 				optional: true,
-				description: "Returns to the website root (/). Always shown.",
 				controls: makeButtonGroupControls({
 					text: DEFAULT_COPY_RETURN_HOME_LABEL,
 					padding: "10px 18px 10px 18px",
@@ -17084,7 +17124,7 @@ addPropertyControls(BookingEngine, {
 	},
 	font: {
 		type: ControlType.Font,
-		title: "Font",
+		title: "Body Font",
 		controls: "extended",
 		defaultFontType: "sans-serif",
 		defaultValue: {
@@ -17092,6 +17132,22 @@ addPropertyControls(BookingEngine, {
 			variant: "Regular",
 			letterSpacing: "0em",
 			lineHeight: "1.4em",
+			textAlign: "left",
+		},
+	},
+	// Per-surface heading typography (step + success + error titles).
+	// Body text keeps the control above; buttons keep their per-button
+	// Font rows. Defaults equal the previous hardcoded titles.
+	headingFont: {
+		type: ControlType.Font,
+		title: "Heading Font",
+		controls: "extended",
+		defaultFontType: "sans-serif",
+		defaultValue: {
+			fontSize: "22px",
+			variant: "Bold",
+			letterSpacing: "0em",
+			lineHeight: "1.2em",
 			textAlign: "left",
 		},
 	},
@@ -17196,22 +17252,16 @@ addPropertyControls(BookingEngine, {
 				title: "Step Counter",
 				defaultValue: "Step {current} of {total}",
 			},
-			timeZoneSelectLabel: {
-				type: ControlType.String,
-				title: "Time Zone Select",
-				defaultValue: "Time zone",
-			},
+			// DEAD CONTROL REMOVAL (rule 8): Time Zone Select had zero
+			// runtime reads — the zone is auto-detected, never manual.
 			// W1-10-N3 fix: group label for the 12h/24h toggle.
 			timeFormatLabel: {
 				type: ControlType.String,
 				title: "Time Format Toggle Label",
 				defaultValue: DEFAULT_COPY_TIMEFORMAT_LABEL,
 			},
-			detectedTimeZonePrefix: {
-				type: ControlType.String,
-				title: "Detected Time Zone Prefix",
-				defaultValue: "Detected: ",
-			},
+			// DEAD CONTROL REMOVAL (rule 8): Detected Time Zone Prefix
+			// had zero runtime reads — same auto-detect rationale.
 			// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
 			// required-fields-hint, saved-answers, save-failed, character-
 			// count and required-marker controls were removed with their
@@ -17320,16 +17370,10 @@ addPropertyControls(BookingEngine, {
 				title: "PM Suffix",
 				defaultValue: DEFAULT_COPY_PM_LABEL,
 			},
-			icsProdid: {
-				type: ControlType.String,
-				title: "ICS Product ID",
-				defaultValue: DEFAULT_COPY_ICS_PRODID,
-			},
-			icsSummaryFallback: {
-				type: ControlType.String,
-				title: "ICS Summary Fallback",
-				defaultValue: DEFAULT_COPY_ICS_SUMMARY_FALLBACK,
-			},
+			// ICS-INTERNALS-REMOVED (rule 26): Product ID + Summary
+			// Fallback are protocol constants, not configuration — reads
+			// fall back to DEFAULT_COPY_ICS_* (function defaults agree).
+			// icsLocationLabel stays: real author content (FINAL-06).
 			icsLocationLabel: {
 				type: ControlType.String,
 				title: "ICS Location",
@@ -17370,24 +17414,10 @@ addPropertyControls(BookingEngine, {
 				title: "Notes Time Prefix",
 				defaultValue: DEFAULT_COPY_NOTES_TIME_PREFIX,
 			},
-			demoStartTime: {
-				type: ControlType.String,
-				title: "Demo Start Time",
-				defaultValue: DEFAULT_DEMO_START_TIME,
-			},
-			demoEndTime: {
-				type: ControlType.String,
-				title: "Demo End Time",
-				defaultValue: DEFAULT_DEMO_END_TIME,
-			},
-			demoInterval: {
-				type: ControlType.Number,
-				title: "Demo Interval",
-				defaultValue: DEFAULT_DEMO_INTERVAL,
-				min: 15,
-				max: 60,
-				step: 5,
-			},
+			// DEMO-REMOVED: Demo Start/End/Interval controls deleted — the
+			// no-Cal.com fallback grid always runs 09:00–17:00 at 30min
+			// (DEFAULT_DEMO_*). A demo-grid tuner is not site-owner
+			// configuration; reads below fall back to the constants.
 			// W1-02-F9 fix: accessibility names behind one nested group,
 			// mirroring the `validation` group. The month-nav templates'
 			// {month} placeholder is replaced with the target month name.
