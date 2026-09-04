@@ -16044,10 +16044,12 @@ function makeCalendarFieldStylesControls() {
 // BUTTON-INTERACTION: shared rows for the Hover / Pressed submenus —
 // deltas over the button's base style (unset = same as base). Scale and
 // opacity materialize as provable no-ops (1); colors stay default-free
-// like every color row; border is color-only (width/style inherit base,
-// so no static default can fight a dynamic base); shadow applies only
-// when real (see shadowStyle).
-function makeButtonInteractionControls() {
+// like every color row. `borderDefaultColor` is the button's OWN base
+// border color: the hover Border default is {width 0 + this color}, so
+// the value is always fully parseable (an empty-string color
+// materializes as a corrupt "Mixed" row — same saga as the shadow
+// "none"). Width 0 keeps the base border regardless of color.
+function makeButtonInteractionControls(borderDefaultColor: string) {
 	return {
 		// Transition FIRST (author expectation): Framer's native
 		// transition control, driving the animation into this state.
@@ -16088,11 +16090,11 @@ function makeButtonInteractionControls() {
 			title: "Border",
 			optional: true,
 			description:
-			 "0 keeps the button's normal border — set 1 or more to override it here.",
+				"0 keeps the button's normal border — set 1 or more to override it here.",
 			defaultValue: {
 				borderWidth: 0,
 				borderStyle: "solid",
-				borderColor: "",
+				borderColor: borderDefaultColor,
 			},
 		},
 		shadow: fieldStylesShadowControl(),
@@ -16131,7 +16133,7 @@ function makeButtonGroupControls(defaults: {
 			buttonTitle: "Hover",
 			icon: "interaction",
 			optional: true,
-			controls: makeButtonInteractionControls(),
+			controls: makeButtonInteractionControls(defaults.borderColor),
 		},
 		pressed: {
 			type: ControlType.Object,
@@ -16139,7 +16141,7 @@ function makeButtonGroupControls(defaults: {
 			buttonTitle: "Pressed",
 			icon: "interaction",
 			optional: true,
-			controls: makeButtonInteractionControls(),
+			controls: makeButtonInteractionControls(defaults.borderColor),
 		},
 	};
 }
