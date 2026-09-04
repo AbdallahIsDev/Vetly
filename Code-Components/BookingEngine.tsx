@@ -495,6 +495,17 @@ const DEFAULT_COPY_NOTES_TIME_PREFIX = "Time: ";
 const DEFAULT_COPY_STEP_COUNTER_TEMPLATE = "Step {current} of {total}";
 // W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 const DEFAULT_COPY_TIMEFORMAT_LABEL = "Time format";
+// COPY-SIMPLIFICATION: fixed structural/system UI strings. These are
+// internal component behavior — never Property Controls (AGENTS.md).
+// Each constant is the single source of truth for its render site(s).
+const DEFAULT_COPY_LOADING_LABEL = "Loading availability…";
+const DEFAULT_COPY_NO_TIMES_LABEL =
+	"No available times on the selected date. Try another day.";
+const DEFAULT_COPY_SUBMITTING_LABEL = "Submitting…";
+const DEFAULT_COPY_SUPPORT_CONTACT_LABEL = "Contact support";
+const DEFAULT_COPY_DATE_LABEL = "Date";
+const DEFAULT_COPY_TIME_LABEL = "Time";
+const DEFAULT_COPY_RETRY_LABEL = "Try again";
 const DEFAULT_DEMO_START_TIME = "09:00";
 const DEFAULT_DEMO_END_TIME = "17:00";
 const DEFAULT_DEMO_INTERVAL = 30;
@@ -1743,7 +1754,15 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	// `values[field.id]` matches the visually-highlighted first option. Without
 	// this, a required choice field shows an option highlighted but fails
 	// validation because the parent never received the value.
+	// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): the one-shot seed must not
+	// fire inside the headless prerender — it re-stamps the parent's stored
+	// value there, which then leaks into the served pipeline markup while
+	// every visitor's first render recomputes the same seed independently
+	// (the flag ALSO stays unset in the visitor, so the seed fires twice in
+	// a captured-then-hydrated page). Real interactive clients seed once,
+	// exactly as before.
 	React.useEffect(() => {
+		if (!beInteractive) return;
 		if (firedInitialRef.current) return;
 		if (controlledValue !== undefined) return;
 		if (parsedOptions.length === 0) return;
@@ -1756,7 +1775,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		// value with a stale label.
 		onChange?.(controlledValue !== undefined ? getInitialSelection(parsedOptions, controlledValue) : getInitialSelection(parsedOptions, defaultValue));
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [parsedOptions, controlledValue, defaultValue]);
+	}, [beInteractive, parsedOptions, controlledValue, defaultValue]);
 
 	useIsomorphicLayoutEffect(() => {
 		// PRERENDER-DEFER: width measurement is environment-dependent —
@@ -3757,10 +3776,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						// times" empty-state when the parent ISN'T
 						// driving this from Cal.com. In Cal.com mode
 						// (availableTimes !== undefined), the parent's
-						// own outer banner — copy.noTimesLabel — already
-						// owns the "no slots for this day" messaging,
-						// so duplicating it here would stack two
-						// "no times" panels on top of each other.
+						// own outer banner already owns the "no slots
+						// for this day" messaging, so duplicating it
+						// here would stack two "no times" panels on top
+						// of each other.
 						// This branch now only fires in genuine demo
 						// mode, where the synthetic grid happened to
 						// produce zero slots (e.g. startTime>endTime).
@@ -4540,11 +4559,21 @@ function useTimeGrid(options: UseTimeGridOptions): {
 	// "nothing elapsed yet"; the real instant lands pre-paint on mount and
 	// keeps ticking every minute.
 	const [now, setNow] = React.useState<Date | null>(null);
+	// PRERENDER-DEFER gate (declared next to the ticker it guards).
+	const beInteractive = useBeInteractive();
 	useIsomorphicLayoutEffect(() => {
+		// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): the headless prerender
+		// runs layout effects, so the old unconditional tick baked the
+		// prerender-time instant into served slot markup (elapsed/disabled
+		// flags) — no visitor's first render could reproduce it. The null
+		// initial means "nothing elapsed yet" (identical markup server +
+		// client, rule 42); the real clock lands pre-paint only for real
+		// interactive clients.
+		if (!beInteractive) return;
 		setNow(new Date());
 		const id = window.setInterval(() => setNow(new Date()), 30000);
 		return () => window.clearInterval(id);
-	}, []);
+	}, [beInteractive]);
 	const isTimeElapsed = React.useCallback(
 		(time: { value: string; minutes: number }) => {
 			if (!now) return false;
@@ -6342,6 +6371,11 @@ interface BookingEngineCopyProps {
 		doneLabel?: string;
 		bookAnotherLabel?: string;
 		addToCalendarLabel?: string;
+		// ERROR-RETRY-BUTTON: the error-screen Retry button lives in the
+		// Buttons group like every other button (never in Copy). No legacy
+		// flat key ever existed here — pre-grouping canvases customized it
+		// via Copy's `retryLabel`, which stays readable as fallback.
+		retryButton?: ButtonStyleGroup;
 		// HOME-URL-REMOVED: "Done" always navigates to the website root
 		// ("/") — the Home URL control is gone by author direction, the
 		// destination is fixed in the component (DEFAULT_CONFIRM_HOME_URL)
@@ -6353,17 +6387,17 @@ interface BookingEngineCopyProps {
 		successSubtitle: string;
 		errorTitle: string;
 		errorSubtitle: string;
-		retryLabel: string;
-		loadingAvailabilityLabel: string;
-		noTimesLabel: string;
-		submittingLabel: string;
+		// ERROR-RETRY-BUTTON: the Retry Text control moved to the Buttons
+		// group. This key stays (optional) so instances customized before
+		// the move keep their label — no control exposes it anymore.
+		retryLabel?: string;
+		// COPY-SIMPLIFICATION: structural/system strings are internal
+		// constants (DEFAULT_COPY_*), never Property Controls — the
+		// loading/no-times/submitting/support-label/date/time/AM/PM/
+		// duration-suffix keys are gone (see AGENTS.md).
 		// T3-L3 fix: optional support-contact path on the error screen -
 		// empty value hides the link, so existing instances are unaffected.
-		supportContactLabel: string;
 		supportContactValue: string;
-		// T3-I3 fix: explicit marker that the success screen's time is shown
-		// in the visitor's own (selected) timezone.
-		timeZoneLabel: string;
 		// T3-M3 fix: calendar-event summary text instead of the bare
 		// literal "Booking".
 		icsSummaryLabel: string;
@@ -6373,21 +6407,18 @@ interface BookingEngineCopyProps {
 		stepCounterTemplate: string;
 		// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 		timeFormatLabel: string;
-		availabilityErrorLabel: string;
-		dateLabel: string;
-		timeLabel: string;
 		// T10-H5 fix: extra calendar-provider deep links on the success
 		// screen, alongside the .ics download.
 		googleCalendarLabel: string;
 		outlookCalendarLabel: string;
 		// W1-02-F9–F23 fix (bundle 14): confirmation/manage-link labels,
-		// empty-state copy, AM/PM suffixes, .ics PRODID/SUMMARY, notes
-		// section headers, error fallbacks and the demo-grid times.
+		// notes section headers, error fallbacks and the demo-grid times.
 		confirmationNumberLabel: string;
 		rescheduleOrCancelLabel: string;
 		editLabel: string;
 		pickDateToSeeTimesLabel: string;
-		noTimesFallbackLabel: string;
+		// COPY-SIMPLIFICATION: demo empty-state text is fixed internal
+		// behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL), never a control.
 		selectOptionLabel: string;
 		stepProgressLabel: string;
 		// W1-02-F4/F6/F7 fix: announcement template + counter format +
@@ -6395,8 +6426,8 @@ interface BookingEngineCopyProps {
 		stepAnnouncementTemplate: string;
 		unknownErrorLabel: string;
 		errorFallbackMessage: string;
-		amLabel: string;
-		pmLabel: string;
+		// COPY-SIMPLIFICATION: AM/PM + duration suffixes are fixed
+		// structural tokens (DEFAULT_COPY_*), never Property Controls.
 		icsProdid: string;
 		icsSummaryFallback: string;
 		// FINAL-06 fix: author-facing ICS LOCATION text (where to go).
@@ -6407,9 +6438,6 @@ interface BookingEngineCopyProps {
 		// hardcoded module constants (misclassified as "Cal.com data").
 		calEventMetaLoadingAria: string;
 		calEventMetaUnavailableCopy: string;
-		// FINAL-09 fix: localisable duration suffixes (info panel).
-		hourSuffix: string;
-		minuteSuffix: string;
 		notesSelectedTimeLabel: string;
 		notesDatePrefix: string;
 		notesTimePrefix: string;
@@ -6831,10 +6859,20 @@ function useCoarsePointer(): boolean {
 let hydrationSafeIdCounter = 0;
 function useHydrationSafeId(prefix: string): string {
 	const [id, setId] = React.useState<string>("");
+	// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): this effect is ungated —
+	// it ran during Framer's headless prerender too, baking `be-engine-N`
+	// (and every derived id: be-booking-form-N, be-skip-end-N, per-field
+	// ids) into the served HTML while every hydrating visitor's first
+	// render carries "" (the exact #418 id/for-pair mismatches). Gate it
+	// on the interactive client: the served HTML now matches the first
+	// render everywhere; real visitors still get their unique id in the
+	// same commit the gate flips (all consumers re-derive together).
+	const beInteractive = useBeInteractive();
 	React.useEffect(() => {
+		if (!beInteractive) return;
 		hydrationSafeIdCounter += 1;
 		setId(`${prefix}-${hydrationSafeIdCounter}`);
-	}, [prefix]);
+	}, [prefix, beInteractive]);
 	return id;
 }
 
@@ -7365,10 +7403,37 @@ function beSetInteractive(): void {
 function detectAutomationPrerender(): boolean {
 	if (typeof navigator === "undefined") return false;
 	try {
-		return navigator.webdriver === true;
+		// 1. Puppeteer/Playwright default — the automation flag.
+		if (navigator.webdriver === true) return true;
+		// 2. HYDRATION-GATE-HARDENING: Framer's site prerenderer captures
+		//    the page in a headless Chrome. Most engine versions still put
+		//    the Headless marker in the UA even when the webdriver flag is
+		//    stripped (--disable-blink-features=AutomationControlled), and
+		//    a missed detection keeps the gate OPEN during capture — the
+		//    clock/width/selection effects then bake prerender-day values
+		//    into the served HTML, which no visitor's first render can
+		//    reproduce (the persistent #425/#418/#422 family). Treat the
+		//    headless UA as automation too.
+		const ua = (navigator as Navigator & { userAgent?: string }).userAgent;
+		if (typeof ua === "string" && ua.includes("HeadlessChrome")) return true;
 	} catch {
 		return false;
 	}
+	// 3. Framer's static-capture origin (the runtime's own ea() check —
+	//    `location.origin === "https://screenshot.framer.invalid"` flips
+	//    RenderTarget to EXPORT). Read defensively; never throw at module
+	//    eval.
+	try {
+		if (
+			typeof location !== "undefined" &&
+			location.origin === "https://screenshot.framer.invalid"
+		) {
+			return true;
+		}
+	} catch {
+		// ignore
+	}
+	return false;
 }
 
 if (typeof window !== "undefined") {
@@ -7407,7 +7472,26 @@ if (typeof window !== "undefined") {
  *  for real visitors from the first effect flush onward. Effects that update
  *  rendered state must no-op while this is `false` — their state then stays
  *  at the server-identical initial value, which is what the served HTML
- *  contains. */
+ *  contains.
+ *
+ *  HYDRATION-PARITY CONTRACT (the #425/#418/#422 family, hardened): the
+ *  gate's value is ASYMMETRIC across the two renders that matter — the
+ *  headless prerender captures `false`, while a real visitor's first render
+ *  observes `true` (the module microtask flips the flag before React
+ *  hydrates). Therefore:
+ *  1. No INITIAL STATE may be derived from this value — initial state must
+ *     be a pure function of config/props (see useCalcomEventMeta's status
+ *     initializer).
+ *  2. Every effect that commits state reachable by the first paint must
+ *     check this value BEFORE its first commit and commit NOTHING while it
+ *     is false (see useCalcomSlots' fetch effect, useTimeGrid's now ticker,
+ *     useHydrationSafeId, the engine's availability ticker, and the
+ *     sessionStorage restore/persist effects).
+ *  3. `useState(BE_INTERACTIVE)` is intentional: for real visitors the flag
+ *     is already true at mount, so gated effects run in the very first
+ *     (pre-paint) pass — deferring that flip one frame would re-introduce
+ *     visible placeholder flashes the PRERENDER-DEFER work exists to
+ *     prevent. */
 function useBeInteractive(): boolean {
 	const [interactive, setInteractive] = React.useState(BE_INTERACTIVE);
 	React.useEffect(() => {
@@ -7484,7 +7568,8 @@ function useCalcomSlots(
 	monthStart: Date | null,
 	timeZone: string,
 	// T10-H4 fix: fallback message when Cal.com reports no useful error
-	// detail; the call site passes copy.availabilityErrorLabel.
+	// detail; unset at the call site, so the hook falls back to
+	// errorCopy.slotsFallbackError internally.
 	fallbackErrorLabel?: string,
 	// W1-02-F4–F8 fix (bundle 17): centralized error copy for the slots
 	// ladder; defaults mirror ERROR_COPY_DEFAULTS if not provided.
@@ -7590,6 +7675,14 @@ function useCalcomSlots(
 	}, [apiKey, eventTypeId, timeZone, apiBase]);
 
 	React.useEffect(() => {
+		// HYDRATION-GATE-HARDENING: the headless prerender RUNS this effect.
+		// Every early-return branch below commits setLoading(false), which
+		// baked "not loading" into the served HTML while every visitor's
+		// first render carried the initial loading=true (the exact #418
+		// divergence at the time panel). Commit NOTHING until the client is
+		// a real interactive one: the initial `true` is server-identical,
+		// and all branches re-run once the gate flips.
+		if (!beInteractive) return;
 		if (!apiKey || !eventTypeId || !monthStart) {
 			setLoading(false);
 			return;
@@ -8448,24 +8541,37 @@ function useCalcomEventMeta(params: {
 }): { status: CalEventMetaStatus; meta: CalEventMeta | null; bookingFields: CalBookingField[] } {
 	const { enabled, apiKey, eventTypeId, apiBaseUrl } = params;
 	// Deterministic initializer: identical on server and client first render.
-	// PRERENDER-DEFER note: `enabled` now includes the interactive gate, so
-	// the initial status is "disabled" in the served HTML AND in the
-	// visitor's first render; it transitions to "loading" when the gate
-	// flips post-hydration. The headless prerender can no longer fire this
-	// GET at publish time (the eager metadata fetch was part of the 429
-	// cascade), while real visitors still get metadata immediately after
-	// hydration — early enough for the required-field auto-injection and
-	// the info panel.
+	// HYDRATION-GATE-HARDENING: the initializer MUST be a pure function of
+	// the CONFIG, never of the interactive gate. The gate is asymmetric —
+	// the module microtask flips it true BEFORE a real visitor's first
+	// render, but the headless prerender keeps it false — so gating the
+	// initial status produced "disabled" in the served HTML and "loading"
+	// in the visitor's first render (a structural #418/#422 at the event
+	// info <section>, exactly the trace this site logged). Config-derived
+	// "loading" is byte-identical on both sides whenever Cal.com is
+	// configured; the effect below is what actually defers the GET to
+	// interactive clients, so the prerender never fetches.
 	const [status, setStatus] = React.useState<CalEventMetaStatus>(() =>
-		enabled ? "loading" : "disabled",
+		apiKey && eventTypeId ? "loading" : "disabled",
 	);
 	const [meta, setMeta] = React.useState<CalEventMeta | null>(null);
 	const [bookingFields, setBookingFields] = React.useState<CalBookingField[]>([]);
 	const cacheKey = `${(apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "")}|${apiKey}|${eventTypeId}`;
 	React.useEffect(() => {
-		if (!enabled || !apiKey || !eventTypeId) {
+		// Config verdict first: "disabled" is a CONFIG state (deterministic
+		// on every renderer). The interactive gate must never reach a
+		// commit path here — the headless prerender runs effects, and a
+		// gate-driven setStatus would mutate the served HTML away from the
+		// visitor's first render (HYDRATION-GATE-HARDENING).
+		if (!apiKey || !eventTypeId) {
 			setStatus("disabled");
 			setBookingFields([]);
+			return;
+		}
+		// PRERENDER-DEFER: configured but not yet a real interactive client
+		// (headless prerender / pre-interaction automation) — keep the
+		// deterministic "loading" skeleton, fetch nothing, commit nothing.
+		if (!enabled) {
 			return;
 		}
 		const cached = calEventMetaCache.get(cacheKey);
@@ -10277,6 +10383,13 @@ function useBookingEngineState(
 		bl.addToCalendarLabel,
 		DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
 	);
+	// ERROR-RETRY-BUTTON: Retry Text lives in the Buttons group; a
+	// pre-move Copy customization still wins over the shipped default.
+	const retryLabel = resolveButtonText(
+		bl.retryButton?.text,
+		copy?.retryLabel,
+		DEFAULT_COPY_RETRY_LABEL,
+	);
 	// HOME-URL-REMOVED: "Done" always navigates to the website root.
 	// No control, no stored override — DEFAULT_CONFIRM_HOME_URL is the
 	// destination, used directly at the render site.
@@ -10634,6 +10747,14 @@ function useBookingEngineState(
 	// into the served markup chain (clock, date keys). Defer to interactive
 	// clients so the served HTML keeps "UTC" exactly like the first render.
 	const beInteractiveForTz = useBeInteractive();
+	// STORAGE-RESTORE gate (HYDRATION-GATE-HARDENING): the headless prerender
+	// runs layout effects, so the sessionStorage restore below must never
+	// fire there — a warm prerender container would bake a restored step/
+	// date into the served HTML that no visitor's first render reproduces.
+	// Real visitors get the restore pre-paint in the same pass the gate
+	// flips (the module microtask runs before React hydrates), so the
+	// always-on autosave contract (rules 7/16/20/74) is unchanged.
+	const beInteractiveForRestore = useBeInteractive();
 	React.useEffect(() => {
 		if (!beInteractiveForTz) return;
 		setTimeZone((prev) => (prev === "UTC" ? detectTimezone() : prev));
@@ -10801,6 +10922,13 @@ function useBookingEngineState(
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: no restore on the canvas / in exports.
 		if (isStaticRender) return;
+		// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): the headless prerender
+		// runs this layout effect. A warm prerender container with visitor
+		// storage (or the legacy-migration flag) would restore a step into
+		// the SERVED HTML — which no visitor's first render can reproduce.
+		// Only real interactive clients may restore; fresh page loads still
+		// get the pre-paint restore in the same pass the gate flips.
+		if (!beInteractiveForRestore) return;
 		// INSTANCE-ISOLATION: the gate is THIS instance's own snapshot — a
 		// non-null entry for our identity proves this mount is a remount of
 		// a live session (rule 74 semantics, now per instance). Another
@@ -11014,7 +11142,7 @@ function useBookingEngineState(
 				console.warn("BookingEngine: failed to purge corrupt saved progress.");
 			}
 		}
-	}, [persistState, isStaticRender, persistenceKey]);
+	}, [persistState, isStaticRender, persistenceKey, beInteractiveForRestore]);
 
 	// Persist on every change while in-progress.
 	// T6-M1 fix: the write used to run synchronously on EVERY keystroke
@@ -11043,6 +11171,13 @@ function useBookingEngineState(
 		if (typeof window === "undefined") return;
 		// F-12-4 fix: never write on the canvas / in exports.
 		if (isStaticRender) return;
+		// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): the headless prerender
+		// runs effects — it must never WRITE visitor storage or clear the
+		// saved session (a warm prerender container would wipe a real
+		// visitor's progress and, worse, seed its own container state into
+		// the served HTML). Real visitors persist from the pass the gate
+		// flips onward — autosave stays always-on (rule 7).
+		if (!beInteractiveForRestore) return;
 		if (flowStatus === "success") {
 			if (persistTimerRef.current !== null) {
 				window.clearTimeout(persistTimerRef.current);
@@ -11139,6 +11274,7 @@ function useBookingEngineState(
 		timeFormat,
 		baseSafeCurrentIndex,
 		isStaticRender,
+		beInteractiveForRestore,
 		persistenceFingerprint,
 	]);
 
@@ -11210,7 +11346,9 @@ function useBookingEngineState(
 		hasCalConfig ? calEventTypeId : "",
 		hasDatetimeStep && reachedDatetimeStep ? visibleMonth : null,
 		timeZone,
-		copy?.availabilityErrorLabel,
+		// COPY-SIMPLIFICATION: no author availability-error control — the
+		// hook falls back to errorCopy.slotsFallbackError internally.
+		undefined,
 		errorCopy,
 		FETCH_TIMEOUT_MS,
 		// W1-02-F26 fix: self-hosted base URL.
@@ -11269,16 +11407,24 @@ function useBookingEngineState(
 	const [availabilityNowMs, setAvailabilityNowMs] = React.useState<
 		number | null
 	>(null);
+	// PRERENDER-DEFER (HYDRATION-GATE-HARDENING): `isStaticRender` is FALSE
+	// on the published-site prerender (real origin, preview target), so the
+	// old isStaticRender-only guard let the headless capture bake a
+	// prerender-time instant into the availability set. Gate on the
+	// interactive client instead; the null initial ("nothing elapsed yet")
+	// is server-identical on both sides.
+	const beInteractiveForNow = useBeInteractive();
 	useIsomorphicLayoutEffect(() => {
 		if (typeof window === "undefined") return;
 		if (isStaticRender) return;
+		if (!beInteractiveForNow) return;
 		setAvailabilityNowMs(Date.now());
 		const id = window.setInterval(
 			() => setAvailabilityNowMs(Date.now()),
 			30000,
 		);
 		return () => window.clearInterval(id);
-	}, [isStaticRender]);
+	}, [isStaticRender, beInteractiveForNow]);
 	const availableDates = React.useMemo(() => {
 		if (!hasCalConfig) return undefined;
 		return buildFutureAwareAvailableDates(slots, timeZone, availabilityNowMs);
@@ -12836,11 +12982,19 @@ export default function BookingEngine(props: BookingEngineProps) {
 		{ ...primaryButtonRole, padding: "10px 18px 10px 18px" },
 		borderRadius,
 	);
+	// ERROR-RETRY-BUTTON: accent-filled primary role — matches the
+	// hardcoded surface it replaces, so unopened groups change nothing.
+	const retryButtonStyle = resolveButtonStyle(
+		blGroups.retryButton,
+		primaryButtonRole,
+		borderRadius,
+	);
 	// BUTTON-INTERACTION: one hover/pressed state per footer button.
 	// Unconditional hooks (the buttons themselves render conditionally).
 	const backIx = useButtonInteraction();
 	const cancelIx = useButtonInteraction();
 	const primaryIx = useButtonInteraction();
+	const retryIx = useButtonInteraction();
 	const animateIx = !prefersReducedMotion;
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
@@ -13056,10 +13210,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					bookAnotherPressed={blGroups.bookAnotherButton?.pressed}
 					animateInteractions={animateIx}
 					timeZone={timeZone}
-					timeZoneLabel={copy.timeZoneLabel}
 					icsSummaryLabel={copy.icsSummaryLabel}
-					dateLabel={copy.dateLabel}
-					timeLabel={copy.timeLabel}
 					googleCalendarLabel={copy.googleCalendarLabel}
 					outlookCalendarLabel={copy.outlookCalendarLabel}
 					// W1-02-F9–F16 fix: confirmation reference + manage link
@@ -13093,19 +13244,18 @@ export default function BookingEngine(props: BookingEngineProps) {
 					textPrimaryColor={theme.textPrimaryColor}
 					textSecondaryColor={theme.textSecondaryColor}
 					surfaceColor={theme.surfaceColor}
-					borderColor={theme.borderColor}
-					borderRadius={borderRadius}
-					accentColor={theme.accentColor}
-					// PRIMARY-FOREGROUND: semantic On-Primary for the accent-
-					// filled retry button.
-					accentForegroundColor={theme.accentForegroundColor}
-					onRetry={handleRetry}
-					errorTitle={copy.errorTitle}
-					errorSubtitle={copy.errorSubtitle}
-					headingFont={headingFont}
-					retryLabel={copy.retryLabel}
-					supportContactLabel={copy.supportContactLabel}
-					supportContactValue={copy.supportContactValue}
+				borderColor={theme.borderColor}
+				borderRadius={borderRadius}
+				onRetry={handleRetry}
+				errorTitle={copy.errorTitle}
+				errorSubtitle={copy.errorSubtitle}
+				headingFont={headingFont}
+				retryLabel={retryLabel}
+				retryStyle={retryButtonStyle}
+				retryHover={blGroups.retryButton?.hover}
+				retryPressed={blGroups.retryButton?.pressed}
+				retryAnimate={animateIx}
+				supportContactValue={copy.supportContactValue}
 				/>
 			</RootShell>
 		);
@@ -13552,6 +13702,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								onTimeFormatChange={handleTimeFormatChange}
 								onJumpToStep={handleJumpToStep}
 								onRetrySlots={slotsRefetch}
+								retryLabel={retryLabel}
 								hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
 								engineWidth={engineWidth}
 								// W1-20-N1 fix: freeze all authored fields during
@@ -13736,7 +13887,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 											: "be-spin 0.8s linear infinite",
 									}}
 								/>
-								{copy.submittingLabel}
+								{DEFAULT_COPY_SUBMITTING_LABEL}
 							</>
 						) : (
 							primaryLabel
@@ -14191,6 +14342,9 @@ interface StepBodyProps {
 	onJumpToStep: (stepIndex: number) => void;
 	/** T10-M8 fix: re-fetch availability from the error banner. */
 	onRetrySlots: () => void;
+	/** ERROR-RETRY-BUTTON: resolved Retry label (Buttons group, legacy
+	 *  Copy fallback) so the slots inline-retry matches the error screen. */
+	retryLabel: string;
 	/** W1-19-N3 fix: container width from the engine's RootShell observer —
 	 *  the form grid collapses to one column below COMPACT_BREAKPOINT
 	 *  regardless of viewport width. */
@@ -14282,6 +14436,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		onTimeFormatChange,
 		onJumpToStep,
 		onRetrySlots,
+		retryLabel,
 		hideDemoWhenUnconfigured,
 		errorCopy,
 		// INSTANCE-ISOLATION (rule 91): hydration-safe per-engine id prefix.
@@ -14432,7 +14587,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 								flexShrink: 0,
 							}}
 						>
-							{copy.retryLabel}
+							{retryLabel}
 						</button>
 					</div>
 				) : null}
@@ -14459,7 +14614,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						aria-live="polite"
 						aria-atomic="true"
 					>
-						{copy.noTimesLabel}
+						{DEFAULT_COPY_NO_TIMES_LABEL}
 					</div>
 				) : null}
 				<div
@@ -14544,7 +14699,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							availableDates={availableDates}
 							slotsLoading={slotsLoading}
 							availabilitySettled={availabilitySettled}
-							loadingLabel={copy.loadingAvailabilityLabel}
+							loadingLabel={DEFAULT_COPY_LOADING_LABEL}
 							onSelectionReady={onSlotReady}
 							onDateChange={onDateChange}
 							onMonthChange={onMonthChange}
@@ -14552,7 +14707,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							timeZone={timeZone}
 							showTimesWithoutDate
 							pickDateToSeeTimesLabel={copy.pickDateToSeeTimesLabel}
-							noTimesFallbackLabel={copy.noTimesFallbackLabel}
+							noTimesFallbackLabel={DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL}
 							timeSlotsAriaLabel={ariaLabels.timeSlots}
 							availableTimesAriaLabel={ariaLabels.availableTimes}
 							datePickerAriaLabel={ariaLabels.datePicker}
@@ -14560,8 +14715,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// a picked slot (validateStep emits pickDateTimeError
 							// otherwise), so the radiogroup is required.
 							required
-							amLabel={copy.amLabel}
-							pmLabel={copy.pmLabel}
+							amLabel={DEFAULT_COPY_AM_LABEL}
+							pmLabel={DEFAULT_COPY_PM_LABEL}
 							previousMonthAriaTemplate={ariaLabels.previousMonthTemplate}
 							nextMonthAriaTemplate={ariaLabels.nextMonthTemplate}
 							// W1-10-N1 fix: engine-level slot error wired to
@@ -14583,8 +14738,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							calEventMetaLoadingAria={copy.calEventMetaLoadingAria}
 							calEventMetaUnavailableCopy={copy.calEventMetaUnavailableCopy}
 							// FINAL-09 fix: localisable duration suffixes.
-							hourSuffix={copy.hourSuffix}
-							minuteSuffix={copy.minuteSuffix}
+							hourSuffix={DEFAULT_COPY_HOUR_SUFFIX}
+							minuteSuffix={DEFAULT_COPY_MINUTE_SUFFIX}
 						/>
 					)}
 				</div>
@@ -15412,14 +15567,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	transitionVariant: TransitionVariantId;
 	baseTransition: Transition;
 	// T3-I3 fix: the timezone the visitor booked in (selected TZ, not
-	// browser TZ) plus the label copy that marks the time as "their" time.
+	// browser TZ). The time is already formatted in that zone, so no
+	// "(your time)" suffix is rendered (COPY-SIMPLIFICATION).
 	timeZone: string;
-	timeZoneLabel: string;
 	// T3-M3 fix: configurable calendar-event summary.
 	icsSummaryLabel: string;
-	// T10-H4 fix: summary row labels for the booked date and time.
-	dateLabel: string;
-	timeLabel: string;
 	// T10-H5 fix: labels of the Google Calendar / Outlook deep-link buttons.
 	googleCalendarLabel: string;
 	outlookCalendarLabel: string;
@@ -15471,10 +15623,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		transitionVariant,
 		baseTransition,
 		timeZone,
-		timeZoneLabel,
 		icsSummaryLabel,
-		dateLabel,
-		timeLabel,
 		googleCalendarLabel,
 		outlookCalendarLabel,
 		confirmationNumberLabel,
@@ -15598,12 +15747,13 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						day: "numeric",
 					}).format(slot.date);
 				}
-				list.push({ label: dateLabel, value: dateStr });
+				list.push({ label: DEFAULT_COPY_DATE_LABEL, value: dateStr });
+			// COPY-SIMPLIFICATION: the slot time renders bare — the visitor
+			// booked in this zone and the value is already zoned, so the
+			// old "(your time)" suffix is gone entirely.
 			list.push({
-				label: timeLabel,
-				value: timeZoneLabel
-					? `${slot.timeLabel} (${timeZoneLabel})`
-					: slot.timeLabel,
+				label: DEFAULT_COPY_TIME_LABEL,
+				value: slot.timeLabel,
 			});
 		}
 		// CC-11 fix: surface the booking reference (the Cal.com booking
@@ -15620,7 +15770,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			});
 		}
 		return list;
-	}, [steps, values, timeZone, dateLabel, timeLabel, timeZoneLabel, bookingResult?.uid, confirmationNumberLabel]);
+	}, [steps, values, timeZone, bookingResult?.uid, confirmationNumberLabel]);
 
 	// T3-M3 fix: the .ics DESCRIPTION carries the collected answers (minus
 	// the internal "Selected Time" section) instead of nothing; the SUMMARY
@@ -16083,17 +16233,20 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	surfaceColor: string;
 	borderColor: string;
 	borderRadius: string | number;
-	accentColor: string;
-	// PRIMARY-FOREGROUND: On-Primary for the accent-filled retry button.
-	accentForegroundColor: string;
 	onRetry: () => void;
 	errorTitle: string;
 	errorSubtitle: string;
 	// Per-surface Heading Font (shared with step + success titles).
 	headingFont?: FramerFont;
 	retryLabel: string;
+	// ERROR-RETRY-BUTTON: resolved surface + Hover/Pressed configs from
+	// the Buttons Retry group (plus the engine's reduced-motion verdict).
+	retryStyle: React.CSSProperties;
+	retryHover?: ButtonInteractionState;
+	retryPressed?: ButtonInteractionState;
+	retryAnimate: boolean;
 	// T3-L3 fix: optional support-contact path (empty value → hidden).
-	supportContactLabel: string;
+	// Label is the fixed internal DEFAULT_COPY_SUPPORT_CONTACT_LABEL.
 	supportContactValue: string;
 }) {
 	const {
@@ -16106,14 +16259,15 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		surfaceColor,
 		borderColor,
 		borderRadius,
-		accentColor,
-		accentForegroundColor,
 		onRetry,
 		errorTitle,
 		errorSubtitle,
 		headingFont,
 		retryLabel,
-		supportContactLabel,
+		retryStyle,
+		retryHover,
+		retryPressed,
+		retryAnimate,
 		supportContactValue,
 	} = props;
 
@@ -16241,26 +16395,27 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					justifyContent: "center",
 				}}
 			>
-				<button
-					type="button"
-					onClick={onRetry}
-					style={{
-						minHeight: TOUCH_TARGET_MIN,
-						padding: "10px 22px",
-						borderRadius: borderRadius,
-						border: "none",
-						background: accentColor,
-						// PRIMARY-FOREGROUND: semantic On-Primary token for the
-						// accent-filled retry button — never a hard-coded white.
-						color: accentForegroundColor,
-						fontFamily: "inherit",
-						fontSize: 14,
-						fontWeight: 600,
-						cursor: "pointer",
-					}}
-				>
-					{retryLabel}
-				</button>
+			<button
+				type="button"
+				onClick={onRetry}
+				{...retryIx.bind}
+				style={{
+					minHeight: TOUCH_TARGET_MIN,
+					// ERROR-RETRY-BUTTON: Retry group's resolved surface +
+					// Hover/Pressed deltas. Unopened groups reproduce the
+					// previous hardcoded accent surface exactly.
+					...applyButtonInteraction(
+						retryStyle,
+						retryHover,
+						retryPressed,
+						retryIx,
+						retryAnimate,
+					),
+					cursor: "pointer",
+				}}
+			>
+				{retryLabel}
+			</button>
 				{/* T3-L3 fix: an escalation path for persistent errors —
                     previously the screen offered Retry and literally nothing
                     else. Rendered only when the author configured contact
@@ -16293,7 +16448,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 							cursor: "pointer",
 						}}
 					>
-						{supportContactLabel}
+						{DEFAULT_COPY_SUPPORT_CONTACT_LABEL}
 					</a>
 				) : null}
 			</div>
@@ -17459,22 +17614,40 @@ addPropertyControls(BookingEngine, {
 					borderColor: FIELD_STYLES_BORDER_COLOR,
 				}),
 			},
-			addToCalendarButton: {
-				type: ControlType.Object,
-				title: "Add to Calendar",
-				buttonTitle: "Add to Calendar",
-				icon: "object",
-				optional: true,
-				controls: makeButtonGroupControls({
-					text: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
-					padding: "10px 18px 10px 18px",
-					borderWidth: 1,
-					// Baked Accent default (#0066BB, same as the Accent
-					// control default) — the live Accent token applies
-					// while untouched; see the factory comment.
-					borderColor: "#0066BB",
-				}),
-			},
+		addToCalendarButton: {
+			type: ControlType.Object,
+			title: "Add to Calendar",
+			buttonTitle: "Add to Calendar",
+			icon: "object",
+			optional: true,
+			controls: makeButtonGroupControls({
+				text: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+				padding: "10px 18px 10px 18px",
+				borderWidth: 1,
+				// Baked Accent default (#0066BB, same as the Accent
+				// control default) — the live Accent token applies
+				// while untouched; see the factory comment.
+				borderColor: "#0066BB",
+			}),
+		},
+		// ERROR-RETRY-BUTTON: the error-screen Retry button. Same group
+		// model as every other button — Text first, then the full style
+		// set with the button's own effective defaults (accent-filled
+		// primary like today's hardcoded surface). Optional: unopened
+		// renders exactly as before.
+		retryButton: {
+			type: ControlType.Object,
+			title: "Retry",
+			buttonTitle: "Retry",
+			icon: "object",
+			optional: true,
+			controls: makeButtonGroupControls({
+				text: DEFAULT_COPY_RETRY_LABEL,
+				padding: "10px 22px 10px 22px",
+				borderWidth: 0,
+				borderColor: FIELD_STYLES_BORDER_COLOR,
+			}),
+		},
 			// HOME-URL-REMOVED: no destination control — "Done" always
 			// navigates to the website root (DEFAULT_CONFIRM_HOME_URL).
 		},
@@ -17686,56 +17859,26 @@ addPropertyControls(BookingEngine, {
 				defaultValue: "Your appointment has been confirmed, Details are below.",
 				displayTextArea: true,
 			},
-			errorTitle: {
-				type: ControlType.String,
-				title: "Error Title",
-				defaultValue: "Booking didn't go through",
-			},
-			errorSubtitle: {
-				type: ControlType.String,
-				title: "Error Subtitle",
-				defaultValue: "Your details are saved — try again in a moment.",
-				displayTextArea: true,
-			},
-			retryLabel: {
-				type: ControlType.String,
-				title: "Retry",
-				defaultValue: "Try again",
-			},
-			loadingAvailabilityLabel: {
-				type: ControlType.String,
-				title: "Loading Availability",
-				defaultValue: "Loading availability…",
-			},
-			noTimesLabel: {
-				type: ControlType.String,
-				title: "No Times",
-				defaultValue:
-					"No available times on the selected date. Try another day.",
-				displayTextArea: true,
-			},
-			submittingLabel: {
-				type: ControlType.String,
-				title: "Submitting",
-				defaultValue: "Submitting…",
-			},
-			supportContactLabel: {
-				type: ControlType.String,
-				title: "Support Contact Label",
-				defaultValue: "Contact support",
-			},
-			supportContactValue: {
-				type: ControlType.String,
-				title: "Support Contact",
-				defaultValue: "",
-				placeholder: "Email, phone, or https://… support link",
-			},
-			timeZoneLabel: {
-				type: ControlType.String,
-				title: "Time Zone Label",
-				defaultValue: "your time",
-			},
-			icsSummaryLabel: {
+		errorTitle: {
+			type: ControlType.String,
+			title: "Error Title",
+			defaultValue: "Something went wrong while processing your booking",
+		},
+		errorSubtitle: {
+			type: ControlType.String,
+			title: "Error Subtitle",
+			defaultValue: "Your details are saved — try again in a moment.",
+			displayTextArea: true,
+		},
+		// COPY-SIMPLIFICATION: loading/no-times/submitting/support-label
+		// are fixed internal strings (DEFAULT_COPY_*) — no controls.
+		supportContactValue: {
+			type: ControlType.String,
+			title: "Support Contact",
+			defaultValue: "",
+			placeholder: "Email, phone, or https://… support link",
+		},
+		icsSummaryLabel: {
 				type: ControlType.String,
 				title: "Calendar Summary",
 				defaultValue: "Appointment",
@@ -17757,27 +17900,16 @@ addPropertyControls(BookingEngine, {
 			},
 			// DEAD CONTROL REMOVAL (rule 8): Detected Time Zone Prefix
 			// had zero runtime reads — same auto-detect rationale.
-			// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
-			// required-fields-hint, saved-answers, save-failed, character-
-			// count and required-marker controls were removed with their
-			// (never-rendered) copy — the component is hard-ruled against
-			// rendering those features, so the controls only promised
-			// output that could never appear. No replacement exists.
-			availabilityErrorLabel: {
-				type: ControlType.String,
-				title: "Availability Error",
-				defaultValue: "Failed to load availability",
-			},
-			dateLabel: {
-				type: ControlType.String,
-				title: "Date",
-				defaultValue: "Date",
-			},
-			timeLabel: {
-				type: ControlType.String,
-				title: "Time",
-				defaultValue: "Time",
-			},
+		// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
+		// required-fields-hint, saved-answers, save-failed, character-
+		// count and required-marker controls were removed with their
+		// (never-rendered) copy — the component is hard-ruled against
+		// rendering those features, so the controls only promised
+		// output that could never appear. No replacement exists.
+		// COPY-SIMPLIFICATION: availability-error/date/time are fixed
+		// internal strings (DEFAULT_COPY_*/slotsFallbackError) — the
+		// Availability Error control duplicated slotsFallbackError
+		// byte-for-byte, so it was removed, not merged.
 			// T10-H5 fix: deep-link button labels on the success screen.
 			googleCalendarLabel: {
 				type: ControlType.String,
@@ -17789,9 +17921,9 @@ addPropertyControls(BookingEngine, {
 				title: "Outlook Button",
 				defaultValue: "Add to Outlook",
 			},
-			// DEAD CONTROL REMOVAL (rules 4/5/7) — see the note above
-			// availabilityErrorLabel: privacyNotice, requiredFieldsHint,
-			// savedAnswersLabel, clearSavedAnswersLabel, saveFailedMessage,
+			// DEAD CONTROL REMOVAL (rules 4/5/7): privacyNotice,
+			// requiredFieldsHint, savedAnswersLabel,
+			// clearSavedAnswersLabel, saveFailedMessage,
 			// characterCountTemplate and requiredFieldMarker are gone;
 			// neither the controls nor their copy remain.
 			// CONFIRM-ACTIONS: the "Done" label moved to the Buttons group
@@ -17820,12 +17952,8 @@ addPropertyControls(BookingEngine, {
 				defaultValue: DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL,
 				displayTextArea: true,
 			},
-			noTimesFallbackLabel: {
-				type: ControlType.String,
-				title: "No Times Fallback",
-				defaultValue: DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL,
-				displayTextArea: true,
-			},
+			// COPY-SIMPLIFICATION: the demo empty-state text is fixed
+			// internal behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL).
 			selectOptionLabel: {
 				type: ControlType.String,
 				title: "Select Placeholder",
@@ -17855,16 +17983,8 @@ addPropertyControls(BookingEngine, {
 				defaultValue: DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
 				displayTextArea: true,
 			},
-			amLabel: {
-				type: ControlType.String,
-				title: "AM Suffix",
-				defaultValue: DEFAULT_COPY_AM_LABEL,
-			},
-			pmLabel: {
-				type: ControlType.String,
-				title: "PM Suffix",
-				defaultValue: DEFAULT_COPY_PM_LABEL,
-			},
+			// COPY-SIMPLIFICATION: AM/PM are fixed structural time-format
+			// tokens (DEFAULT_COPY_AM/PM_LABEL) — no controls.
 			// ICS-INTERNALS-REMOVED (rule 26): Product ID + Summary
 			// Fallback are protocol constants, not configuration — reads
 			// fall back to DEFAULT_COPY_ICS_* (function defaults agree).
@@ -17884,16 +18004,8 @@ addPropertyControls(BookingEngine, {
 				title: "Event Info Unavailable",
 				defaultValue: CAL_META_UNAVAILABLE_COPY,
 			},
-			hourSuffix: {
-				type: ControlType.String,
-				title: "Hour Suffix",
-				defaultValue: DEFAULT_COPY_HOUR_SUFFIX,
-			},
-			minuteSuffix: {
-				type: ControlType.String,
-				title: "Minute Suffix",
-				defaultValue: DEFAULT_COPY_MINUTE_SUFFIX,
-			},
+			// COPY-SIMPLIFICATION: duration units are fixed structural
+			// tokens (DEFAULT_COPY_HOUR/MINUTE_SUFFIX) — no controls.
 			notesSelectedTimeLabel: {
 				type: ControlType.String,
 				title: "Notes Time Section",
