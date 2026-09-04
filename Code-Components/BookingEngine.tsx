@@ -16542,6 +16542,7 @@ addPropertyControls(BookingEngine, {
 				icon: "object",
 				optional: true,
 				description:
+					"Primary action on the LAST step only — its text and style replace Continue's there.",
 				controls: makeButtonGroupControls({
 					text: "Book Now",
 					padding: "10px 22px 10px 22px",
