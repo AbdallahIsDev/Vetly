@@ -17613,24 +17613,11 @@ addPropertyControls(BookingEngine, {
 		icon: "font",
 		buttonTitle: "Font",
 		controls: {
-			font: {
-				type: ControlType.Font,
-				title: "Body Font",
-				controls: "extended",
-				defaultFontType: "sans-serif",
-				defaultValue: {
-					fontSize: "15px",
-					variant: "Regular",
-					letterSpacing: "0em",
-					lineHeight: "1.4em",
-					textAlign: "left",
-				},
-			},
 			// Per-surface heading typography (step + success + error titles).
-			// Body text keeps the control above; buttons keep their per-button
-			// Font rows. Defaults equal the previous hardcoded titles.
-			// Titled "Head Font" (not "Heading Font") so the full label fits
-			// the Framer panel.
+			// Listed first; body text keeps the control below; buttons keep
+			// their per-button Font rows. Defaults equal the previous
+			// hardcoded titles. Titled "Head Font" (not "Heading Font") so
+			// the full label fits the Framer panel.
 			headingFont: {
 				type: ControlType.Font,
 				title: "Head Font",
@@ -17641,6 +17628,19 @@ addPropertyControls(BookingEngine, {
 					variant: "Bold",
 					letterSpacing: "0em",
 					lineHeight: "1.2em",
+					textAlign: "left",
+				},
+			},
+			font: {
+				type: ControlType.Font,
+				title: "Body Font",
+				controls: "extended",
+				defaultFontType: "sans-serif",
+				defaultValue: {
+					fontSize: "15px",
+					variant: "Regular",
+					letterSpacing: "0em",
+					lineHeight: "1.4em",
 					textAlign: "left",
 				},
 			},
