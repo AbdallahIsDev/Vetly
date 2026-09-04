@@ -15904,9 +15904,11 @@ function makeInputFieldStylesControls() {
 		placeholderColor: fieldStylesColorControl("Placeholder"),
 		backgroundColor: fieldStylesColorControl("Background"),
 		border: fieldStylesBorderControl(),
+		// STYLES-ORDER: Focus Border sits directly after Border (it
+		// modifies the border on focus), never after Padding.
+		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
-		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		// HEIGHT-REMOVED: no Height row — field height is hardcoded to
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored

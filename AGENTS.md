@@ -580,7 +580,7 @@ Error stays an independent author control (it drives validation/booking-critical
 
 ### 98. Field Styles submenu order, naming, and font effective defaults (STYLES-PANEL)
 
-**Inside every field's Styles submenu, `Label Font` is listed first and `Font` second; the last numeric row is titled `Gap` (the `spacing` key is unchanged — title only).** Do not reorder them back and do not rename `Gap` to `Spacing`.
+**Inside every field's Styles submenu, `Label Font` is listed first and `Font` second; the last numeric row is titled `Gap` (the `spacing` key is unchanged — title only).** Do not reorder them back and do not rename `Gap` to `Spacing`. In the input set, `Focus Border` sits directly after `Border` (it modifies the border on focus), never after `Padding`.
 
 **There is no Height row in any Styles submenu.** Field height is hardcoded to a `23px` min-height floor at the consumption sites (inputs, textarea, choice options) and grows via Padding only — to make a field taller, authors increase Padding. A `minHeight` stored by an older canvas is still honored as legacy (never silently restyle a saved instance), but no control exposes it. Do not re-add a Height control; do not raise the floor back to the 44px touch target (buttons, calendar cells, and the segmented control keep their own minima — this rule covers form-field/option surfaces only).
 
