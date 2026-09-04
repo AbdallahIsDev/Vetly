@@ -1059,14 +1059,22 @@ const FIXED_ERROR_COLOR = "#DC2626";
 // entered). These constants are the SINGLE source of truth shared by the
 // resolvers below and the control factories (one reusable mechanism, not
 // per-field hacks).
-const FIELD_STYLES_INPUT_PADDING = "10px 14px";
-const FIELD_STYLES_SELECT_PADDING = "10px 14px";
-const FIELD_STYLES_CARDS_PADDING = "10px 8px";
-const FIELD_STYLES_CARDS_COMPACT_PADDING = "10px 6px";
-const FIELD_STYLES_PILLS_PADDING = "10px 12px";
-const FIELD_STYLES_PILLS_COMPACT_PADDING = "10px 10px";
-const FIELD_STYLES_SEGMENTED_PADDING = "11px 10px";
-const FIELD_STYLES_SEGMENTED_COMPACT_PADDING = "10px 6px";
+// PADDING-FOUR-VALUE fix: the geometry above is the historical two-value
+// shorthand written out longhand (top right bottom left — identical box).
+// Framer's Padding control drops two-value defaultValues to 0 on
+// activation (single-value Radius and Number defaults materialize fine),
+// so a text field snapped 10/14 → 0 the moment Styles was enabled. The
+// four-value form materializes correctly; the runtime parsers
+// (paddingHorizontalFrom/paddingAxesFrom) read parts[0]/parts[1], which
+// are unchanged, so unconfigured rendering is byte-identical.
+const FIELD_STYLES_INPUT_PADDING = "10px 14px 10px 14px";
+const FIELD_STYLES_SELECT_PADDING = "10px 14px 10px 14px";
+const FIELD_STYLES_CARDS_PADDING = "10px 8px 10px 8px";
+const FIELD_STYLES_CARDS_COMPACT_PADDING = "10px 6px 10px 6px";
+const FIELD_STYLES_PILLS_PADDING = "10px 12px 10px 12px";
+const FIELD_STYLES_PILLS_COMPACT_PADDING = "10px 10px 10px 10px";
+const FIELD_STYLES_SEGMENTED_PADDING = "11px 10px 11px 10px";
+const FIELD_STYLES_SEGMENTED_COMPACT_PADDING = "10px 6px 10px 6px";
 const FIELD_STYLES_SPACING = 6;
 const FIELD_STYLES_CHECK_SIZE = 18;
 // Matches the shipped shared Radius default (rule 60) and the authored
