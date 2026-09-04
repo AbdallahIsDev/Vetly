@@ -501,28 +501,12 @@ const DEFAULT_COPY_TIME_SLOT_SELECTED_TEMPLATE = "{time} selected";
 const DEFAULT_DEMO_START_TIME = "09:00";
 const DEFAULT_DEMO_END_TIME = "17:00";
 const DEFAULT_DEMO_INTERVAL = 30;
-// SYN-02 fix: persistence-disclosure strings (rendered when persistState is
-// ON) now live behind the copy panel instead of inline JSX literals.
-const DEFAULT_COPY_SAVED_ANSWERS_LABEL = "Answers are saved in this browser.";
-const DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL = "Clear my saved answers";
-const DEFAULT_COPY_SAVE_FAILED_MESSAGE =
-	"Progress couldn't be saved to this browser (storage full). Your answers this session are unaffected.";
-// W1-12-NEW-4 fix: when persistState is ON the disclosure must never go
-// blank — an author can empty the `privacyNotice` control and create a
-// fresh-mount consent gap. This fallback keeps a disclosure on record
-// whenever storage is active and the author text is empty.
-const DEFAULT_COPY_PRIVACY_NOTICE =
-	"Your progress is saved in this browser tab so you can return later.";
 // W1-02-F4 fix: sr-only step announcement — was a hardcoded
 // "{counter}, {percent}% complete — {title}" that diverged from the
 // localized visible progress label. Placeholders: {counter}, {percent},
 // {title}.
 const DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE =
 	"{counter}, {percent}% complete — {title}";
-// W1-02-F6 fix: character-counter format ({current}/{max}).
-const DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE = "{current}/{max}";
-// W1-02-F7 fix: required-field marker (some designs prefer "(required)").
-const DEFAULT_COPY_REQUIRED_FIELD_MARKER = "*";
 // W1-02-F5 fix: the success-screen "Done" link and the font-stack fallback
 // were inline literals; now shared constants the schema and runtime share.
 const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
@@ -6082,8 +6066,6 @@ interface BookingEngineCopyProps {
 		retryLabel: string;
 		loadingAvailabilityLabel: string;
 		noTimesLabel: string;
-		emptyReviewLabel: string;
-		reviewIntroLabel: string;
 		submittingLabel: string;
 		// T3-L3 fix: optional support-contact path on the error screen -
 		// empty value hides the link, so existing instances are unaffected.
@@ -6099,12 +6081,10 @@ interface BookingEngineCopyProps {
 		// exposed too. The PropertyControl defaults are the single source
 		// (W1-02-F24 — no in-component `||` fallbacks left to drift).
 		stepCounterTemplate: string;
-		timeZoneSelectLabel: string;
 		// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 		timeFormatLabel: string;
 		// W1-10-N4 fix: live-region template for slot picks ("{time} selected").
 		timeSlotSelectedTemplate: string;
-		detectedTimeZonePrefix: string;
 		availabilityErrorLabel: string;
 		dateLabel: string;
 		timeLabel: string;
@@ -6112,18 +6092,6 @@ interface BookingEngineCopyProps {
 		// screen, alongside the .ics download.
 		googleCalendarLabel: string;
 		outlookCalendarLabel: string;
-		// T10-M2 fix: optional privacy note rendered under the form when PII
-		// fields are present. Empty value hides the notice entirely.
-		privacyNotice: string;
-		// T10-L1 fix: explanation of the required-field marker. Rendered
-		// whenever at least one field in the flow is required.
-		requiredFieldsHint: string;
-		// SYN-02 fix: GDPR/CCPA persistence disclosures — previously inline
-		// JSX literals, so they could not be localized. Rendered whenever
-		// persistState is ON / a save failed.
-		savedAnswersLabel: string;
-		clearSavedAnswersLabel: string;
-		saveFailedMessage: string;
 		// W1-02-F9–F23 fix (bundle 14): confirmation/manage-link labels,
 		// empty-state copy, AM/PM suffixes, .ics PRODID/SUMMARY, notes
 		// section headers, error fallbacks and the demo-grid times.
@@ -6137,8 +6105,6 @@ interface BookingEngineCopyProps {
 		// W1-02-F4/F6/F7 fix: announcement template + counter format +
 		// required marker are now copy-driven (see constants).
 		stepAnnouncementTemplate: string;
-		characterCountTemplate: string;
-		requiredFieldMarker: string;
 		unknownErrorLabel: string;
 		errorFallbackMessage: string;
 		amLabel: string;
@@ -7001,12 +6967,8 @@ function validateStep(
 		const valid = Object.values(errors).every((error) => error === null);
 		return { valid, errors };
 	}
-	// Review step removed: never reached (filtered in normalizeSteps). Keep
-	// guard for any in-memory review that slipped through, but it will not be
-	// authored anymore.
-	if ((step.stepType as string) === "review") {
-		return { valid: true, errors: {} };
-	}
+	// ReviewStepBody removed (rule 75): persisted "review" steps are dropped
+	// by the normalizeSteps filter above, so validateStep can never see one.
 	const errors: Record<string, string | null> = {};
 	for (const field of step.fields) {
 		errors[field.id] = validateField(field, values[field.id], validationCopy);
@@ -14034,226 +13996,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 }, areStepBodyPropsEqual);
 
 // =============================================================================
-// ReviewStepBody — auto-summarizes prior steps
-// =============================================================================
-
-const ReviewStepBody = React.memo(function ReviewStepBody(props: {
-	step: NormalizedStep;
-	steps: NormalizedStep[];
-	values: BookingValues;
-	theme: StepBodyProps["theme"];
-	borderRadius: string | number;
-	copy: BookingEngineProps["copy"];
-	// T10-H1 fix: Edit link per entry jumps straight back to the step that
-	// owns the field/slot, instead of forcing Back-Back-Back.
-	onJumpToStep?: (stepIndex: number) => void;
-	// W1-07-F7 fix: the slot instant is formatted in the visitor's zone
-	// (same zone the calendar displayed), so the review date can't drift
-	// from what the visitor clicked.
-	timeZone?: string;
-}) {
-	const { steps, values, theme, borderRadius, copy, onJumpToStep, timeZone } =
-		props;
-	// Fix #2: derive labels from field metadata across ALL form steps, not
-	// from the raw `values` keys (which are normalized IDs like "step-0-field-0").
-	// FINAL-66 fix: memoized — the steps × fields sweep previously re-ran on
-	// every render of the review step.
-	const entries: Array<{
-		id?: string;
-		label: string;
-		value: string;
-		stepIndex: number;
-	}> = React.useMemo(() => {
-		const list: Array<{
-			id?: string;
-			label: string;
-			value: string;
-			stepIndex: number;
-		}> = [];
-		let datetimeStepIndex = -1;
-		steps.forEach((stepEntry, stepIdx) => {
-			if (stepEntry.stepType !== "form" && stepEntry.stepType !== "datetime")
-				return;
-			if (stepEntry.stepType === "datetime" && datetimeStepIndex === -1) {
-				datetimeStepIndex = stepIdx;
-			}
-			for (const field of stepEntry.fields) {
-				const value = values[field.id];
-				if (value === undefined || value === "") continue;
-				list.push({
-					id: field.id,
-					label: field.label,
-					value: String(value),
-					stepIndex: stepIdx,
-				});
-			}
-		});
-		if (values[SELECTED_SLOT_KEY]) {
-			const slot = values[SELECTED_SLOT_KEY];
-			// W1-07-F7 fix: `slot.date` is the calendar CELL's browser-local
-			// midnight — formatting it in the visitor's zone showed a date that
-			// could disagree with the clicked cell (≥12h tz drift) and the ICS
-			// filename. A real Cal.com slot carries its actual UTC instant in
-			// `time24h`; derive the label from that instant instead, falling
-			// back to `slot.date` only for demo mode (minute-steps grid, no
-			// "T" in the value). Formatted in the zone the calendar displayed.
-			const fmtOpts: Intl.DateTimeFormatOptions = {
-				weekday: "long",
-				year: "numeric",
-				month: "long",
-				day: "numeric",
-			};
-			const tzOpts = timeZone ? { timeZone } : undefined;
-			let dateStr: string;
-			try {
-				const slotDate = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-					? new Date(slot.time24h)
-					: slot.date;
-				dateStr = slotDate.toLocaleDateString(pageLocale(), {
-					...fmtOpts,
-					...tzOpts,
-				});
-			} catch {
-				dateStr = slot.date.toLocaleDateString(pageLocale(), fmtOpts);
-			}
-			// T10-H4 fix: "Date"/"Time" row labels come from copy. W1-02-F24:
-			// the in-component `||` fallbacks were removed (they duplicated the
-			// copy panel's own defaults).
-			list.push({
-				label: copy.dateLabel,
-				value: dateStr,
-				stepIndex: datetimeStepIndex,
-			});
-			list.push({
-				label: copy.timeLabel,
-				value: slot.timeLabel,
-				stepIndex: datetimeStepIndex,
-			});
-		}
-		return list;
-	}, [steps, values, copy.dateLabel, copy.timeLabel, timeZone]);
-
-	return (
-		<div>
-			<div
-				style={{
-					fontSize: 14,
-					color: theme.textSecondaryColor,
-					marginBottom: 12,
-					lineHeight: 1.5,
-				}}
-			>
-				{copy.reviewIntroLabel}
-			</div>
-			<div
-				style={{
-					borderRadius: borderRadius,
-					border: `1px solid ${theme.borderColor}`,
-					background: theme.surfaceColor,
-					overflow: "hidden",
-				}}
-			>
-				{entries.length === 0 ? (
-					<div
-						style={{
-							padding: 16,
-							color: theme.textSecondaryColor,
-							fontSize: 13,
-						}}
-					>
-						{copy.emptyReviewLabel}
-					</div>
-				) : (
-					entries.map((entry, idx) => (
-						<div
-							key={entry.id || entry.label + idx}
-							style={{
-								display: "flex",
-								justifyContent: "space-between",
-								alignItems: "center",
-								padding: "12px 16px",
-								borderBottom:
-									idx < entries.length - 1
-										? `1px solid ${theme.borderColor}`
-										: "none",
-								fontSize: 14,
-							}}
-						>
-							<span
-								style={{
-									color: theme.textSecondaryColor,
-									marginRight: 12,
-								}}
-							>
-								{entry.label}
-							</span>
-							<span
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 8,
-								}}
-							>
-								<span
-									style={{
-										color: theme.textPrimaryColor,
-										fontWeight: 500,
-										textAlign: "right",
-										maxWidth: "60%",
-										wordBreak: "break-word",
-									}}
-								>
-									{entry.value}
-								</span>
-								{/* T10-H1 fix: jump straight back to the step
-                                    that produced this entry. */}
-								{onJumpToStep && entry.stepIndex >= 0 ? (
-									<button
-										type="button"
-										onClick={() => onJumpToStep(entry.stepIndex)}
-										// W1-10-A8 fix: a bare "Edit" repeats
-										// identically on every row — screen
-										// reader users can't tell which row a
-										// button belongs to. Name it with the
-										// row it edits.
-										aria-label={
-											entry.label
-												? `${copy.editLabel}: ${entry.label}`
-												: copy.editLabel
-										}
-										style={{
-											border: "none",
-											background: "none",
-											padding: 0,
-											// W1-19-F-03 fix: the Edit link
-											// was a ~40×16 text blob — under
-											// the 44×44px touch-target
-											// minimum. The hit area is grown
-											// to 44×44 while the label keeps
-											// its small type.
-											minWidth: 44,
-											minHeight: 44,
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											color: theme.accentColor,
-											fontSize: 12,
-											fontWeight: 500,
-											cursor: "pointer",
-											fontFamily: "inherit",
-										}}
-									>
-										{copy.editLabel}
-									</button>
-								) : null}
-							</span>
-						</div>
-					))
-				)}
-			</div>
-		</div>
-	);
-});
 
 // =============================================================================
 // FieldRenderer — switch on field.type
@@ -16693,20 +16435,6 @@ addPropertyControls(BookingEngine, {
 					"No available times on the selected date. Try another day.",
 				displayTextArea: true,
 			},
-			emptyReviewLabel: {
-				type: ControlType.String,
-				title: "Empty Review",
-				defaultValue:
-					"Nothing to review yet — go back and fill in the previous steps.",
-				displayTextArea: true,
-			},
-			reviewIntroLabel: {
-				type: ControlType.String,
-				title: "Review Intro",
-				defaultValue:
-					"Please review your details before confirming. Use the Back button to edit any previous step.",
-				displayTextArea: true,
-			},
 			submittingLabel: {
 				type: ControlType.String,
 				title: "Submitting",
@@ -16762,6 +16490,12 @@ addPropertyControls(BookingEngine, {
 				title: "Detected Time Zone Prefix",
 				defaultValue: "Detected: ",
 			},
+			// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
+			// required-fields-hint, saved-answers, save-failed, character-
+			// count and required-marker controls were removed with their
+			// (never-rendered) copy — the component is hard-ruled against
+			// rendering those features, so the controls only promised
+			// output that could never appear. No replacement exists.
 			availabilityErrorLabel: {
 				type: ControlType.String,
 				title: "Availability Error",
@@ -16788,42 +16522,11 @@ addPropertyControls(BookingEngine, {
 				title: "Outlook Button",
 				defaultValue: "Add to Outlook",
 			},
-			// T10-M2 fix: optional privacy note under the form. Empty hides it.
-			// W2-31-A-31-2 fix: ship with a disclosure default that actually
-			// explains the opt-in behavior, instead of an empty string that
-			// undermined the F-12-2 consent flow. Authors can edit or remove.
-			privacyNotice: {
-				type: ControlType.String,
-				title: "Privacy Notice",
-				defaultValue:
-					"Your answers are saved in this browser so you can continue later. Cleared when you finish or press “Clear my saved answers”.",
-				placeholder: "e.g. Your details are only used to arrange this booking.",
-				displayTextArea: true,
-			},
-			// T10-L1 fix: explanation of the required-field asterisk.
-			requiredFieldsHint: {
-				type: ControlType.String,
-				title: "Required Fields Hint",
-				defaultValue: "Fields marked * are required",
-			},
-			// SYN-02 fix: persistence disclosures rendered when persistState
-			// is ON (saved-progress row) or a save failed (storage quota).
-			savedAnswersLabel: {
-				type: ControlType.String,
-				title: "Saved Answers Note",
-				defaultValue: DEFAULT_COPY_SAVED_ANSWERS_LABEL,
-			},
-			clearSavedAnswersLabel: {
-				type: ControlType.String,
-				title: "Clear Saved Answers",
-				defaultValue: DEFAULT_COPY_CLEAR_SAVED_ANSWERS_LABEL,
-			},
-			saveFailedMessage: {
-				type: ControlType.String,
-				title: "Save Failed Message",
-				defaultValue: DEFAULT_COPY_SAVE_FAILED_MESSAGE,
-				displayTextArea: true,
-			},
+			// DEAD CONTROL REMOVAL (rules 4/5/7) — see the note above
+			// availabilityErrorLabel: privacyNotice, requiredFieldsHint,
+			// savedAnswersLabel, clearSavedAnswersLabel, saveFailedMessage,
+			// characterCountTemplate and requiredFieldMarker are gone;
+			// neither the controls nor their copy remain.
 			// CONFIRM-ACTIONS: the "Done" label moved to the Buttons group
 			// (doneLabel) together with Home URL — see the Buttons group.
 			// W1-02-F9–F23 fix (bundle 14): the remaining visitor-facing
@@ -16873,16 +16576,6 @@ addPropertyControls(BookingEngine, {
 				title: "Step Announcement Template",
 				defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
 				displayTextArea: true,
-			},
-			characterCountTemplate: {
-				type: ControlType.String,
-				title: "Character Count Format",
-				defaultValue: DEFAULT_COPY_CHARACTER_COUNT_TEMPLATE,
-			},
-			requiredFieldMarker: {
-				type: ControlType.String,
-				title: "Required Field Marker",
-				defaultValue: DEFAULT_COPY_REQUIRED_FIELD_MARKER,
 			},
 			unknownErrorLabel: {
 				type: ControlType.String,
