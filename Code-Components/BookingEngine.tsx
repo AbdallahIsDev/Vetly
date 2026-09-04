@@ -8441,7 +8441,9 @@ async function submitCalcomBooking(params: {
 	name: string;
 	email: string;
 	timeZone: string;
-	notes: string;
+	// BODY-SCHEMA fix: no `notes` param — top-level notes are rejected
+	// by the bookings schema (the ICS description still uses
+	// buildNotesPayload directly).
 	// T3-H2 fix: same key must be reused across retries of one submission.
 	idempotencyKey?: string;
 	// T3-M8 fix: author-mapped custom field values.
@@ -8467,7 +8469,6 @@ async function submitCalcomBooking(params: {
 		name,
 		email,
 		timeZone,
-		notes,
 		idempotencyKey,
 		bookingFieldsResponses,
 		externalSignal,
@@ -8547,7 +8548,6 @@ async function submitCalcomBooking(params: {
 			slotEnd && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slotEnd),
 		),
 		attendeeKeys: ["name", "email", "timeZone", "language"],
-		hasNotes: Boolean(notes),
 		bookingFieldsResponseKeys: bookingFieldsResponses
 			? Object.keys(bookingFieldsResponses)
 			: [],
@@ -8560,10 +8560,9 @@ async function submitCalcomBooking(params: {
 		payloadKeys: Object.keys({
 			eventTypeId: 1,
 			start: 1,
-			end: payloadPreview.hasEnd ? 1 : 0,
+			lengthInMinutes: payloadPreview.hasEnd ? 1 : 0,
 			attendee: 1,
 			metadata: 1,
-			notes: 1,
 			...(payloadPreview.bookingFieldsResponseKeys.length
 				? { bookingFieldsResponses: 1 }
 				: {}),
@@ -8593,12 +8592,25 @@ async function submitCalcomBooking(params: {
 			body: JSON.stringify({
 				eventTypeId: parsedEventTypeId,
 				start: slotStart,
-				// W1-06-F-06-1 fix: thread the slot `end` into the POST body.
-				// Guarded like `start` so a malformed/demo-grid end never
-				// reaches the API.
-				...(slotEnd && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slotEnd)
-					? { end: slotEnd }
-					: {}),
+				// BODY-SCHEMA fix: the 2024-08-13 bookings schema has NO
+				// top-level `end` (rejected: "should not exist") — duration
+				// travels as `lengthInMinutes` derived from the slot's own
+				// end, falling back to the event default when absent.
+				...(() => {
+					if (
+						!slotEnd ||
+						!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slotEnd)
+					) {
+						return {};
+					}
+					const mins = Math.round(
+						(new Date(slotEnd).getTime() - new Date(slotStart).getTime()) /
+							60000,
+					);
+					return Number.isFinite(mins) && mins >= 1
+						? { lengthInMinutes: mins }
+						: {};
+				})(),
 				attendee: {
 					name,
 					email,
@@ -8613,8 +8625,11 @@ async function submitCalcomBooking(params: {
 							navigator.language?.slice(0, 2)) ||
 						"en",
 				},
+				// BODY-SCHEMA fix: no top-level `notes` (rejected: "should
+				// not exist"). Answers already travel structured (attendee
+				// + bookingFieldsResponses); the human-readable notes still
+				// feed the .ics DESCRIPTION via buildNotesPayload.
 				metadata: {},
-				notes,
 				...(bookingFieldsResponses && Object.keys(bookingFieldsResponses).length
 					? { bookingFieldsResponses }
 					: {}),
@@ -11389,16 +11404,9 @@ function useBookingEngineState(
 		// no longer rebuilds on every keystroke.
 		const name = String(valuesRef.current[nameField.id] || "");
 		const email = String(valuesRef.current[emailField.id] || "");
-		const notes = buildNotesPayload(
-			activeSteps,
-			valuesRef.current,
-			copy.notesSelectedTimeLabel,
-			copy.notesDatePrefix,
-			copy.notesTimePrefix,
-			// W1-07-N1 fix: notes date string is formatted in the
-			// visitor's chosen zone like the on-screen labels.
-			timeZone,
-		);
+		// BODY-SCHEMA fix: no `notes` built for the POST (top-level notes
+		// are schema-rejected; the ICS description builds its own via
+		// buildNotesPayload at its render site).
 		const bookingFieldsResponses = buildBookingFieldsResponses(
 			activeSteps,
 			valuesRef.current,
@@ -11439,13 +11447,13 @@ function useBookingEngineState(
 			apiKey: calApiKey,
 			eventTypeId: calEventTypeId,
 			slotStart: slot.time24h,
-			// W1-06-F-06-1 fix: real Cal.com slots carry an `end` ISO string
-			// captured at selection time — required by Cal.com v2 /bookings.
+			// Duration travels as lengthInMinutes (derived from the slot
+			// end inside submitCalcomBooking) — there is no top-level
+			// `end` in the bookings schema.
 			slotEnd: slot.end,
 			name,
 			email,
 			timeZone,
-			notes,
 			bookingFieldsResponses,
 			idempotencyKey: idempotencyKeyRef.current,
 			externalSignal: abortControllerRef.current.signal,
