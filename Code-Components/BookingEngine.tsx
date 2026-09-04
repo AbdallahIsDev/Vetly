@@ -682,13 +682,18 @@ function isSameDay(a: Date | null, b: Date | null): boolean {
 // so the map stays small (~1–4 KB) with no eviction needed.
 const dtfCache = new Map<string, Intl.DateTimeFormat>();
 function getCachedDateTimeFormat(
-	locale: string,
+	locale: string | undefined,
 	options: Intl.DateTimeFormatOptions,
 ): Intl.DateTimeFormat {
-	const key = `${locale}|${JSON.stringify(options)}`;
+	// `undefined` locale = runtime default (identical to passing
+	// undefined straight into toLocaleDateString) — keyed as "".
+	const key = `${locale ?? ""}|${JSON.stringify(options)}`;
 	let dtf = dtfCache.get(key);
 	if (!dtf) {
-		dtf = new Intl.DateTimeFormat(locale, options);
+		// DTFCAP: bound like PARSE_COLOR_CACHE — shapes are few in
+		// practice, but never grow without limit.
+		if (dtfCache.size >= 50) dtfCache.clear();
+		dtf = new Intl.DateTimeFormat(locale ?? undefined, options);
 		dtfCache.set(key, dtf);
 	}
 	return dtf;
@@ -830,8 +835,8 @@ function getAdjacentMonthAbbreviation(
 	}
 	const prev = i >= 0 ? cells[i] : undefined;
 	if (prev && prev.getMonth() === date.getMonth()) return null;
-	return date
-		.toLocaleDateString(pageLocale(), { month: "short" })
+	return getCachedDateTimeFormat(pageLocale(), { month: "short" })
+		.format(date)
 		.toUpperCase();
 }
 
@@ -1464,7 +1469,9 @@ function buildWeekdayLabels(firstDayOfWeek: number): string[] {
 	for (let i = 0; i < 7; i++) {
 		const d = new Date(base);
 		d.setDate(base.getDate() + ((firstDayOfWeek + i) % 7));
-		labels.push(d.toLocaleDateString(pageLocale(), { weekday: "short" }));
+		labels.push(
+			getCachedDateTimeFormat(pageLocale(), { weekday: "short" }).format(d),
+		);
 	}
 	return labels;
 }
@@ -2458,7 +2465,7 @@ const CalendarCell = React.memo(function CalendarCell({
 				// .focus() directly on what they query.
 				data-be-active-date={!isUnavailable && isActive ? "true" : undefined}
 				aria-label={
-					date.toLocaleDateString(locale, {
+					getCachedDateTimeFormat(locale, {
 						weekday: "long",
 						year: "numeric",
 						month: "long",
@@ -2468,7 +2475,7 @@ const CalendarCell = React.memo(function CalendarCell({
 						// slots the cell shows. Invalid tz strings are already
 						// filtered by isValidTimeZone (browser-local fallback).
 						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-					}) + (isToday ? " (Today)" : "")
+					}).format(date) + (isToday ? " (Today)" : "")
 				}
 				onMouseEnter={() => {
 					if (!isUnavailable) React.startTransition(() => onHoverChange(dateKey));
@@ -2647,10 +2654,10 @@ const CalendarCell = React.memo(function CalendarCell({
 							zIndex: 10,
 						}}
 					>
-						{date.toLocaleDateString(locale, {
+						{getCachedDateTimeFormat(locale, {
 							month: "long",
 							...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-						})}
+						}).format(date)}
 					</span>
 				) : null}
 			</button>
@@ -3478,12 +3485,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 			selectedDate
 				? // TZ-HEADER fix: SR date in the visitor zone too (was
 					// browser-local, drifting a day near midnight).
-					selectedDate.toLocaleDateString(pageLocale(), {
+					getCachedDateTimeFormat(pageLocale(), {
 						weekday: "short",
 						month: "short",
 						day: "numeric",
 						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-					})
+					}).format(selectedDate)
 				: "",
 		[selectedDate, timeZone],
 	);
@@ -3559,10 +3566,10 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						const tzOpt = isValidTimeZone(timeZone)
 							? { timeZone }
 							: undefined;
-						const w = d.toLocaleDateString(pageLocale(), {
+						const w = getCachedDateTimeFormat(pageLocale(), {
 							weekday: "short",
 							...tzOpt,
-						});
+						}).format(d);
 						return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
 					})()}
 					<span
@@ -4000,11 +4007,13 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	const monthName = React.useMemo(() => {
 		const m = Number(visibleMonthKey.slice(5, 7));
 		if (!Number.isFinite(m) || m < 1 || m > 12) {
-			return visibleMonth.toLocaleDateString(pageLocale(), { month: "long" });
+			return getCachedDateTimeFormat(pageLocale(), { month: "long" }).format(
+				visibleMonth,
+			);
 		}
-		return new Date(2000, m - 1, 1).toLocaleDateString(pageLocale(), {
-			month: "long",
-		});
+		return getCachedDateTimeFormat(pageLocale(), { month: "long" }).format(
+			new Date(2000, m - 1, 1),
+		);
 	}, [visibleMonthKey, visibleMonth]);
 	const yearLabel = React.useMemo(() => {
 		const y = Number(visibleMonthKey.slice(0, 4));
@@ -4235,10 +4244,10 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 			visibleMonth.getMonth() - 1,
 			1,
 		);
-		return d.toLocaleDateString(pageLocale(), {
+		return getCachedDateTimeFormat(pageLocale(), {
 			month: "long",
 			year: "numeric",
-		});
+		}).format(d);
 	}, [visibleMonth]);
 	const nextMonthLabel = React.useMemo(() => {
 		const d = new Date(
@@ -4246,10 +4255,10 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 			visibleMonth.getMonth() + 1,
 			1,
 		);
-		return d.toLocaleDateString(pageLocale(), {
+		return getCachedDateTimeFormat(pageLocale(), {
 			month: "long",
 			year: "numeric",
-		});
+		}).format(d);
 	}, [visibleMonth]);
 
 	// CAL-CALENDAR-STABILITY: the exposed setter marks a child-initiated
@@ -9190,8 +9199,10 @@ function replaceCopyTokens(
 	};
 	const date = slot
 		? /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-			? new Date(slot.time24h).toLocaleDateString(pageLocale(), dateOpts)
-			: slot.date.toLocaleDateString(pageLocale(), dateOpts)
+			? getCachedDateTimeFormat(pageLocale(), dateOpts).format(
+					new Date(slot.time24h),
+				)
+			: getCachedDateTimeFormat(pageLocale(), dateOpts).format(slot.date)
 		: "";
 	return text.replace(/\{name\}/g, name).replace(/\{date\}/g, date);
 }
@@ -9329,8 +9340,10 @@ function buildNotesPayload(
 			...tzOpts,
 		};
 		const dateStr = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-			? new Date(slot.time24h).toLocaleDateString(pageLocale(), dateOpts)
-			: slot.date.toLocaleDateString(pageLocale(), dateOpts);
+			? getCachedDateTimeFormat(pageLocale(), dateOpts).format(
+					new Date(slot.time24h),
+				)
+			: getCachedDateTimeFormat(pageLocale(), dateOpts).format(slot.date);
 		lines.push(selectedTimeLabel);
 		lines.push(`${datePrefix}${dateStr}`);
 		lines.push(`${timePrefix}${slot.timeLabel}`);
@@ -15102,20 +15115,20 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					const slotDate = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
 						? new Date(slot.time24h)
 						: slot.date;
-					dateStr = slotDate.toLocaleDateString(pageLocale(), {
+					dateStr = getCachedDateTimeFormat(pageLocale(), {
 						weekday: "long",
 						year: "numeric",
 						month: "long",
 						day: "numeric",
 						...tzOpts,
-					});
+					}).format(slotDate);
 				} catch {
-					dateStr = slot.date.toLocaleDateString(pageLocale(), {
+					dateStr = getCachedDateTimeFormat(pageLocale(), {
 						weekday: "long",
 						year: "numeric",
 						month: "long",
 						day: "numeric",
-					});
+					}).format(slot.date);
 				}
 				list.push({ label: dateLabel, value: dateStr });
 			list.push({
