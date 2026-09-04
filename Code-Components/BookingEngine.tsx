@@ -3412,13 +3412,16 @@ const TimeSlotList = React.memo(function TimeSlotList(
 	const slotDateLabel = React.useMemo(
 		() =>
 			selectedDate
-				? selectedDate.toLocaleDateString(pageLocale(), {
-					weekday: "short",
-					month: "short",
-					day: "numeric",
-				})
+				? // TZ-HEADER fix: SR date in the visitor zone too (was
+					// browser-local, drifting a day near midnight).
+					selectedDate.toLocaleDateString(pageLocale(), {
+						weekday: "short",
+						month: "short",
+						day: "numeric",
+						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+					})
 				: "",
-		[selectedDate],
+		[selectedDate, timeZone],
 	);
 	React.useEffect(() => {
 		const prefix = "time-";
@@ -3483,10 +3486,19 @@ const TimeSlotList = React.memo(function TimeSlotList(
 					}}
 				>
 					{(() => {
-						const w = (selectedDate ?? fallbackDate).toLocaleDateString(
-							pageLocale(),
-							{ weekday: "short" },
-						);
+						// TZ-HEADER fix: weekday AND day number derive from
+						// the same visitor-tz date key the slots are bucketed
+						// under (getDateKeyInTimeZone) — the old browser-local
+						// getDate()/weekday named the wrong day near midnight
+						// whenever the zone offset pushed the date over.
+						const d = selectedDate ?? fallbackDate;
+						const tzOpt = isValidTimeZone(timeZone)
+							? { timeZone }
+							: undefined;
+						const w = d.toLocaleDateString(pageLocale(), {
+							weekday: "short",
+							...tzOpt,
+						});
 						return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
 					})()}
 					<span
@@ -3497,9 +3509,21 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							color: mutedText,
 						}}
 					>
-						{(selectedDate ?? fallbackDate).getDate()}
+						{Number(
+						getDateKeyInTimeZone(
+							selectedDate ?? fallbackDate,
+							timeZone || "",
+						).slice(-2),
+					)}
 						{(() => {
-							const d = (selectedDate ?? fallbackDate).getDate();
+							// TZ-HEADER fix (ordinal): same visitor-tz day
+							// number as above — never browser-local getDate().
+							const d = Number(
+								getDateKeyInTimeZone(
+									selectedDate ?? fallbackDate,
+									timeZone || "",
+								).slice(-2),
+							);
 							if (d >= 11 && d <= 13) return "th";
 							switch (d % 10) {
 								case 1:
@@ -5208,6 +5232,42 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		}
 	}, [clockReady, today, hasKnownAvailability, firstAvailableDateFromToday, availableDates, slotsLoading, visibleMonth, setVisibleMonth, onDateChange]);
 
+	// STALE-SELECTION fix: a picked date can go invalid mid-session — the
+	// 30s midnight poll rolls `today` past it, or the availability fetch
+	// resolves tighter than at pick time. The click guard above only
+	// blocks NEW picks; without this the grid kept an accent-filled
+	// DISABLED cell and the time panel kept the old day's slots. Re-run
+	// the rule-84 default (today-if-available else first future, else
+	// nothing) whenever the current selection is past or has no
+	// availability. Deterministic derivation from [today, availableDates]
+	// — not a timing hack: gated on the default effect's first decision
+	// (placeholderSelectedRef), a settled fetch, and Cal.com mode (demo
+	// has no availability set, past-dates still clear). Clearing both
+	// halves reuses the onSelectionReady(incomplete) contract below, so
+	// the parent drops the stale slot exactly like a fresh visit.
+	useIsomorphicLayoutEffect(() => {
+		if (!clockReady) return;
+		if (placeholderSelectedRef.current) return;
+		if (!selectedDate) return;
+		const isCalcom = availableDates !== undefined;
+		const isLoading = typeof slotsLoading !== "undefined" ? slotsLoading : false;
+		if (isCalcom && isLoading) return;
+		const past = startOfDay(selectedDate).getTime() < today.getTime();
+		const unavailable = isCalcom && !hasKnownAvailability(selectedDate);
+		if (!past && !unavailable) return;
+		const todayAvailable = hasKnownAvailability(today);
+		const fallback = todayAvailable ? today : firstAvailableDateFromToday;
+		React.startTransition(() => {
+			setSelectedTime(null);
+			if (fallback) {
+				setSelectedDate(fallback);
+				onDateChange?.(fallback);
+			} else {
+				setSelectedDate(null);
+			}
+		});
+	}, [clockReady, selectedDate, today, availableDates, slotsLoading, hasKnownAvailability, firstAvailableDateFromToday, onDateChange]);
+
 	// Diagnostics for initial-date logic (enable via window.__BE_DIAGNOSTICS__ = true or ?beDiagnostics=1)
 	React.useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -5286,6 +5346,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			if (startOfDay(date).getTime() < today.getTime()) return;
 			React.startTransition(() => {
 				setSelectedDate(date);
+				// ADJACENT-FOLLOW fix: picking a live trailing/leading
+				// adjacent-month date selected an off-view date while the
+				// view stayed behind (selected cell tabIndex -1, header
+				// showing the wrong month). Follow the selection exactly
+				// like the default effect above (raw setVisibleMonth +
+				// onDateChange below lets the parent prop follow, so the
+				// parent-prop sync never yanks it back — rule 39).
+				if (
+					date.getFullYear() !== visibleMonth.getFullYear() ||
+					date.getMonth() !== visibleMonth.getMonth()
+				) {
+					setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+				}
 				// CC-1 fix: a previously-picked time belongs to the OLD date.
 				// Without this, selecting a new date while a time from the
 				// prior date is still set lets the onSelectionReady effect
@@ -5316,7 +5389,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			pendingSlotListFocusRef.current = true;
 			if (onDateChange) onDateChange(date);
 		},
-		[onDateChange, today],
+		[onDateChange, today, visibleMonth, setVisibleMonth],
 	);
 
 	// W2-29-N1 fix: completes the date-pick auto-focus when it fired
