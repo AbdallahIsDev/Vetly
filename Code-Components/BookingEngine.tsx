@@ -4328,13 +4328,25 @@ function useTimeGrid(options: UseTimeGridOptions): {
 			// contains the whole month's slots — every day's 9:00 AM shares
 			// the same wall-clock minutes, so mapping directly produced the
 			// same 9:00→16:45 range repeated per day. Deduplicate
-			// deterministically by the slot's time-of-day identity (minutes
-			// + label) before mapping so the pre-selection list is a single
+			// deterministically by the slot's VISITOR-WALL time-of-day
+			// identity (start minutes + end minutes, both in the visitor
+			// zone) before mapping so the pre-selection list is a single
 			// clean range. Post-selection filtering already yields one day.
+			// Wall-based on BOTH ends: keying on the raw ISO slice mixed
+			// UTC wall-clock into a visitor identity (same 9:00 AM twice
+			// across a DST change), and ignoring the end collapsed
+			// different durations sharing a start (9:00×30 vs 9:00×60).
+			// DST-fold duplicates (same wall range, distinct instants)
+			// collapse to the first — their labels are identical by rule
+			// 43, so keeping both offers no chooseable distinction.
 			const seenMinutes = new Set<string>();
 			const deduped: typeof availableTimes = [];
 			for (const t of availableTimes) {
-				const key = `${t.minutes}|${t.value.slice(11, 16)}`;
+				const endMinutes =
+					t.end && !Number.isNaN(new Date(t.end).getTime())
+						? getMinutesInTimeZone(new Date(t.end), timeZone)
+						: null;
+				const key = `${t.minutes}|${endMinutes ?? ""}`;
 				if (!seenMinutes.has(key)) {
 					seenMinutes.add(key);
 					deduped.push(t);
@@ -4387,8 +4399,9 @@ function useTimeGrid(options: UseTimeGridOptions): {
 	// passed — a visitor viewing today's schedule late in the day could
 	// still tap a 9am slot that elapsed hours ago (Cal.com would reject the
 	// booking, but only after they'd filled in the rest of the form).
-	// Ticks once a minute, which is plenty granular for greying out a slot
-	// list without re-rendering on every second.
+	// Ticks every 30 seconds (aligned with the midnight-rollover poll):
+	// the old 60s tick left up to a minute where an elapsed slot stayed
+	// clickable and then failed at Continue against the live clock.
 	// HYDRATION-CLOCK fix: same determinism contract as `today` above. The
 	// wall-clock instant used to be captured independently by the prerender
 	// (publish time) and the hydrating visitor (visit time), so any slot
@@ -4399,7 +4412,7 @@ function useTimeGrid(options: UseTimeGridOptions): {
 	const [now, setNow] = React.useState<Date | null>(null);
 	useIsomorphicLayoutEffect(() => {
 		setNow(new Date());
-		const id = window.setInterval(() => setNow(new Date()), 60000);
+		const id = window.setInterval(() => setNow(new Date()), 30000);
 		return () => window.clearInterval(id);
 	}, []);
 	const isTimeElapsed = React.useCallback(
@@ -9027,6 +9040,13 @@ function mapCalcomError(
 	if (status === 401 || status === 403) return copy.credentialError;
 	if (status === 429) return copy.slotsRateLimitGenericError;
 	if (status !== undefined && status >= 500) return copy.slotsUnavailableError;
+	// BARE-409 fix: Cal.com returns 409 with an empty/non-JSON body (or a
+	// bare {status:409} with no machine code) when a slot was just taken.
+	// Without this it fell into generic badRequestError ("check your
+	// answers") — the visitor's answers are fine, the SLOT is gone. A
+	// taken slot always means timeTakenError, and the message it yields
+	// ("just taken…") is what the retry path branches on below.
+	if (status === 409) return copy.timeTakenError;
 	if (status !== undefined && status >= 400 && status < 500) {
 		return copy.badRequestError;
 	}
@@ -9530,12 +9550,13 @@ function buildCalendarDeepLink(
 			.replace(/[-:]/g, "")
 			.replace(/\.\d{3}/, "");
 	// W1-09-NEW-02 fix: Google's `dates` wants the basic-ISO UTC form
-	// (YYYYMMDDTHHMMSSZ), but Outlook's `startdt`/`enddt` want extended ISO
-	// WITH separators and WITHOUT the `Z` suffix (interpreted relative to
-	// the viewer). Feeding Google's compact-UTC form into Outlook produces
-	// an event at the wrong instant (or a rejected link). Separate
-	// formatter per provider.
-	const toExtended = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "");
+	// (YYYYMMDDTHHMMSSZ). Outlook's `startdt`/`enddt` ALSO want the UTC
+	// instant WITH the `Z` suffix (verified against the add-event-to-
+	// calendar provider docs: `YYYY-MM-DDTHH:mm:SSZ`; omitting `Z` makes
+	// Outlook read the value in the VIEWER's zone, shifting a Sydney
+	// booking by 10h). The old comment claiming Outlook wants no `Z`
+	// was wrong — keep the suffix, drop only the millis.
+	const toExtended = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
 	const text = encodeURIComponent(summary);
 	const details = encodeURIComponent(description || "");
 	if (provider === "google") {
@@ -11534,6 +11555,11 @@ function useBookingEngineState(
 			emitAnalytics("booking_success", {
 				bookingUid: result.bookingUid || null,
 			});
+			// POST-SUCCESS-REFETCH fix: the month cache (5-min TTL) kept
+			// serving pre-booking availability, so "Book another" showed
+			// the just-taken slot until TTL/refetch/409. Refresh behind
+			// the success screen so the next flow starts truthful.
+			slotsRefetch();
 		} else {
 			// T3-M2 fix: pass the machine-readable error code through.
 			// W1-02-F19 fix: the unknown-error and catch-all fallbacks are
@@ -11553,9 +11579,17 @@ function useBookingEngineState(
 					// FINAL-21 fix: last-resort status classification.
 					result.httpStatus,
 				);
-			setSubmitError(errorMessage);
-			// FINAL-20 fix: remember the machine code alongside the message.
-			submitErrorCodeRef.current = result.errorCode || null;
+		setSubmitError(errorMessage);
+		// FINAL-20 fix: remember the machine code alongside the message.
+		// BARE-409 fix: with no machine code the retry path below could
+		// not see a bare 409 (its message heuristic needs the mapped
+		// "just taken" copy, which a customized Copy panel may reword).
+		// Stash an HTTP_### sentinel so Retry branches on status too.
+		submitErrorCodeRef.current =
+			result.errorCode ||
+			(typeof result.httpStatus === "number"
+				? `HTTP_${result.httpStatus}`
+				: null);
 			transitionFlowStatus("error");
 			emitAnalytics("booking_error", {
 				reason: "submit-failed",
@@ -11771,6 +11805,10 @@ function useBookingEngineState(
 			code.includes("SLOT_NOT_AVAILABLE") ||
 			code.includes("BOOKING_LIMIT") ||
 			code.includes("MAXIMUM_NUMBER_OF_BOOKINGS") ||
+			// BARE-409 fix: sentinel stashed at submit-failure time (see
+			// above) — a codeless 409 still routes back to the calendar
+			// with a fresh fetch instead of re-POSTing the stale slot.
+			code.includes("HTTP_409") ||
 			msg.includes("just taken") ||
 			msg.includes("no longer available");
 		submitErrorCodeRef.current = null;
@@ -11872,6 +11910,13 @@ function useBookingEngineState(
 		setCurrentIndex(0);
 		transitionFlowStatus("in-progress");
 		submittingRef.current = false;
+		// RESTART-KEY fix: a failed attempt's idempotency key must not
+		// leak into the next visitor's booking ("Book another" after a
+		// failure reuses this restart). Harmless today (Cal.com ignores
+		// the undocumented header) but wrong if ever enforced — every
+		// other terminal path (success/retry/cancel/slot-pick) already
+		// resets it.
+		idempotencyKeyRef.current = null;
 		if (typeof window !== "undefined" && persistState) {
 			try {
 				window.sessionStorage.removeItem(instanceKeyRef.current);
