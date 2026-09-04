@@ -9998,6 +9998,57 @@ function useBookingEngineState(
 	// HOME-URL-REMOVED: "Done" always navigates to the website root.
 	// No control, no stored override — DEFAULT_CONFIRM_HOME_URL is the
 	// destination, used directly at the render site.
+	// BUTTON-GROUPS (styles): resolved visual surfaces for the footer
+	// buttons. Untouched groups fall back to the role defaults (live
+	// theme tokens) — byte-identical to the previous hardcoded look.
+	const ghostButtonRole: ButtonRoleDefaults = {
+		background: "transparent",
+		color: theme.textPrimaryColor,
+		borderWidth: 1,
+		borderColor: theme.borderColor,
+		padding: "10px 18px 10px 18px",
+	};
+	const primaryButtonRole: ButtonRoleDefaults = {
+		background: theme.accentColor,
+		color: theme.accentForegroundColor,
+		borderWidth: 0,
+		borderColor: theme.borderColor,
+		padding: "10px 22px 10px 22px",
+	};
+	const backButtonStyle = resolveButtonStyle(bl.backButton, ghostButtonRole, borderRadius);
+	const cancelButtonStyle = resolveButtonStyle(bl.cancelButton, ghostButtonRole, borderRadius);
+	// The primary button wears Continue's styles except on the last step,
+	// where Final Action's text AND style take over (mirrors primaryLabel).
+	const primaryButtonStyle = resolveButtonStyle(
+		totalActive === 1 || isLast ? bl.finalActionButton : bl.continueButton,
+		primaryButtonRole,
+		borderRadius,
+	);
+	// BUTTON-GROUPS (success): the ICS link is an accent-outline role;
+	// Done is ghost; "Book another" is primary with tighter padding.
+	const addToCalendarButtonStyle = resolveButtonStyle(
+		bl.addToCalendarButton,
+		{
+			background: "transparent",
+			color: theme.accentColor,
+			borderWidth: 1,
+			borderColor: theme.accentColor,
+			padding: "10px 18px 10px 18px",
+		},
+		borderRadius,
+	);
+	const doneButtonStyle = resolveButtonStyle(
+		bl.doneButton,
+		// Done is a SECONDARY ghost (muted text, unlike Back/Cancel) —
+		// its role default must match, or untouched instances restyle.
+		{ ...ghostButtonRole, color: theme.textSecondaryColor },
+		borderRadius,
+	);
+	const bookAnotherButtonStyle = resolveButtonStyle(
+		bl.bookAnotherButton,
+		{ ...primaryButtonRole, padding: "10px 18px 10px 18px" },
+		borderRadius,
+	);
 
 	// Autosave-to-browser is a permanent, always-on product feature —
 	// never an author toggle and never paired with disclosure UI.
@@ -12263,6 +12314,12 @@ function useBookingEngineState(
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		backButtonStyle,
+		cancelButtonStyle,
+		primaryButtonStyle,
+		addToCalendarButtonStyle,
+		doneButtonStyle,
+		bookAnotherButtonStyle,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
@@ -12362,6 +12419,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		backButtonStyle,
+		cancelButtonStyle,
+		primaryButtonStyle,
+		addToCalendarButtonStyle,
+		doneButtonStyle,
+		bookAnotherButtonStyle,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
@@ -12383,10 +12446,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 		DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
 	);
 
-	// PRIMARY-FOREGROUND: the submit button and its spinner render directly
-	// on the author's Primary/Accent surface, so their colour comes from the
-	// semantic On-Primary token — never a hard-coded white assumption.
-	const accentTextOnSurface = theme.accentForegroundColor;
+	// PRIMARY-FOREGROUND: accent-filled surfaces (submit button, spinner,
+	// "Book another", Retry) render their text from the semantic On-Primary
+	// token — never a hard-coded white assumption. Button groups may
+	// override per button; the resolver falls back to this token.
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
 	// rule — embeds in narrow desktop sidebars stayed 2-col (cramped,
@@ -12589,6 +12652,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 					addToCalendarLabel={addToCalendarButtonLabel}
 					bookAnotherLabel={bookAnotherLabel}
 					doneLabel={doneLabel}
+					addToCalendarStyle={addToCalendarButtonStyle}
+					bookAnotherStyle={bookAnotherButtonStyle}
+					doneStyle={doneButtonStyle}
 					timeZone={timeZone}
 					timeZoneLabel={copy.timeZoneLabel}
 					icsSummaryLabel={copy.icsSummaryLabel}
@@ -13185,14 +13251,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 						disabled={isSubmitting}
 						style={{
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${theme.borderColor}`,
-							background: "transparent",
-							color: theme.textPrimaryColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
+							// BUTTON-GROUPS: Back group's resolved surface
+							// (role default == previous hardcoded look).
+							...backButtonStyle,
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.5 : 1,
 							// W1-18-F1 fix: gated on prefers-reduced-motion.
@@ -13226,14 +13287,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 							onClick={handleCancelSubmit}
 							style={{
 								minHeight: TOUCH_TARGET_MIN,
-								padding: "10px 18px",
-								borderRadius: borderRadius,
-								border: `1px solid ${theme.borderColor}`,
-								background: "transparent",
-								color: theme.textPrimaryColor,
-								fontFamily: "inherit",
-								fontSize: 14,
-								fontWeight: 600,
+								// BUTTON-GROUPS: Cancel group's resolved surface.
+								...cancelButtonStyle,
 								cursor: "pointer",
 								// W1-18-F1 fix: gated on prefers-reduced-motion.
 								transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
@@ -13268,14 +13323,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 						aria-busy={isSubmitting ? true : undefined}
 						style={{
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 22px",
-							borderRadius: borderRadius,
-							border: "none",
-							background: theme.accentColor,
-							color: accentTextOnSurface,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
+							// BUTTON-GROUPS: Continue/Final-Action groups'
+							// resolved surface (branch mirrors primaryLabel).
+							...primaryButtonStyle,
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.7 : 1,
 							// W1-18-F1 fix: gated on prefers-reduced-motion.
@@ -13298,7 +13348,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 										width: 14,
 										height: 14,
 										borderRadius: "50%",
-										border: `2px solid ${accentTextOnSurface}`,
+										// BUTTON-GROUPS: spinner ring follows
+										// the primary button's text color.
+										border: `2px solid ${primaryButtonStyle.color}`,
 										borderTopColor: "transparent",
 										display: "inline-block",
 										animation: prefersReducedMotion
@@ -14923,6 +14975,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
 	doneLabel: string;
+	// BUTTON-GROUPS: resolved visual surfaces for the three styled
+	// confirmation actions (Google/Outlook/manage links stay theme-driven).
+	addToCalendarStyle: React.CSSProperties;
+	bookAnotherStyle: React.CSSProperties;
+	doneStyle: React.CSSProperties;
 	// HOME-URL-REMOVED: "Done" always navigates to DEFAULT_CONFIRM_HOME_URL
 	// (website root) — no prop, no control.
 	// CONFIRM-ICON-ANIM: the circle's entrance reuses the selected
@@ -14973,6 +15030,9 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		addToCalendarLabel,
 		bookAnotherLabel,
 		doneLabel,
+		addToCalendarStyle,
+		bookAnotherStyle,
+		doneStyle,
 		transitionVariant,
 		baseTransition,
 		timeZone,
@@ -15387,14 +15447,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 							display: "inline-flex",
 							alignItems: "center",
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${accentColor}`,
-							background: "transparent",
-							color: accentColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
+							// BUTTON-GROUPS: Add-to-Calendar group's surface.
+							...addToCalendarStyle,
 							textDecoration: "none",
 							cursor: "pointer",
 						}}
@@ -15493,38 +15547,24 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				<a
 					href={DEFAULT_CONFIRM_HOME_URL}
 					style={{
-							display: "inline-flex",
-							alignItems: "center",
-							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${borderColor}`,
-							background: "transparent",
-							color: textSecondaryColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
-							textDecoration: "none",
-							cursor: "pointer",
-						}}
-					>
-						{doneLabel}
-					</a>
+						display: "inline-flex",
+						alignItems: "center",
+						minHeight: TOUCH_TARGET_MIN,
+						// BUTTON-GROUPS: Done group's resolved surface.
+						...doneStyle,
+						textDecoration: "none",
+						cursor: "pointer",
+					}}
+				>
+					{doneLabel}
+				</a>
 				<button
 					type="button"
 					onClick={onRestart}
 					style={{
 						minHeight: TOUCH_TARGET_MIN,
-						padding: "10px 18px",
-						borderRadius: borderRadius,
-						border: "none",
-						background: accentColor,
-						// PRIMARY-FOREGROUND: semantic On-Primary token for the
-						// accent-filled button — never a hard-coded white.
-						color: accentForegroundColor,
-						fontFamily: "inherit",
-						fontSize: 14,
-						fontWeight: 600,
+						// BUTTON-GROUPS: Book-another group's surface.
+						...bookAnotherStyle,
 						cursor: "pointer",
 					}}
 				>
