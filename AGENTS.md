@@ -246,7 +246,7 @@ There must be a single source of truth (`activeStepIndex` → `isActive` → sty
 
 ### 26. Cal.com integration internals are not Property Controls
 
-**The Cal.com request timeout (`FETCH_TIMEOUT_MS`, 18s), the `cal-api-version` header value (`DEFAULT_CAL_API_VERSION`), the slots cache TTL (`SLOTS_CACHE_TTL_MS`, 5 min), and the ICS UID domain (`DEFAULT_ICS_UID_DOMAIN`) are internal implementation details.** They are **not** Property Controls and must not be re-exposed to Framer users. Do not reintroduce "Cal.com Timeout (ms)", "Cal.com API Version", "Slots Cache TTL (ms)", or "ICS UID Domain" controls. Adopting a new Cal.com API version is a component code update.
+**The Cal.com request timeout (`FETCH_TIMEOUT_MS`, 18s), the `cal-api-version` header value (`DEFAULT_CAL_API_VERSION`), the slots cache TTL (`SLOTS_CACHE_TTL_MS`, 5 min), and the ICS UID domain (`DEFAULT_ICS_UID_DOMAIN`) are internal implementation details.** They are **not** Property Controls and must not be re-exposed to Framer users. Do not reintroduce "Cal.com Timeout (ms)", "Cal.com API Version", "Slots Cache TTL (ms)", or "ICS UID Domain" controls. Adopting a new Cal.com API version is a component code update. **The booking POST pins its own version (`CAL_BOOKING_API_VERSION`, `2024-08-13`) and must never be "unified" with the slots version — Cal.com routes controllers per version, and sending the slots version makes bookings 404.**
 
 ### 27. ICS download filename is fixed and generic
 
