@@ -4342,8 +4342,12 @@ function useTimeGrid(options: UseTimeGridOptions): {
 			const seenMinutes = new Set<string>();
 			const deduped: typeof availableTimes = [];
 			for (const t of availableTimes) {
+				// timeZone is optional in standalone/demo wiring (where
+				// slots carry no ISO ends anyway) — without it there is
+				// no visitor zone to resolve the end into, so the key
+				// degrades to start-minutes only.
 				const endMinutes =
-					t.end && !Number.isNaN(new Date(t.end).getTime())
+					t.end && timeZone && !Number.isNaN(new Date(t.end).getTime())
 						? getMinutesInTimeZone(new Date(t.end), timeZone)
 						: null;
 				const key = `${t.minutes}|${endMinutes ?? ""}`;
