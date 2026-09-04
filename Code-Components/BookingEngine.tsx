@@ -11057,7 +11057,7 @@ function useBookingEngineState(
 				baseActiveSteps.some((step) => step.stepType === "datetime") ?? false;
 			if (calApiKey && calEventTypeId && !hasDatetime) {
 				warnings.push(
-					"Cal.com credentials are set but no step uses the Date & Time type. Add or enable a date/time step, or clear the API key and Event Type ID.",
+					"Cal.com credentials are set but no step uses the Calender. Add or enable a Calender step, or clear the API key and Event Type ID.",
 				);
 			}
 		}
@@ -15901,7 +15901,7 @@ function makeInputFieldStylesControls() {
 		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
-		placeholderColor: fieldStylesColorControl("Placeholder"),
+		placeholderColor: fieldStylesColorControl("Placeholder Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
 		border: fieldStylesBorderControl(),
 		// STYLES-ORDER: Focus Border sits directly after Border (it
