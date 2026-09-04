@@ -6531,10 +6531,18 @@ const DEFAULT_MEETING_DURATION_MS = 30 * 60 * 1000;
 // deployments can point at their own instance. Trailing slashes are stripped
 // at the use site (the path builder appends "/v2/...").
 const DEFAULT_CAL_API_BASE_URL = "https://api.cal.com";
-// The `cal-api-version` header value sent with both Cal.com calls. Internal
-// only — not a Property Control; adopting a new Cal.com API version is a
-// component code update (see AGENTS.md).
+// The `cal-api-version` header value sent with the slots + meta calls.
+// Internal only — not a Property Control; adopting a new Cal.com API
+// version is a component code update (see AGENTS.md).
 const DEFAULT_CAL_API_VERSION = "2024-09-04";
+// BOOKING-VERSION fix: the booking POST does NOT use the version above.
+// Cal.com routes bookings controllers by version — sending the slots
+// version (2024-09-04) makes POST /v2/bookings fall through routing and
+// fail with 404 NotFoundException ("Cannot POST /v2/bookings") on the
+// live site. Per Cal.com's current bookings docs, the create-booking
+// controller requires `cal-api-version: 2024-08-13`. Slots/meta stay on
+// their proven version; only the POST pins this one.
+const CAL_BOOKING_API_VERSION = "2024-08-13";
 // Fixed, industry-neutral .ics download filename — never business-branded
 // and never a Property Control (see AGENTS.md).
 const DEFAULT_ICS_FILENAME = "Booking Appointment.ics";
@@ -8448,8 +8456,8 @@ async function submitCalcomBooking(params: {
 	timeoutMs?: number;
 	// W1-02-F26 fix: Cal.com v2 API base URL (self-hosted deployments).
 	apiBaseUrl?: string;
-	// W1-02-F27 fix: `cal-api-version` header value.
-	apiVersion?: string;
+	// BOOKING-VERSION fix: no apiVersion param — the POST pins
+	// CAL_BOOKING_API_VERSION (the slots version 404s bookings routing).
 }): Promise<SubmitBookingResult> {
 	const {
 		apiKey,
@@ -8466,13 +8474,13 @@ async function submitCalcomBooking(params: {
 		errorCopy: errorCopyParam,
 		timeoutMs,
 		apiBaseUrl,
-		apiVersion,
 	} = params;
 	const copy = { ...ERROR_COPY_DEFAULTS, ...(errorCopyParam || {}) };
-	// W1-02-F26/F27 fixes: resolve the author-tunable base URL + API
-	// version header once (trailing slashes normalized for the join).
+	// W1-02-F26/F27 fixes: resolve the author-tunable base URL + the
+	// BOOKING-pinned API version header once (trailing slashes normalized
+	// for the join).
 	const apiBase = (apiBaseUrl || DEFAULT_CAL_API_BASE_URL).replace(/\/+$/, "");
-	const apiVer = apiVersion || DEFAULT_CAL_API_VERSION;
+	const apiVer = CAL_BOOKING_API_VERSION;
 	// H4 fix: `Number(eventTypeId)` silently produced `NaN` for any
 	// non-purely-numeric event type ID (e.g. a slug), and `JSON.stringify`
 	// serializes `NaN` as `null` — so the request body sent
@@ -9011,6 +9019,12 @@ function mapCalcomError(
 	if (status === 401 || status === 403) return copy.credentialError;
 	if (status === 429) return copy.slotsRateLimitGenericError;
 	if (status !== undefined && status >= 500) return copy.slotsUnavailableError;
+	// BOOKING-VERSION fix: a 404 on either call means the event/route
+	// isn't there (deleted event type, wrong base URL) — an owner-side
+	// configuration problem, never the visitor's answers. Route to the
+	// not-found copy instead of the misleading bad-request ("check your
+	// answers") copy below.
+	if (status === 404) return copy.slotsNotFoundError;
 	// BARE-409 fix: Cal.com returns 409 with an empty/non-JSON body (or a
 	// bare {status:409} with no machine code) when a slot was just taken.
 	// Without this it fell into generic badRequestError ("check your
@@ -11440,8 +11454,8 @@ function useBookingEngineState(
 			errorCopy,
 			timeoutMs: FETCH_TIMEOUT_MS,
 			// W1-02-F26 fix: same self-hosted base URL as the slots GET.
+			// (No apiVersion: the POST pins CAL_BOOKING_API_VERSION.)
 			apiBaseUrl: calApiBaseUrl,
-			apiVersion: DEFAULT_CAL_API_VERSION,
 		});
 		abortControllerRef.current = null;
 
