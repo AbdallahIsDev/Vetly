@@ -6066,8 +6066,6 @@ interface BookingEngineCopyProps {
 		retryLabel: string;
 		loadingAvailabilityLabel: string;
 		noTimesLabel: string;
-		emptyReviewLabel: string;
-		reviewIntroLabel: string;
 		submittingLabel: string;
 		// T3-L3 fix: optional support-contact path on the error screen -
 		// empty value hides the link, so existing instances are unaffected.
@@ -6969,12 +6967,8 @@ function validateStep(
 		const valid = Object.values(errors).every((error) => error === null);
 		return { valid, errors };
 	}
-	// Review step removed: never reached (filtered in normalizeSteps). Keep
-	// guard for any in-memory review that slipped through, but it will not be
-	// authored anymore.
-	if ((step.stepType as string) === "review") {
-		return { valid: true, errors: {} };
-	}
+	// ReviewStepBody removed (rule 75): persisted "review" steps are dropped
+	// by the normalizeSteps filter above, so validateStep can never see one.
 	const errors: Record<string, string | null> = {};
 	for (const field of step.fields) {
 		errors[field.id] = validateField(field, values[field.id], validationCopy);
@@ -14002,226 +13996,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 }, areStepBodyPropsEqual);
 
 // =============================================================================
-// ReviewStepBody — auto-summarizes prior steps
-// =============================================================================
-
-const ReviewStepBody = React.memo(function ReviewStepBody(props: {
-	step: NormalizedStep;
-	steps: NormalizedStep[];
-	values: BookingValues;
-	theme: StepBodyProps["theme"];
-	borderRadius: string | number;
-	copy: BookingEngineProps["copy"];
-	// T10-H1 fix: Edit link per entry jumps straight back to the step that
-	// owns the field/slot, instead of forcing Back-Back-Back.
-	onJumpToStep?: (stepIndex: number) => void;
-	// W1-07-F7 fix: the slot instant is formatted in the visitor's zone
-	// (same zone the calendar displayed), so the review date can't drift
-	// from what the visitor clicked.
-	timeZone?: string;
-}) {
-	const { steps, values, theme, borderRadius, copy, onJumpToStep, timeZone } =
-		props;
-	// Fix #2: derive labels from field metadata across ALL form steps, not
-	// from the raw `values` keys (which are normalized IDs like "step-0-field-0").
-	// FINAL-66 fix: memoized — the steps × fields sweep previously re-ran on
-	// every render of the review step.
-	const entries: Array<{
-		id?: string;
-		label: string;
-		value: string;
-		stepIndex: number;
-	}> = React.useMemo(() => {
-		const list: Array<{
-			id?: string;
-			label: string;
-			value: string;
-			stepIndex: number;
-		}> = [];
-		let datetimeStepIndex = -1;
-		steps.forEach((stepEntry, stepIdx) => {
-			if (stepEntry.stepType !== "form" && stepEntry.stepType !== "datetime")
-				return;
-			if (stepEntry.stepType === "datetime" && datetimeStepIndex === -1) {
-				datetimeStepIndex = stepIdx;
-			}
-			for (const field of stepEntry.fields) {
-				const value = values[field.id];
-				if (value === undefined || value === "") continue;
-				list.push({
-					id: field.id,
-					label: field.label,
-					value: String(value),
-					stepIndex: stepIdx,
-				});
-			}
-		});
-		if (values[SELECTED_SLOT_KEY]) {
-			const slot = values[SELECTED_SLOT_KEY];
-			// W1-07-F7 fix: `slot.date` is the calendar CELL's browser-local
-			// midnight — formatting it in the visitor's zone showed a date that
-			// could disagree with the clicked cell (≥12h tz drift) and the ICS
-			// filename. A real Cal.com slot carries its actual UTC instant in
-			// `time24h`; derive the label from that instant instead, falling
-			// back to `slot.date` only for demo mode (minute-steps grid, no
-			// "T" in the value). Formatted in the zone the calendar displayed.
-			const fmtOpts: Intl.DateTimeFormatOptions = {
-				weekday: "long",
-				year: "numeric",
-				month: "long",
-				day: "numeric",
-			};
-			const tzOpts = timeZone ? { timeZone } : undefined;
-			let dateStr: string;
-			try {
-				const slotDate = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
-					? new Date(slot.time24h)
-					: slot.date;
-				dateStr = slotDate.toLocaleDateString(pageLocale(), {
-					...fmtOpts,
-					...tzOpts,
-				});
-			} catch {
-				dateStr = slot.date.toLocaleDateString(pageLocale(), fmtOpts);
-			}
-			// T10-H4 fix: "Date"/"Time" row labels come from copy. W1-02-F24:
-			// the in-component `||` fallbacks were removed (they duplicated the
-			// copy panel's own defaults).
-			list.push({
-				label: copy.dateLabel,
-				value: dateStr,
-				stepIndex: datetimeStepIndex,
-			});
-			list.push({
-				label: copy.timeLabel,
-				value: slot.timeLabel,
-				stepIndex: datetimeStepIndex,
-			});
-		}
-		return list;
-	}, [steps, values, copy.dateLabel, copy.timeLabel, timeZone]);
-
-	return (
-		<div>
-			<div
-				style={{
-					fontSize: 14,
-					color: theme.textSecondaryColor,
-					marginBottom: 12,
-					lineHeight: 1.5,
-				}}
-			>
-				{copy.reviewIntroLabel}
-			</div>
-			<div
-				style={{
-					borderRadius: borderRadius,
-					border: `1px solid ${theme.borderColor}`,
-					background: theme.surfaceColor,
-					overflow: "hidden",
-				}}
-			>
-				{entries.length === 0 ? (
-					<div
-						style={{
-							padding: 16,
-							color: theme.textSecondaryColor,
-							fontSize: 13,
-						}}
-					>
-						{copy.emptyReviewLabel}
-					</div>
-				) : (
-					entries.map((entry, idx) => (
-						<div
-							key={entry.id || entry.label + idx}
-							style={{
-								display: "flex",
-								justifyContent: "space-between",
-								alignItems: "center",
-								padding: "12px 16px",
-								borderBottom:
-									idx < entries.length - 1
-										? `1px solid ${theme.borderColor}`
-										: "none",
-								fontSize: 14,
-							}}
-						>
-							<span
-								style={{
-									color: theme.textSecondaryColor,
-									marginRight: 12,
-								}}
-							>
-								{entry.label}
-							</span>
-							<span
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 8,
-								}}
-							>
-								<span
-									style={{
-										color: theme.textPrimaryColor,
-										fontWeight: 500,
-										textAlign: "right",
-										maxWidth: "60%",
-										wordBreak: "break-word",
-									}}
-								>
-									{entry.value}
-								</span>
-								{/* T10-H1 fix: jump straight back to the step
-                                    that produced this entry. */}
-								{onJumpToStep && entry.stepIndex >= 0 ? (
-									<button
-										type="button"
-										onClick={() => onJumpToStep(entry.stepIndex)}
-										// W1-10-A8 fix: a bare "Edit" repeats
-										// identically on every row — screen
-										// reader users can't tell which row a
-										// button belongs to. Name it with the
-										// row it edits.
-										aria-label={
-											entry.label
-												? `${copy.editLabel}: ${entry.label}`
-												: copy.editLabel
-										}
-										style={{
-											border: "none",
-											background: "none",
-											padding: 0,
-											// W1-19-F-03 fix: the Edit link
-											// was a ~40×16 text blob — under
-											// the 44×44px touch-target
-											// minimum. The hit area is grown
-											// to 44×44 while the label keeps
-											// its small type.
-											minWidth: 44,
-											minHeight: 44,
-											display: "inline-flex",
-											alignItems: "center",
-											justifyContent: "center",
-											color: theme.accentColor,
-											fontSize: 12,
-											fontWeight: 500,
-											cursor: "pointer",
-											fontFamily: "inherit",
-										}}
-									>
-										{copy.editLabel}
-									</button>
-								) : null}
-							</span>
-						</div>
-					))
-				)}
-			</div>
-		</div>
-	);
-});
 
 // =============================================================================
 // FieldRenderer — switch on field.type
@@ -16659,20 +16433,6 @@ addPropertyControls(BookingEngine, {
 				title: "No Times",
 				defaultValue:
 					"No available times on the selected date. Try another day.",
-				displayTextArea: true,
-			},
-			emptyReviewLabel: {
-				type: ControlType.String,
-				title: "Empty Review",
-				defaultValue:
-					"Nothing to review yet — go back and fill in the previous steps.",
-				displayTextArea: true,
-			},
-			reviewIntroLabel: {
-				type: ControlType.String,
-				title: "Review Intro",
-				defaultValue:
-					"Please review your details before confirming. Use the Back button to edit any previous step.",
 				displayTextArea: true,
 			},
 			submittingLabel: {
