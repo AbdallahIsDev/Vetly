@@ -699,6 +699,25 @@ function getCachedDateTimeFormat(
 	return dtf;
 }
 
+// SLOT-KEY-CACHE (perf): instant-level date-key cache so the availability
+// memos (availableDates set-build, slotsForSelectedDate filter) never pay
+// `new Date()` + formatToParts per slot on repeat runs (date picks,
+// refetches of the same month hit the map instead). Bounded like the
+// other caches. Invalid instants cache as "" (skipped by callers).
+const slotDateKeyCache = new Map<string, string>();
+function slotDateKeyInTimeZone(value: string, timeZone: string): string {
+	const key = `${timeZone}|${value}`;
+	const hit = slotDateKeyCache.get(key);
+	if (hit !== undefined) return hit;
+	if (slotDateKeyCache.size >= 2000) slotDateKeyCache.clear();
+	const d = new Date(value);
+	const computed = Number.isNaN(d.getTime())
+		? ""
+		: getDateKeyInTimeZone(d, timeZone);
+	slotDateKeyCache.set(key, computed);
+	return computed;
+}
+
 // CC-13 fix: `Date.getHours()`/`getMinutes()` always read the BROWSER's
 // local timezone, not any timezone the visitor picked in the UI. Cal.com is
 // queried with an explicit `timeZone` param, but the returned slot `start`
@@ -8398,6 +8417,16 @@ function useCalcomEventMeta(params: {
 					eventTypeId,
 				});
 			}
+		})
+		// Defensive: fetchCalEventTypeMeta never rejects today (it
+		// resolves nulls on every failure path), but a bare .then
+		// turns any future throw into an unhandled rejection that
+		// also leaves the panel stuck on "loading". Fail closed.
+		.catch(() => {
+			if (cancelled) return;
+			setMeta(null);
+			setBookingFields([]);
+			setStatus("failed");
 		});
 		return () => {
 			cancelled = true;
@@ -9707,6 +9736,32 @@ const TRANSITION_VARIANT_DEFS: Record<
 	},
 };
 
+// ERROR-BOUNDARY: a step render throw (bad author config, unexpected Cal
+// shape) must not unmount the whole component — let alone every other
+// engine instance on the page. Local fallback keeps the shell (progress,
+// footer nav) alive so the visitor can still go Back; navigating steps
+// (key change) resets it. Catches render-time throws only — async Cal
+// failures keep their null-hide paths (rule 38), never this boundary.
+class BeErrorBoundary extends React.Component<
+	{ stepKey: string; children: React.ReactNode },
+	{ failed: boolean }
+> {
+	state = { failed: false };
+	static getDerivedStateFromError(): { failed: boolean } {
+		return { failed: true };
+	}
+	componentDidUpdate(prevProps: { stepKey: string }): void {
+		if (prevProps.stepKey !== this.props.stepKey && this.state.failed) {
+			// eslint-disable-next-line react/no-did-update-set-state
+			this.setState({ failed: false });
+		}
+	}
+	render(): React.ReactNode {
+		if (this.state.failed) return null;
+		return this.props.children;
+	}
+}
+
 function StepVisibilityWrapper(props: {
 	isActive: boolean;
 	baseTransition: Transition;
@@ -10856,13 +10911,10 @@ function useBookingEngineState(
 		if (!hasCalConfig) return undefined;
 		const set = new Set<string>();
 		for (const slot of slots) {
-			const d = new Date(slot.value);
-			if (Number.isNaN(d.getTime())) continue;
-			// CC-13 completion: was browser-local Y/M/D, so near-midnight
-			// slots bucketed into the wrong calendar day whenever the
-			// selected timezone differed from the browser's. Use the same
-			// zone the labels were computed in.
-			set.add(getDateKeyInTimeZone(d, timeZone));
+			// SLOT-KEY-CACHE: no `new Date()` / Intl per run — repeat
+			// runs (date picks, same-month refetches) hit the map.
+			const key = slotDateKeyInTimeZone(slot.value, timeZone);
+			if (key) set.add(key);
 		}
 		return set;
 	}, [hasCalConfig, slots, timeZone]);
@@ -10872,15 +10924,11 @@ function useBookingEngineState(
 		if (!selectedDate) return slots;
 		const selectedKey = getDateKeyInTimeZone(selectedDate, timeZone);
 		return slots.filter((slot) => {
-			try {
-				const d = new Date(slot.value);
-				// CC-13 completion: was `isSameDay` (browser-local) — same
-				// near-midnight misbucket. Compare calendar days in the
-				// visitor's selected timezone instead.
-				return getDateKeyInTimeZone(d, timeZone) === selectedKey;
-			} catch {
-				return false;
-			}
+			// CC-13 completion: compare calendar days in the visitor's
+			// selected timezone (was browser-local `isSameDay` — same
+			// near-midnight misbucket). SLOT-KEY-CACHE: no per-slot
+			// Date/Intl on repeat runs.
+			return slotDateKeyInTimeZone(slot.value, timeZone) === selectedKey;
 		});
 	}, [slots, selectedDate, timeZone]);
 
@@ -13009,6 +13057,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 							variant={resolvedTransitionVariant}
 							direction={navDirection}
 						>
+							{/* ERROR-BOUNDARY: a throw in this step's UI must
+								not unmount the shell (or sibling instances) —
+								keyed by step so navigating resets it. */}
+							<BeErrorBoundary stepKey={step.id}>
 							<h2
 								ref={isActive ? stepTitleRef : null}
 								tabIndex={-1}
@@ -13105,6 +13157,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 									meetingDurationMs / 60000,
 								)}
 							/>
+							</BeErrorBoundary>
 						</StepVisibilityWrapper>
 					);
 				})}
