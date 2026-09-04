@@ -12282,8 +12282,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const cancelButtonStyle = resolveButtonStyle(blGroups.cancelButton, ghostButtonRole, borderRadius);
 	// The primary button wears Continue's styles except on the last step,
 	// where Final Action's text AND style take over (mirrors primaryLabel).
+	const primaryGroup = isFinalPrimary
+		? blGroups.finalActionButton
+		: blGroups.continueButton;
 	const primaryButtonStyle = resolveButtonStyle(
-		isFinalPrimary ? blGroups.finalActionButton : blGroups.continueButton,
+		primaryGroup,
 		primaryButtonRole,
 		borderRadius,
 	);
@@ -12312,6 +12315,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 		{ ...primaryButtonRole, padding: "10px 18px 10px 18px" },
 		borderRadius,
 	);
+	// BUTTON-INTERACTION: one hover/pressed state per footer button.
+	// Unconditional hooks (the buttons themselves render conditionally).
+	const backIx = useButtonInteraction();
+	const cancelIx = useButtonInteraction();
+	const primaryIx = useButtonInteraction();
+	const animateIx = !prefersReducedMotion;
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
 	// rule — embeds in narrow desktop sidebars stayed 2-col (cramped,
@@ -12517,6 +12526,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 					addToCalendarStyle={addToCalendarButtonStyle}
 					bookAnotherStyle={bookAnotherButtonStyle}
 					doneStyle={doneButtonStyle}
+					addToCalendarHover={blGroups.addToCalendarButton?.hover}
+					addToCalendarPressed={blGroups.addToCalendarButton?.pressed}
+					doneHover={blGroups.doneButton?.hover}
+					donePressed={blGroups.doneButton?.pressed}
+					bookAnotherHover={blGroups.bookAnotherButton?.hover}
+					bookAnotherPressed={blGroups.bookAnotherButton?.pressed}
+					animateInteractions={animateIx}
 					timeZone={timeZone}
 					timeZoneLabel={copy.timeZoneLabel}
 					icsSummaryLabel={copy.icsSummaryLabel}
@@ -13055,11 +13071,18 @@ export default function BookingEngine(props: BookingEngineProps) {
 						type="button"
 						onClick={handleBack}
 						disabled={isSubmitting}
+						{...backIx.bind}
 						style={{
 							minHeight: TOUCH_TARGET_MIN,
 							// BUTTON-GROUPS: Back group's resolved surface
-							// (role default == previous hardcoded look).
-							...backButtonStyle,
+							// + Hover/Pressed deltas.
+							...applyButtonInteraction(
+								backButtonStyle,
+								blGroups.backButton?.hover,
+								blGroups.backButton?.pressed,
+								backIx,
+								animateIx,
+							),
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.5 : 1,
 							// W1-18-F1 fix: gated on prefers-reduced-motion.
@@ -13091,10 +13114,17 @@ export default function BookingEngine(props: BookingEngineProps) {
 						<button
 							type="button"
 							onClick={handleCancelSubmit}
+							{...cancelIx.bind}
 							style={{
 								minHeight: TOUCH_TARGET_MIN,
-								// BUTTON-GROUPS: Cancel group's resolved surface.
-								...cancelButtonStyle,
+								// BUTTON-GROUPS: Cancel group's surface + states.
+								...applyButtonInteraction(
+									cancelButtonStyle,
+									blGroups.cancelButton?.hover,
+									blGroups.cancelButton?.pressed,
+									cancelIx,
+									animateIx,
+								),
 								cursor: "pointer",
 								// W1-18-F1 fix: gated on prefers-reduced-motion.
 								transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
@@ -13122,6 +13152,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 						type="submit"
 						disabled={isSubmitting}
 						ref={submitButtonRef}
+						{...primaryIx.bind}
 						// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
 						// visual spinner told screen reader users nothing in
 						// progress — the button now exposes aria-busy while
@@ -13130,8 +13161,15 @@ export default function BookingEngine(props: BookingEngineProps) {
 						style={{
 							minHeight: TOUCH_TARGET_MIN,
 							// BUTTON-GROUPS: Continue/Final-Action groups'
-							// resolved surface (branch mirrors primaryLabel).
-							...primaryButtonStyle,
+							// resolved surface (branch mirrors primaryLabel)
+							// + Hover/Pressed deltas.
+							...applyButtonInteraction(
+								primaryButtonStyle,
+								primaryGroup?.hover,
+								primaryGroup?.pressed,
+								primaryIx,
+								animateIx,
+							),
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.7 : 1,
 							// W1-18-F1 fix: gated on prefers-reduced-motion.
@@ -14789,6 +14827,13 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	addToCalendarStyle: React.CSSProperties;
 	bookAnotherStyle: React.CSSProperties;
 	doneStyle: React.CSSProperties;
+	addToCalendarHover?: ButtonInteractionState;
+	addToCalendarPressed?: ButtonInteractionState;
+	doneHover?: ButtonInteractionState;
+	donePressed?: ButtonInteractionState;
+	bookAnotherHover?: ButtonInteractionState;
+	bookAnotherPressed?: ButtonInteractionState;
+	animateInteractions: boolean;
 	// HOME-URL-REMOVED: "Done" always navigates to DEFAULT_CONFIRM_HOME_URL
 	// (website root) — no prop, no control.
 	// CONFIRM-ICON-ANIM: the circle's entrance reuses the selected
@@ -14842,6 +14887,15 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		addToCalendarStyle,
 		bookAnotherStyle,
 		doneStyle,
+		// BUTTON-INTERACTION: per-button hover/pressed configs + whether
+		// transitions may animate (engine's reduced-motion verdict).
+		addToCalendarHover,
+		addToCalendarPressed,
+		doneHover,
+		donePressed,
+		bookAnotherHover,
+		bookAnotherPressed,
+		animateInteractions,
 		transitionVariant,
 		baseTransition,
 		timeZone,
@@ -14870,6 +14924,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	React.useEffect(() => {
 		headingRef.current?.focus();
 	}, []);
+	// BUTTON-INTERACTION: one hover/pressed state per confirmation action.
+	const icsIx = useButtonInteraction();
+	const doneIx = useButtonInteraction();
+	const bookAnotherIx = useButtonInteraction();
 
 	// CONFIRM-ICON-ANIM: two-stage confirmation reveal.
 	// Stage 1 — the green circle enters using the SAME transition family the
@@ -15252,12 +15310,20 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						// business-branded and never a Property Control (see
 						// AGENTS.md).
 						download={DEFAULT_ICS_FILENAME}
+						{...icsIx.bind}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
 							minHeight: TOUCH_TARGET_MIN,
-							// BUTTON-GROUPS: Add-to-Calendar group's surface.
-							...addToCalendarStyle,
+							// BUTTON-GROUPS: Add-to-Calendar group's surface
+							// + Hover/Pressed deltas.
+							...applyButtonInteraction(
+								addToCalendarStyle,
+								addToCalendarHover,
+								addToCalendarPressed,
+								icsIx,
+								animateInteractions,
+							),
 							textDecoration: "none",
 							cursor: "pointer",
 						}}
@@ -15355,12 +15421,20 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                     and no hidden state. */}
 				<a
 					href={DEFAULT_CONFIRM_HOME_URL}
+					{...doneIx.bind}
 					style={{
 						display: "inline-flex",
 						alignItems: "center",
 						minHeight: TOUCH_TARGET_MIN,
-						// BUTTON-GROUPS: Done group's resolved surface.
-						...doneStyle,
+						// BUTTON-GROUPS: Done group's resolved surface
+						// + Hover/Pressed deltas.
+						...applyButtonInteraction(
+							doneStyle,
+							doneHover,
+							donePressed,
+							doneIx,
+							animateInteractions,
+						),
 						textDecoration: "none",
 						cursor: "pointer",
 					}}
@@ -15370,10 +15444,18 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				<button
 					type="button"
 					onClick={onRestart}
+					{...bookAnotherIx.bind}
 					style={{
 						minHeight: TOUCH_TARGET_MIN,
-						// BUTTON-GROUPS: Book-another group's surface.
-						...bookAnotherStyle,
+						// BUTTON-GROUPS: Book-another group's surface
+						// + Hover/Pressed deltas.
+						...applyButtonInteraction(
+							bookAnotherStyle,
+							bookAnotherHover,
+							bookAnotherPressed,
+							bookAnotherIx,
+							animateInteractions,
+						),
 						cursor: "pointer",
 					}}
 				>
