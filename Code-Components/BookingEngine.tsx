@@ -5902,6 +5902,12 @@ interface FieldConfig {
 	// by index with `options`. Empty arrays keep the plain text-only cards.
 	optionImages?: Array<string>;
 	optionDescriptions?: Array<string>;
+	// AUTHOR-DEFAULT-SELECTION: optional pre-selected option for the
+	// ChoiceGroup variants (segmented/pills/cards/radio). Empty/undefined
+	// keeps the historical behavior (first non-empty option). When set it
+	// must match an option label (or entry of `optionValues`); a value
+	// that matches nothing falls back to the first option — never empty.
+	defaultOption?: string;
 	// T10-M4 fix: optional per-field input length cap. 0/undefined means
 	// "use the built-in default for this field type" (see effectiveMaxLength).
 	maxLength?: number;
@@ -6765,12 +6771,16 @@ function validatePhone(str: string, vc: ValidationCopy): string | null {
 	return null;
 }
 
-// PHONE-INPUT-FILTER fix: type="tel" / inputMode="tel" are only KEYBOARD
+// PHONE-INPUT-RAW fix: type="tel" / inputMode="tel" are only KEYBOARD
 // HINTS — desktop and external keyboards still accept letters. The phone
-// field's value is sanitized at its single write point (FieldRenderer's
-// onChange) so characters outside the phone charset never enter engine
-// state — and because the input is controlled, they can never appear in
-// the field. The allowed set is exactly what PHONE_REGEX/validatePhone
+// field stores RAW keystrokes (visible while typing) and validatePhone
+// rejects non-phone content on Continue (rule 81: submit-driven, so
+// typing never gains a first-time error). Sanitizing lives ONLY at the
+// payload boundary (buildBookingFieldsResponses / buildNotesPayload) so
+// Cal.com receives clean digits. Never reintroduce write-point
+// sanitizing: it silently swallowed letters, misreporting "required"
+// for "abc" and letting optional "abc" pass as empty.
+// The allowed set is exactly what PHONE_REGEX/validatePhone
 // accept: digits, a leading-formatting "+ ( ) - . " and spaces.
 const PHONE_DISALLOWED_CHARS = /[^0-9+()\-. ]/g;
 function sanitizePhoneInput(value: string): string {
@@ -8130,6 +8140,12 @@ function calTypeToFieldType(calType: string): FieldType {
 	switch ((calType || "").toLowerCase()) {
 		case "phone":
 			return "phone";
+		// AUTO-INJECT-EMAIL fix: Cal.com `email` custom fields used to
+		// fall through to `text`, so a required Cal email only got the
+		// min-length-3 check and never the email-format check — invalid
+		// addresses sailed into the booking POST and failed there.
+		case "email":
+			return "email";
 		case "textarea":
 		case "multilinetext":
 			return "textarea";
@@ -9132,7 +9148,13 @@ function buildBookingFieldsResponses(
 				key = slugifyLabel(field.label) || field.id;
 				if (!key) continue;
 			}
-			out[key] = String(value);
+			// PHONE-INPUT-RAW: phone values are stored raw (see write
+			// point) — sanitize at this payload boundary so Cal.com
+			// receives clean digits, never typed letters.
+			out[key] =
+				field.fieldType === "phone"
+					? sanitizePhoneInput(String(value))
+					: String(value);
 		}
 	}
 	return out;
@@ -9164,7 +9186,13 @@ function buildNotesPayload(
 			if (field.isPrimaryName || field.fieldType === "email") continue;
 			const value = values[field.id];
 			if (value === undefined || value === "") continue;
-			stepLines.push(`${field.label}: ${String(value)}`);
+			// PHONE-INPUT-RAW: same payload-boundary sanitize as
+			// buildBookingFieldsResponses — notes carry clean digits.
+			const shown =
+				field.fieldType === "phone"
+					? sanitizePhoneInput(String(value))
+					: String(value);
+			stepLines.push(`${field.label}: ${shown}`);
 		}
 		if (!stepLines.length) continue;
 		lines.push(step.title);
@@ -10760,17 +10788,41 @@ function useBookingEngineState(
 	const effectiveActiveSteps = React.useMemo(() => {
 		if (missingRequiredCalFields.length === 0) return baseActiveSteps;
 		if (isCanvas) return baseActiveSteps;
-		const autoFields: NormalizedField[] = missingRequiredCalFields.map((f) => ({
-			id: `auto-cal-${f.slug}`,
-			label: f.label || f.slug,
-			placeholder: f.placeholder || "",
-			required: true,
-			fieldType: calTypeToFieldType(f.type),
-			width: "full" as const,
-			options: f.options ? [...f.options] : [],
-			calFieldId: f.slug,
-			isPrimaryName: false,
-		})) as NormalizedField[];
+		const autoFields: NormalizedField[] = missingRequiredCalFields.map((f) => {
+			// AUTO-INJECT-TYPES fix: three mapping gaps made auto steps
+			// fail validation or wedge entirely (verified against live
+			// Cal.com shapes):
+			//  - number/url fall through to `text` and inherited the
+			//    name-like min-length-3 gate, so "7" failed. Short-value
+			//    Cal types gate at minLength 1 (required + non-empty).
+			//  - select/radio/multiselect with zero parseable options is
+			//    UNSATISFIABLE as required (nothing to pick — the step
+			//    could never advance). Fall back to free text so the
+			//    step stays passable; the canvas warning already tells
+			//    the author to fix the source field.
+			//  - multiselect stays single-`select` (no multi-pick UI
+			//    exists) — documented limitation, one value is accepted.
+			const calKind = (f.type || "").toLowerCase();
+			const hasOptions = !!f.options && f.options.length > 0;
+			let fieldType = calTypeToFieldType(f.type);
+			if (fieldType === "select" && !hasOptions) {
+				fieldType = "text";
+			}
+			return {
+				id: `auto-cal-${f.slug}`,
+				label: f.label || f.slug,
+				placeholder: f.placeholder || "",
+				required: true,
+				fieldType,
+				width: "full" as const,
+				options: f.options ? [...f.options] : [],
+				calFieldId: f.slug,
+				isPrimaryName: false,
+				...(fieldType === "text" && calKind !== "text"
+					? { minLength: 1 }
+					: {}),
+			};
+		}) as NormalizedField[];
 		const autoStep: NormalizedStep = {
 			id: "auto-cal-required",
 			enabled: true,
@@ -14459,7 +14511,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						// radiogroup aria-name still uses `label`).
 						showLabel={false}
 						inputName={field.id}
-						defaultValue={opts[0]?.label || ""}
+						// AUTHOR-DEFAULT-SELECTION: the author-configured
+						// pre-selected option wins; empty falls back to the
+						// historical first-option seed (existing canvases
+						// unchanged — their `defaultOption` is "").
+						defaultValue={field.defaultOption || opts[0]?.label || ""}
 						variant={variant}
 						optionsText=""
 						options={opts}
@@ -14632,18 +14688,17 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						autoComplete={autocompleteToken(field)}
 						// W1-20-N1 fix: freeze during the POST (see textarea).
 						disabled={isSubmitting}
-						// PHONE-INPUT-FILTER fix: phone fields sanitize at the
-						// write point — letters/punctuation outside the phone
-						// charset never reach engine state, so the controlled
-						// input can never display them (typing AND pasting).
-						onChange={(e) =>
-							onFieldChange(
-								field.id,
-								field.fieldType === "phone"
-									? sanitizePhoneInput(e.target.value)
-									: e.target.value,
-							)
-						}
+						// PHONE-INPUT-RAW fix: phone fields store the RAW keystrokes
+						// (letters visible while typing) and validate them on
+						// Continue (rule 81 — submit-driven, never live). The
+						// old write-point sanitize swallowed letters silently,
+						// so "abc" in a required field misreported "required"
+						// and in an optional field passed as empty. Now raw
+						// "abc" fails validatePhone with the phone error, and
+						// sanitizing happens only at the payload boundary
+						// (buildBookingFieldsResponses / notes) so Cal.com
+						// receives clean digits.
+						onChange={(e) => onFieldChange(field.id, e.target.value)}
 						aria-invalid={!!error}
 						aria-describedby={
 							error ? errorDomId : undefined
@@ -15876,6 +15931,27 @@ function makeFieldObjectControls() {
 				p?.fieldType === "calendar-widget" ||
 				p?.fieldType === "checkbox" ||
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
+		},
+		// AUTHOR-DEFAULT-SELECTION: which option starts pre-selected for
+		// the ChoiceGroup variants (segmented/pills/cards/radio). Scalar
+		// + sibling-hidden like `options` (same Safety Rule #2 exception).
+		// Empty keeps the historical first-option seed; a set value must
+		// match an option label (or Option Values entry) — getInitialSelection
+		// matches value-or-label and falls back to first on no match.
+		// Native `select` is excluded on purpose: its placeholder/empty
+		// state is the correct required-field UX (no auto-pass there).
+		defaultOption: {
+			type: ControlType.String,
+			title: "Default Selected",
+			defaultValue: "",
+			placeholder: "Empty = first option",
+			description:
+				"Pre-selected option. Must match an option label or value; empty keeps the first option.",
+			hidden: (p: FieldControlProps) =>
+				p?.fieldType !== "segmented" &&
+				p?.fieldType !== "pills" &&
+				p?.fieldType !== "cards" &&
+				p?.fieldType !== "radio",
 		},
 		// Scalar — safe to conditionally hide (Safety Rule #2).
 		isPrimaryName: {
