@@ -1919,7 +1919,10 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 				onFocus={() => React.startTransition(() => setFocusedIndex(index))}
 				onBlur={() => React.startTransition(() => setFocusedIndex(null))}
 				style={{
-					minHeight: optionMinHeight ?? TOUCH_TARGET_MIN,
+					// HEIGHT-REMOVED: fixed 23px floor like inputs (was the
+					// 44px touch floor) — option height grows via the
+					// variant Padding now. Stored legacy `minHeight` wins.
+					minHeight: optionMinHeight ?? 23,
 					// FINAL-51 fix: width floor too — very short labels ("A",
 					// "1") previously produced hair-thin tap targets.
 					minWidth: TOUCH_TARGET_MIN,
@@ -14420,7 +14423,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	const fsPadding = resolveFieldPadding(fs, field.fieldType);
 	const inputBaseStyle: React.CSSProperties = {
 		width: "100%",
-		minHeight: fs?.minHeight ?? TOUCH_TARGET_MIN,
+		// HEIGHT-REMOVED: fixed 23px floor — no Height control exists, so
+		// field height grows via Padding only. A stored `minHeight` from
+		// an older canvas still wins as legacy (never silently restyle a
+		// saved instance).
+		minHeight: fs?.minHeight ?? 23,
 		padding: fsPadding,
 		borderRadius: fsRadius,
 		border: `${fsBorder.width}px ${fsBorder.style} ${error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
@@ -14493,8 +14500,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
 						ref={textareaRef}
 						style={{
-							...inputBaseStyle,
-							minHeight: fs?.minHeight ?? 96,
+						...inputBaseStyle,
+						// HEIGHT-REMOVED: same fixed 23px floor as inputs
+						// (was 96) — textarea height comes from `rows` +
+						// Padding now.
+						minHeight: fs?.minHeight ?? 23,
 							resize: "vertical",
 							fontFamily: fs?.font?.fontFamily ?? "inherit",
 						}}
@@ -15897,7 +15907,10 @@ function makeInputFieldStylesControls() {
 		radius: fieldStylesRadiusControl(),
 		padding: fieldStylesPaddingControl(),
 		focusBorderColor: fieldStylesColorControl("Focus Border"),
-		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
+		// HEIGHT-REMOVED: no Height row — field height is hardcoded to
+		// 23px at the consumption sites and grown via Padding only.
+		// (A stored `minHeight` from an older canvas is still honored
+		// as legacy; new instances can no longer set one.)
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
@@ -15931,7 +15944,10 @@ function makeVariantChoiceStylesControls(
 		border: fieldStylesBorderControl(),
 		radius: fieldStylesRadiusControl(eff.radius),
 		padding: fieldStylesPaddingControl(eff.padding),
-		minHeight: fieldStylesNumberControl("Height", 24, 200, eff.minHeight),
+		// HEIGHT-REMOVED: no Height row — field height is hardcoded to
+		// 23px at the consumption sites and grown via Padding only.
+		// (A stored `minHeight` from an older canvas is still honored
+		// as legacy; new instances can no longer set one.)
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
