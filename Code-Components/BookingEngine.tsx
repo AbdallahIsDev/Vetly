@@ -15094,15 +15094,28 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					});
 				}
 				list.push({ label: dateLabel, value: dateStr });
-				list.push({
-					label: timeLabel,
-					value: timeZoneLabel
-						? `${slot.timeLabel} (${timeZoneLabel})`
-						: slot.timeLabel,
-				});
-			}
-			return list;
-		}, [steps, values, timeZone, dateLabel, timeLabel, timeZoneLabel]);
+			list.push({
+				label: timeLabel,
+				value: timeZoneLabel
+					? `${slot.timeLabel} (${timeZoneLabel})`
+					: slot.timeLabel,
+			});
+		}
+		// CC-11 fix: surface the booking reference (the Cal.com booking
+		// UID — the booking's ID for reschedule/cancel), when one was
+		// returned. Derived INSIDE the memo: the old code pushed onto the
+		// memoized array in the render body, so EVERY re-render (button
+		// hovers, focus moves, ticks) appended another identical
+		// "Confirmation #" row and the list grew without bound. Never
+		// mutate a memoized value during render.
+		if (bookingResult?.uid) {
+			list.push({
+				label: confirmationNumberLabel,
+				value: bookingResult.uid,
+			});
+		}
+		return list;
+	}, [steps, values, timeZone, dateLabel, timeLabel, timeZoneLabel, bookingResult?.uid, confirmationNumberLabel]);
 
 	// T3-M3 fix: the .ics DESCRIPTION carries the collected answers (minus
 	// the internal "Selected Time" section) instead of nothing; the SUMMARY
@@ -15188,14 +15201,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				meetingDurationMs,
 			)
 			: "";
-
-	// CC-11 fix: surface the booking reference, when one was returned.
-	if (bookingResult?.uid) {
-		entries.push({
-			label: confirmationNumberLabel,
-			value: bookingResult.uid,
-		});
-	}
 
 	return (
 		// A11Y-ANNOUNCE: plain wrapper — the focus move to the heading
