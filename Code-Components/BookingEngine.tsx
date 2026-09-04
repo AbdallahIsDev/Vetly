@@ -6023,10 +6023,16 @@ interface FieldConfig {
 	// value is sent in `bookingFieldsResponses` on the booking POST instead
 	// of only ever appearing inside the free-text notes.
 	calFieldId?: string;
-	// T4-M4 fix: per-field validation overrides (restored - these used to
-	// exist, then were flattened away). `validationRule` forces the rule
-	// used for this field regardless of its type; `minLength` overrides the
-	// default for min-length rules; `customRegex` feeds "custom-regex".
+	// VALIDATION-REMOVED (rule 100): NO validation controls exist —
+	// no Validation dropdown, no Min/Max Length, no Regex Pattern. The
+	// keys below stay ONLY as internal/legacy carriers: normalizeSteps
+	// forces authored fields to neutral (`validationRule: "type"`,
+	// `minLength: undefined`, `maxLength: 0`, no custom pattern) so any
+	// stored author override can never take effect; the engine validates
+	// purely by fieldType with fixed per-type caps. `minLength` is still
+	// set programmatically for auto-injected Cal.com fields (which bypass
+	// normalizeSteps). Never re-add a control for any of these, and never
+	// read a stored override as configuration again.
 	validationRule?:
 	| "type"
 	| "none"
@@ -6036,10 +6042,7 @@ interface FieldConfig {
 	| "custom-regex";
 	minLength?: number;
 	customRegex?: string;
-	// W1-20-M6 fix: canvas-only test input for the Regex Pattern control.
-	// When an author types sample text here, the canvas shows a live verdict
-	// (matches / no match / invalid / ReDoS risk) evaluated with the exact
-	// same compiled regex the published flow uses. Never rendered live.
+	// Legacy canvas-only regex test input. Control removed; never read.
 	regexPreviewInput?: string;
 	// FIELD-STYLES (hard rule): per-field visual overrides. Three keys, ONE
 	// shared model (FieldStyleOverrides) — the panel shows exactly one
@@ -6719,6 +6722,19 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 					fieldType: field.fieldType || "text",
 					width: field.width || "full",
 					options: field.options || [],
+					// VALIDATION-REMOVED (rule 100): authored validation
+					// overrides are neutralized at this single choke point
+					// — stored `validationRule`/`minLength`/`maxLength`/
+					// `customRegex` from older canvases can never take
+					// effect. Neutral = built-in per-type behavior:
+					// "type" inference, default min 3, default max cap.
+					// (Auto-injected Cal.com fields bypass normalizeSteps,
+					// so their programmatic minLength survives.)
+					validationRule: "type" as const,
+					minLength: undefined,
+					maxLength: 0,
+					customRegex: undefined,
+					regexPreviewInput: undefined,
 				})),
 			}))
 			// T10-M9 fix: a form step with zero fields renders as dead air on
@@ -6829,31 +6845,13 @@ function validateField(
 			return vc.maxLengthError.replace("{max}", String(maxLen));
 		}
 	}
-	// T4-M4 fix: per-field rules (validationRule / minLength / customRegex)
-	// override the type-derived checks below.
-	const explicitRule =
-		field.validationRule && field.validationRule !== "type"
-			? field.validationRule
-			: undefined;
-	if (explicitRule === "none") return null;
-	if (explicitRule === "email") {
-		if (!EMAIL_REGEX.test(str.trim())) return vc.emailError;
-		return null;
-	}
-	if (explicitRule === "phone") {
-		return validatePhone(str, vc);
-	}
-	if (explicitRule === "custom-regex") {
-		if (!field.customRegex) return vc.invalidRegexError;
-		// W1-04-H2 fix: reject ReDoS-prone shapes up front (compiling and
-		// running them would let a visitor freeze the tab), then use the
-		// cached compiled regex instead of recompiling per keystroke.
-		if (isReDosRisky(field.customRegex)) return vc.invalidRegexError;
-		const re = getCompiledCustomRegex(field, field.customRegex);
-		if (!re) return vc.invalidRegexError;
-		if (!re.test(str)) return vc.customRegexError;
-		return null;
-	}
+	// VALIDATION-REMOVED (rule 100): no per-field rule overrides exist.
+	// Every check below derives purely from fieldType with fixed caps
+	// (text/textarea min 3; email format + 254 max; phone format + 7
+	// digits + 40 max; choice/checkbox required-only; calendar-widget
+	// never). `field.minLength` survives only as the internal carrier
+	// for auto-injected Cal.com fields (authored fields are neutralized
+	// in normalizeSteps, so this is always the built-in 3 for them).
 	const minLength = field.minLength ?? vc.minLength;
 	// W1-20-H3 fix: min-length validation must NEVER fire on optional
 	// fields — a partially filled optional field (e.g. "ab") used to
@@ -6863,12 +6861,6 @@ function validateField(
 	// FINAL-18 fix: count Unicode CODE POINTS, not UTF-16 code units —
 	// "👍👍" is 2 characters to a human but 4 code units, so emoji-heavy
 	// input could pass minLength=3 while being visibly too short.
-	if (explicitRule === "min-length") {
-		if (field.required && Array.from(str.trim()).length < minLength) {
-			return vc.minLengthError;
-		}
-		return null;
-	}
 	if (field.fieldType === "email" && !EMAIL_REGEX.test(str.trim())) {
 		return vc.emailError;
 	}
@@ -6921,132 +6913,6 @@ function validatePhone(str: string, vc: ValidationCopy): string | null {
 const PHONE_DISALLOWED_CHARS = /[^0-9+()\-. ]/g;
 function sanitizePhoneInput(value: string): string {
 	return value.replace(PHONE_DISALLOWED_CHARS, "");
-}
-
-// W1-04-H2 fix: author-supplied custom regexes were recompiled on every
-// validateField call (every keystroke) and catastrophic-backtracking
-// patterns could freeze the main thread (ReDoS). Compiled patterns are now
-// cached per field in a WeakMap, and statically detectable exponential-time
-// shapes are rejected before a visitor's input ever reaches them.
-const customRegexCache = new WeakMap<
-	object,
-	{ re: RegExp | null; invalid: boolean; pattern: string }
->();
-
-// W1-04-F-6 fix: the ReDoS analysis below constructs 3-4 `new RegExp` per
-// call, and validateField runs it on EVERY keystroke for custom-regex
-// fields (plus the live-preview verdict path). The verdict is a pure
-// function of the pattern string — cache it. Bounded growth: patterns
-// come from the author's property panel.
-const reDosCache = new Map<string, boolean>();
-
-function isReDosRisky(pattern: string): boolean {
-	const cached = reDosCache.get(pattern);
-	if (cached !== undefined) return cached;
-	const verdict = isReDosRiskyUncached(pattern);
-	reDosCache.set(pattern, verdict);
-	return verdict;
-}
-
-function isReDosRiskyUncached(pattern: string): boolean {
-	// Exponential backtracking requires a group that can match the same
-	// input many ways (inner quantifier or ambiguous alternation) wrapped in
-	// an *unbounded* outer quantifier. Bounded repeats like `(\\d{1,3}){3}`
-	// are poly-time and allowed. Shapes blocked:
-	//   (a+)+, (a*)*, (a{1,5})+, ([a-z]+)*   — inner quantifier
-	//   (ab|a)+, (a|aa)+                     — alternation sharing a first
-	//                                          character (prefix ambiguity)
-	//   ((ab)+)+, ((a|b)*)+                  — nested groups
-	// `(?:`/`(?=` markers are normalized to `(` first so the marker `?` is
-	// not mistaken for a quantifier, and `body` treats a whole `[...]` class
-	// as one atom so a class-scoped quantifier like `([a-z]+)*` is detected.
-	const normalized = pattern.replace(/\(\?[:=!<>=]?/g, "(");
-	// Grouping `(?: ... )` on every interpolated alternation is
-	// load-bearing — without it the inner `|`s fork the rule into
-	// unrelated branches.
-	const body = "(?:[^()\\[\\]]|\\[[^\\[\\]]*\\])*";
-	const innerQuant = "(?:[+*?]|\\{[0-9]+(?:,[0-9]*)?\\})";
-	const outerUnbounded = "(?:[+*]|\\{[0-9]+,\\})";
-	if (
-		new RegExp(`\\(${body}${innerQuant}${body}\\)${outerUnbounded}`).test(
-			normalized,
-		)
-	) {
-		return true;
-	}
-	// Ambiguous-alternation check: only groups whose alternatives can match
-	// the same first character are exponential in practice, so
-	// `(mon|tue|fri)+$` (disjoint first chars) stays allowed while
-	// `(a|aa)+` / `(ab|a)+` are rejected.
-	if (new RegExp(`\\(${body}\\|${body}\\)${outerUnbounded}`).test(normalized)) {
-		const groupRe = new RegExp(
-			`\\((${body}\\|${body})\\)${outerUnbounded}`,
-			"g",
-		);
-		for (
-			let m = groupRe.exec(normalized);
-			m !== null;
-			m = groupRe.exec(normalized)
-		) {
-			const alts = m[1].split("|").filter(Boolean);
-			const firsts = alts.map((alt) => {
-				const t = alt.trim();
-				if (t[0] === "\\") return t.slice(0, 2);
-				if (t[0] === "[") {
-					const end = t.indexOf("]");
-					return end === -1 ? "[" : t.slice(0, end + 1);
-				}
-				return t.slice(0, 2);
-			});
-			for (let i = 0; i < firsts.length; i++) {
-				for (let j = i + 1; j < firsts.length; j++) {
-					const a = firsts[i];
-					const b = firsts[j];
-					// Same starting token, or one literal prefix of the
-					// other: (a|aa)+, (ab|a)+, (foo|fo)+ are exponential.
-					if (a === b) return true;
-					if (a.length < b.length ? b.startsWith(a) : a.startsWith(b)) {
-						return true;
-					}
-					// `.` matches anything → ambiguous with every token.
-					if (a === "." || b === ".") return true;
-					// Two character classes → conservatively ambiguous.
-					if (a.startsWith("[") && b.startsWith("[")) return true;
-					// Escape like \d/\w/\s vs a class → overlapping.
-					if (
-						(a.startsWith("\\") && b.startsWith("[")) ||
-						(b.startsWith("\\") && a.startsWith("["))
-					) {
-						return true;
-					}
-				}
-			}
-		}
-	}
-	if (
-		new RegExp(`\\(${body}\\(${body}\\)${body}\\)${outerUnbounded}`).test(
-			normalized,
-		)
-	) {
-		return true;
-	}
-	return false;
-}
-
-function getCompiledCustomRegex(field: object, pattern: string): RegExp | null {
-	let cached = customRegexCache.get(field);
-	// Recompile if the author changed the pattern on a field whose object
-	// identity survived (defense against stale compiled regexes).
-	if (!cached || cached.pattern !== pattern) {
-		cached = { re: null, invalid: false, pattern };
-		try {
-			cached.re = new RegExp(pattern);
-		} catch {
-			cached.invalid = true;
-		}
-		customRegexCache.set(field, cached);
-	}
-	return cached.invalid ? null : cached.re;
 }
 
 function validateStep(
@@ -9551,20 +9417,16 @@ function formatStepCounter(
 // a sane default per input type. The caps only exist to stop unbounded input —
 // they never block a restored session value from rendering.
 function effectiveMaxLength(
-	field: Pick<NormalizedField, "fieldType" | "maxLength">,
+	field: Pick<NormalizedField, "fieldType">,
 ): number {
-	// W1-20-M4 fix: email is clamped to RFC 5321's 254-char limit even
-	// when the author configured a larger maxLength — no email address a
-	// visitor types can legitimately exceed it, and Cal.com's own email
-	// validation rejects anything longer anyway.
-	if (field.fieldType === "email") {
-		return Math.min(
-			field.maxLength && field.maxLength > 0 ? field.maxLength : 254,
-			254,
-		);
-	}
-	if (field.maxLength && field.maxLength > 0) return field.maxLength;
+	// VALIDATION-REMOVED (rule 100): fixed per-type caps, never
+	// author-set (normalizeSteps forces maxLength to neutral 0, and no
+	// control exposes it). text 250 (names/short info), textarea 1000
+	// (long answers), email 254 (RFC 5321 — also what Cal.com enforces),
+	// phone 40 (15 digits + formatting). Everything else has no cap.
 	switch (field.fieldType) {
+		case "email":
+			return 254;
 		case "phone":
 			return 40;
 		case "textarea":
@@ -9901,8 +9763,9 @@ function useBookingEngineState(
 			invalidRegexError:
 				validationMessages?.invalidRegexError ??
 				DEFAULT_VALIDATION_COPY.invalidRegexError,
-			minLength:
-				validationMessages?.minLength ?? DEFAULT_VALIDATION_COPY.minLength,
+			// VALIDATION-REMOVED (rule 100): the minimum is fixed (3) —
+			// no control, and stored overrides are ignored.
+			minLength: DEFAULT_VALIDATION_COPY.minLength,
 		};
 		// W1-04-H1 fix: the memo body reads `validation`, so the dep array must
 		// list `validation` — `[copy]` left stale validation messages in the
@@ -11192,66 +11055,11 @@ function useBookingEngineState(
 		missingRequiredCalFields,
 	]);
 
-	// W1-20-M6 fix: canvas-only live verdict for each custom-regex field
-	// that has a test input filled in. Reuses the production code path
-	// (`isReDosRisky` + `getCompiledCustomRegex`) so the preview matches
-	// exactly what visitors will hit after publish.
-	const regexPreviewVerdicts = React.useMemo(() => {
-		// W1-13-F-13-10 fix: the results only ever render behind
-		// `isCanvas &&` — skip the whole sweep on preview/published site.
-		if (!isCanvas) return [];
-		const verdicts: Array<{
-			fieldLabel: string;
-			pattern: string;
-			kind: "ok" | "mismatch" | "invalid" | "risky";
-			message: string;
-		}> = [];
-		for (const step of normalizedSteps) {
-			if (step.stepType !== "form" && step.stepType !== "datetime") {
-				continue;
-			}
-			for (const field of step.fields) {
-				if (
-					(field.validationRule ?? "type") !== "custom-regex" ||
-					!field.customRegex ||
-					!field.regexPreviewInput
-				) {
-					continue;
-				}
-				const pattern = field.customRegex;
-				const testInput = field.regexPreviewInput;
-				if (isReDosRisky(pattern)) {
-					verdicts.push({
-						fieldLabel: field.label,
-						pattern,
-						kind: "risky",
-						message:
-							"Risk of exponential backtracking (ReDoS). Simplify the pattern (e.g. remove nested/inner quantifiers or prefix-sharing alternatives).",
-					});
-					continue;
-				}
-				const re = getCompiledCustomRegex(field, pattern);
-				if (!re) {
-					verdicts.push({
-						fieldLabel: field.label,
-						pattern,
-						kind: "invalid",
-						message: "Invalid regex pattern — will not compile.",
-					});
-					continue;
-				}
-				verdicts.push({
-					fieldLabel: field.label,
-					pattern,
-					kind: re.test(testInput) ? "ok" : "mismatch",
-					message: re.test(testInput)
-						? `Matches: “${testInput}”`
-						: `No match for: “${testInput}”`,
-				});
-			}
-		}
-		return verdicts;
-	}, [isCanvas, normalizedSteps]);
+	// VALIDATION-REMOVED (rule 100): the canvas-only custom-regex live
+	// verdict sweep lived here (isReDosRisky + getCompiledCustomRegex +
+	// regexPreviewVerdicts + its render block below). No custom patterns
+	// can exist anymore — no control, no stored override — so the whole
+	// path is deleted, not left to rot.
 
 	// T10-M1 fix: analytics emitter. A throwing author callback must never
 	// break the booking flow, so everything is try/caught.
@@ -11355,7 +11163,7 @@ function useBookingEngineState(
 	// may update or clear its existing message so the visitor sees the
 	// error resolve — but a field with NO visible error never gains one
 	// from typing alone, and an in-progress value is never judged
-	// mid-edit. Required/format/max-length/phone/email/custom-regex rules
+	// mid-edit. Required/format/max-length/phone/email rules
 	// all follow this same submit-driven model (AGENTS.md).
 	const handleFieldChange = React.useCallback(
 		(fieldId: string, value: string | boolean | undefined) => {
@@ -12320,7 +12128,6 @@ function useBookingEngineState(
 		addToCalendarButtonStyle,
 		doneButtonStyle,
 		bookAnotherButtonStyle,
-		regexPreviewVerdicts,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
 		// and the author-tunable fallback meeting duration.
@@ -12425,7 +12232,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		addToCalendarButtonStyle,
 		doneButtonStyle,
 		bookAnotherButtonStyle,
-		regexPreviewVerdicts,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
 		// to the SuccessScreen.
@@ -12837,64 +12643,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 				))
 				: null}
 
-			{/* W1-20-M6 fix: canvas-only regex preview verdicts (live
-                evaluation of the author's test input). Never rendered in
-                preview or on the published site. */}
-			{isCanvas && regexPreviewVerdicts.length > 0
-				? regexPreviewVerdicts.map((verdict, verdictIdx) => (
-					/* biome-ignore lint/a11y/useSemanticElements: intentional
-		  polite status region (W1-13-F-13-9) for author-facing
-		  verdicts. */
-					<div
-						key={`${verdict.fieldLabel}-${verdict.pattern}-${verdictIdx}`}
-						// W1-13-F-13-9 fix: silent div → polite status
-						// region for author-facing verdicts.
-						role="status"
-						aria-live="polite"
-						aria-atomic="true"
-						style={{
-							padding: "10px 14px",
-							marginBottom: 8,
-							borderRadius: borderRadius,
-							background: withAlpha(
-								verdict.kind === "ok"
-									? theme.successColor
-									: verdict.kind === "mismatch"
-										? theme.errorColor
-										: theme.accentColor,
-								0.1,
-							),
-							border: `1px solid ${withAlpha(
-								verdict.kind === "ok"
-									? theme.successColor
-									: verdict.kind === "mismatch"
-										? theme.errorColor
-										: theme.accentColor,
-								0.3,
-							)}`,
-							color: theme.textPrimaryColor,
-							fontSize: 12,
-							lineHeight: 1.4,
-						}}
-					>
-						<strong style={{ color: theme.textPrimaryColor }}>
-							{verdict.fieldLabel}
-						</strong>
-						<span style={{ opacity: 0.75 }}> — {verdict.message}</span>
-						<div
-							style={{
-								fontFamily: "'SF Mono', Consolas, 'Courier New', monospace",
-								fontSize: 11,
-								opacity: 0.7,
-								marginTop: 4,
-								overflowWrap: "anywhere",
-							}}
-						>
-							{verdict.pattern}
-						</div>
-					</div>
-				))
-				: null}
+			{/* VALIDATION-REMOVED (rule 100): canvas regex verdicts lived
+                here — deleted with the custom-regex machinery. */}
 
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
 				<div style={{ marginBottom: 16 }}>
@@ -14896,16 +14646,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 									? "tel"
 									: "text"
 						}
-						// W1-20-N3 fix: surface the author's custom-regex as a
-						// native `pattern` hint too. The form is `noValidate`
-						// (W1-04-F-8) so enforcement stays with our own
-						// validateField — this only gives browsers/autofill a
-						// declarative description of the expected format.
-						pattern={
-							(field.validationRule ?? "type") === "custom-regex"
-								? field.customRegex || undefined
-								: undefined
-						}
+						// VALIDATION-REMOVED (rule 100): no author pattern to
+						// surface — the form is `noValidate` and enforcement
+						// stays with validateField's fixed per-type rules.
 						// W1-20-M1 fix: mobile keyboards — email and phone
 						// fields pulled up the full QWERTY instead of the
 						// @-key / numeric keypad.
@@ -16223,64 +15966,10 @@ function makeFieldObjectControls() {
 			defaultValue: false,
 			hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
 		},
-		// T4-M4 fix: the explicit "Validation" dropdown (and its Min Length /
-		// Regex Pattern sub-controls) used to exist, then was flattened away -
-		// validation became inferred from fieldType only, so authors could no
-		// longer force "email format" on a text field or attach a custom pattern.
-		// Restored below (all scalars, safe under Safety Rule #2); the default
-		// `type` keeps the previous inferred behavior for existing instances.
-		validationRule: {
-			type: ControlType.Enum,
-			title: "Validation",
-			options: ["type", "none", "email", "phone", "min-length", "custom-regex"],
-			optionTitles: [
-				"By field type",
-				"None",
-				"Email",
-				"Phone",
-				"Min length",
-				"Custom regex",
-			],
-			defaultValue: "type",
-			hidden: (p: FieldControlProps) =>
-				p?.fieldType === "calendar-widget" ||
-				p?.fieldType === "checkbox" ||
-				p?.fieldType === "select" ||
-				p?.fieldType === "segmented" ||
-				p?.fieldType === "pills" ||
-				p?.fieldType === "cards" ||
-				p?.fieldType === "radio",
-		},
-		minLength: {
-			type: ControlType.Number,
-			title: "Minimum Length",
-			defaultValue: 3,
-			min: 1,
-			max: 100,
-			step: 1,
-			hidden: (p: FieldControlProps) =>
-				(p?.validationRule ?? "type") !== "min-length" &&
-				!TEXT_FIELD_TYPES.includes(p?.fieldType || ""),
-		},
-		customRegex: {
-			type: ControlType.String,
-			title: "Regex Pattern",
-			defaultValue: "",
-			placeholder: "e.g. ^[A-Z]{2}\\d{4}$",
-			hidden: (p: FieldControlProps) =>
-				(p?.validationRule ?? "type") !== "custom-regex",
-		},
-		// W1-20-M6 fix: canvas-only test-input preview for the regex.
-		// Scalar + same sibling-gate as `customRegex` — matches the
-		// existing safe conditional-visibility pattern.
-		regexPreviewInput: {
-			type: ControlType.String,
-			title: "Test Input (canvas)",
-			defaultValue: "",
-			placeholder: "Text to test the pattern…",
-			hidden: (p: FieldControlProps) =>
-				(p?.validationRule ?? "type") !== "custom-regex",
-		},
+		// VALIDATION-REMOVED (rule 100): no Validation dropdown, no Minimum
+		// Length, no Regex Pattern, no Test Input. Validation is inferred
+		// from fieldType only, with fixed per-type caps hardcoded in the
+		// engine (validateField/effectiveMaxLength) — never author-edited.
 		// Requirement 4: only show Options for field types that actually use
 		// choices. This IS an Array control conditionally hidden by a
 		// sibling (`fieldType`) — a narrow, deliberate exception to Safety
@@ -16334,21 +16023,9 @@ function makeFieldObjectControls() {
 			// T8-L1 fix: removed deprecated enabledTitle/disabledTitle.
 			hidden: (p: FieldControlProps) => p?.fieldType !== "text",
 		},
-		// T10-M4 fix: optional per-field input cap. 0 means "use the
-		// built-in default for this field type".
-		maxLength: {
-			type: ControlType.Number,
-			title: "Max Length",
-			defaultValue: 0,
-			min: 0,
-			max: 2000,
-			step: 1,
-			hidden: (p: FieldControlProps) =>
-				p?.fieldType !== "text" &&
-				p?.fieldType !== "email" &&
-				p?.fieldType !== "phone" &&
-				p?.fieldType !== "textarea",
-		},
+		// VALIDATION-REMOVED (rule 100): no Max Length control. The cap is
+		// the built-in per-type value (see effectiveMaxLength) — text 250,
+		// textarea 1000, email 254 (RFC 5321), phone 40 — never author-set.
 		// T10-L4 fix: parallel image/description arrays for choice options,
 		// aligned by index with `options`. Same narrow exception to Safety
 		// Rule #2 as `options` itself (Array hidden by sibling fieldType).
@@ -17410,14 +17087,9 @@ addPropertyControls(BookingEngine, {
 						title: "Invalid Custom Regex",
 						defaultValue: DEFAULT_VALIDATION_COPY.invalidRegexError,
 					},
-					minLength: {
-						type: ControlType.Number,
-						title: "Min Length",
-						defaultValue: DEFAULT_VALIDATION_COPY.minLength,
-						min: 1,
-						max: 100,
-						step: 1,
-					},
+					// VALIDATION-REMOVED (rule 100): no Min Length control.
+					// The minimum is fixed in code (3 for text/textarea) —
+					// never author-set.
 				},
 			},
 		},
