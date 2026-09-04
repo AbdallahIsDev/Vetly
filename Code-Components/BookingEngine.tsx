@@ -8000,6 +8000,10 @@ interface CalEventMeta {
 	title?: string;
 	description?: string;
 	durationMinutes?: number;
+	// Variable-length events list their options here
+	// (`metadata.multipleLengths`) — the ONLY case where the bookings
+	// API accepts `lengthInMinutes` (fixed-length events reject it).
+	multipleLengths?: number[];
 	locationLabel?: string;
 	organizerName?: string;
 	avatarUrl?: string;
@@ -8077,6 +8081,19 @@ function normalizeCalEventMeta(data: unknown): CalEventMeta | null {
 		d.lengthInMinutes > 0
 	) {
 		meta.durationMinutes = d.lengthInMinutes;
+	}
+	// Variable-length options live under the event's `metadata` bag.
+	// Defensive read: anything non-numeric is dropped, capped so a
+	// pathological payload can't grow the object.
+	if (typeof d.metadata === "object" && d.metadata !== null) {
+		const raw = (d.metadata as Record<string, unknown>).multipleLengths;
+		if (Array.isArray(raw)) {
+			const lengths = raw.filter(
+				(v): v is number =>
+					typeof v === "number" && Number.isFinite(v) && v > 0,
+			);
+			if (lengths.length) meta.multipleLengths = lengths.slice(0, 20);
+		}
 	}
 	if (Array.isArray(d.locations)) {
 		for (const loc of d.locations) {
@@ -8428,11 +8445,16 @@ async function submitCalcomBooking(params: {
 	apiKey: string;
 	eventTypeId: string;
 	slotStart: string;
-	// W1-06-F-06-1 fix: Cal.com v2 /bookings requires the slot `end`
-	// (ISO datetime) alongside `start` — omitting it 400-rejects every
-	// booking attempt. `slot.end` has been captured into BookingPayload
-	// and consumed by ICS/deep-link builders; it now arrives here too.
+	// The slot `end` (ISO datetime) is captured at selection time for
+	// ICS/deep-link builders. It is NOT sent as top-level `end` (the
+	// bookings schema rejects it) — it only feeds the `lengthInMinutes`
+	// derivation below, and only when the event allows it.
 	slotEnd?: string;
+	// BODY-SCHEMA fix: `lengthInMinutes` may be sent ONLY when the event
+	// type offers multiple lengths (Cal.com 400-rejects it otherwise:
+	// "Can't specify 'lengthInMinutes'..."). The caller derives this
+	// from `calEventMeta.multipleLengths`.
+	allowLengthInMinutes?: boolean;
 	name: string;
 	email: string;
 	timeZone: string;
@@ -8461,6 +8483,7 @@ async function submitCalcomBooking(params: {
 		eventTypeId,
 		slotStart,
 		slotEnd,
+		allowLengthInMinutes,
 		name,
 		email,
 		timeZone,
@@ -8590,9 +8613,11 @@ async function submitCalcomBooking(params: {
 				// BODY-SCHEMA fix: the 2024-08-13 bookings schema has NO
 				// top-level `end` (rejected: "should not exist") — duration
 				// travels as `lengthInMinutes` derived from the slot's own
-				// end, falling back to the event default when absent.
+				// end, and ONLY when the event offers multiple lengths
+				// (fixed-length events 400-reject the key outright).
 				...(() => {
 					if (
+						!allowLengthInMinutes ||
 						!slotEnd ||
 						!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(slotEnd)
 					) {
@@ -11444,8 +11469,13 @@ function useBookingEngineState(
 			slotStart: slot.time24h,
 			// Duration travels as lengthInMinutes (derived from the slot
 			// end inside submitCalcomBooking) — there is no top-level
-			// `end` in the bookings schema.
+			// `end` in the bookings schema — and ONLY when the event
+			// offers multiple lengths (fixed-length events 400-reject
+			// the key). Unknown/absent metadata means single-length:
+			// omit and let the event default apply.
 			slotEnd: slot.end,
+			allowLengthInMinutes:
+				(calEventMeta?.multipleLengths?.length ?? 0) > 1,
 			name,
 			email,
 			timeZone,
