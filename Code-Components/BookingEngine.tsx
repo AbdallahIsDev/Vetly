@@ -4927,11 +4927,18 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	useIsomorphicLayoutEffect(() => {
 		if (!beInteractive) return;
 		setClockReady(true);
+		// SINGLE-SOURCE-RESYNC: this must ALSO run on every visitor-zone
+		// change, not mount-only. Layout effects beat the engine's passive
+		// detection swap in the same flush, so the mount pass frequently
+		// computes with the still-"UTC" initial — and nothing recomputed on
+		// the swap (the old comment claimed the scheduler below covered it,
+		// but that only re-armed its ≤30s timeout). Inside any UTC↔visitor
+		// straddle window that rendered the wrong Today dot, wrong
+		// past-guards and wrong default selection until a poll tick happened
+		// to correct it. Same function, same state, still pre-paint — the
+		// served/first-render placeholder path (rule 42) is untouched.
 		setToday(getTodayInTimeZone(timeZone));
-		// Mount-only: later timeZone swaps are handled by the scheduler
-		// effect below via its [timeZone] dependency.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [beInteractive]);
+	}, [beInteractive, timeZone]);
 	React.useEffect(() => {
 		if (!clockReady || typeof window === "undefined") return;
 		// Midnight rollover must follow the visitor's local calendar date,
