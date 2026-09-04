@@ -1976,9 +1976,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					// ring (comma-composed); "none"/unset adds nothing.
 					boxShadow: [
 						isSelected ? `inset 0 0 0 1px ${selectedRing}` : null,
-						optionShadow &&
-						optionShadow.trim() &&
-						optionShadow.trim().toLowerCase() !== "none"
+						!isNoShadowValue(optionShadow) && optionShadow
 							? optionShadow
 							: null,
 					]
@@ -6190,6 +6188,8 @@ interface BookingEngineStyleProps {
 // style — unset means "same as base". No layout-affecting rows (no
 // font/size swaps that would shift layout on hover).
 interface ButtonInteractionState {
+	/** Framer native transition into this state (first row). */
+	transition?: Transition;
 	/** 1 = no zoom. Applied as transform: scale(). */
 	scale?: number;
 	/** 1 = fully opaque. */
@@ -13085,8 +13085,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 							),
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.5 : 1,
-							// W1-18-F1 fix: gated on prefers-reduced-motion.
-							transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
 						}}
 					>
 						{backLabel}
@@ -13126,8 +13124,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 									animateIx,
 								),
 								cursor: "pointer",
-								// W1-18-F1 fix: gated on prefers-reduced-motion.
-								transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
 							}}
 						>
 							{cancelSubmitLabel}
@@ -13172,8 +13168,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 							),
 							cursor: isSubmitting ? "not-allowed" : "pointer",
 							opacity: isSubmitting ? 0.7 : 1,
-							// W1-18-F1 fix: gated on prefers-reduced-motion.
-							transition: prefersReducedMotion ? "none" : "opacity 0.15s ease",
 							display: "inline-flex",
 							alignItems: "center",
 							gap: 8,
@@ -15866,14 +15860,29 @@ function fieldStylesPaddingControl(defaultValue: string = FIELD_STYLES_INPUT_PAD
 	};
 }
 // DECOR: Framer's NATIVE shadow control (ControlType.BoxShadow — not a
-// custom-built one). defaultValue "none" = the surface's real current
-// look (nothing has a base shadow), so opening Styles changes nothing;
-// the runtime applies the value only when it names a real shadow.
+// custom-built one).
+// SHADOW-FORM fix: the default MUST be a fully-parseable shadow value.
+// The previous defaultValue "none" is not parseable as a shadow, so
+// Framer materialized a corrupt "Mixed" row (empty editor, zeroed
+// fields) that shadowed real values until manually deleted. This
+// transparent zero-offset/zero-blur shadow parses into clean fields,
+// renders identically to no shadow, and the runtime treats it exactly
+// like "none" (see isNoShadow).
+const NO_SHADOW_VALUE = "0px 0px 0px 0px rgba(0,0,0,0)";
+function isNoShadowValue(value: string | undefined): boolean {
+	if (!value) return true;
+	const n = value.replace(/\s+/g, "").toLowerCase();
+	return (
+		n === "" ||
+		n === "none" ||
+		n === NO_SHADOW_VALUE.replace(/\s+/g, "").toLowerCase()
+	);
+}
 function fieldStylesShadowControl() {
 	return {
 		type: ControlType.BoxShadow,
 		title: "Shadow",
-		defaultValue: "none",
+		defaultValue: NO_SHADOW_VALUE,
 	};
 }
 // DECOR: backdrop-blur only (not the full CSS filter set — blurring the
@@ -15883,7 +15892,7 @@ function fieldStylesShadowControl() {
 function fieldStylesBackgroundBlurControl() {
 	return {
 		type: ControlType.Number,
-		title: "Background Blur",
+		title: "BG Blur",
 		optional: true,
 		min: 0,
 		max: 40,
@@ -15892,12 +15901,13 @@ function fieldStylesBackgroundBlurControl() {
 		defaultValue: 0,
 	};
 }
-// DECOR runtime: shadow applies only for a real shadow value — "none"
-// (the control default), "" and unset all mean "no shadow layer", which
-// keeps state rings (selected/hover/focus boxShadows) intact and makes
-// unopened groups zero-impact.
+// DECOR runtime: shadow applies only for a real shadow value — the
+// transparent-zero default (see NO_SHADOW_VALUE), "none", "" and unset
+// all mean "no shadow layer", which keeps state rings
+// (selected/hover/focus boxShadows) intact and makes unopened groups
+// zero-impact.
 function shadowStyle(shadow: string | undefined): React.CSSProperties {
-	return shadow && shadow.trim() && shadow.trim().toLowerCase() !== "none"
+	return !isNoShadowValue(shadow) && shadow && shadow.trim()
 		? { boxShadow: shadow }
 		: {};
 }
@@ -16033,6 +16043,18 @@ function makeCalendarFieldStylesControls() {
 // when real (see shadowStyle).
 function makeButtonInteractionControls() {
 	return {
+		// Transition FIRST (author expectation): Framer's native
+		// transition control, driving the animation into this state.
+		// Default mirrors the pre-interaction feel (.15s ease-out).
+		transition: {
+			type: ControlType.Transition,
+			title: "Transition",
+			defaultValue: {
+				type: "tween",
+				duration: 0.15,
+				ease: "easeOut",
+			} as Transition,
+		},
 		scale: {
 			type: ControlType.Number,
 			title: "Scale",
@@ -16088,7 +16110,6 @@ function makeButtonGroupControls(defaults: {
 			buttonTitle: "Hover",
 			icon: "interaction",
 			optional: true,
-			description: "Style deltas while the pointer hovers the button.",
 			controls: makeButtonInteractionControls(),
 		},
 		pressed: {
@@ -16097,7 +16118,6 @@ function makeButtonGroupControls(defaults: {
 			buttonTitle: "Pressed",
 			icon: "interaction",
 			optional: true,
-			description: "Style deltas while the button is held down.",
 			controls: makeButtonInteractionControls(),
 		},
 	};
@@ -16160,6 +16180,68 @@ function resolveButtonStyle(
 // base style object untouched — zero behavior change for existing
 // canvases. Border override reuses the borderColor CSS key AFTER the
 // `border` shorthand so width/style from base survive.
+// BUTTON-INTERACTION transition: Framer's native Transition value
+// drives the inline-style swap (inline styles cannot run springs, so
+// spring/physics types resolve to their timed equivalent — duration
+// honors the author's value, easing falls back to ease). Maps
+// duration/ease/delay onto the six animated properties.
+const INTERACTION_ANIMATED_PROPS = [
+	"background-color",
+	"border-color",
+	"box-shadow",
+	"color",
+	"opacity",
+	"transform",
+];
+function cssEaseName(name: string): string {
+	switch (name) {
+		case "linear":
+		case "ease":
+		case "ease-in":
+		case "ease-out":
+		case "ease-in-out":
+			return name;
+		case "easeIn":
+			return "ease-in";
+		case "easeOut":
+			return "ease-out";
+		case "easeInOut":
+			return "ease-in-out";
+		default:
+			return "ease";
+	}
+}
+function interactionTransition(
+	t: Transition | undefined,
+	animate: boolean,
+): string {
+	if (!animate) return "none";
+	let duration = 0.15;
+	let ease = "ease";
+	let delay = 0;
+	if (t) {
+		if (typeof t.duration === "number" && Number.isFinite(t.duration)) {
+			duration = clamp(t.duration, 0, 5);
+		}
+		const d = (t as { delay?: unknown }).delay;
+		if (typeof d === "number" && Number.isFinite(d)) {
+			delay = clamp(d, 0, 5);
+		}
+		const e = t.ease;
+		if (typeof e === "string") {
+			ease = cssEaseName(e);
+		} else if (
+			Array.isArray(e) &&
+			e.length === 4 &&
+			e.every((n) => typeof n === "number")
+		) {
+			ease = `cubic-bezier(${(e as number[]).join(", ")})`;
+		}
+	}
+	return INTERACTION_ANIMATED_PROPS.map(
+		(p) => `${p} ${duration}s ${ease} ${delay}s`,
+	).join(", ");
+}
 function applyButtonInteraction(
 	base: React.CSSProperties,
 	hover: ButtonInteractionState | undefined,
@@ -16168,19 +16250,26 @@ function applyButtonInteraction(
 	animate: boolean,
 ): React.CSSProperties {
 	const st = state.pressed ? pressed : state.hovered ? hover : undefined;
-	if (!st) return base;
+	// Exit timing: while leaving hover, the hover config still governs
+	// the way back; pressed falls back to hover timing, then the default.
+	const t = state.pressed
+		? (pressed?.transition ?? hover?.transition)
+		: hover?.transition;
 	const out: React.CSSProperties = { ...base };
-	if (st.backgroundColor) out.background = st.backgroundColor;
-	if (st.textColor) out.color = st.textColor;
-	if (st.borderColor) out.borderColor = st.borderColor;
-	if (st.opacity != null) out.opacity = st.opacity;
-	if (st.scale != null && st.scale !== 1) {
-		out.transform = `scale(${st.scale})`;
+	if (st) {
+		if (st.backgroundColor) out.background = st.backgroundColor;
+		if (st.textColor) out.color = st.textColor;
+		if (st.borderColor) out.borderColor = st.borderColor;
+		if (st.opacity != null) out.opacity = st.opacity;
+		if (st.scale != null && st.scale !== 1) {
+			out.transform = `scale(${st.scale})`;
+		}
+		Object.assign(out, shadowStyle(st.shadow));
 	}
-	Object.assign(out, shadowStyle(st.shadow));
-	out.transition = animate
-		? "background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease"
-		: "none";
+	// The merge always owns `transition` (it replaces the old per-site
+	// opacity-only lines): untouched buttons get the harmless full-list
+	// default, configured states get their own timing.
+	out.transition = interactionTransition(t, animate);
 	return out;
 }
 
