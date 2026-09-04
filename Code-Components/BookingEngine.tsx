@@ -5143,6 +5143,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// clock layout effect above. Only a REAL restored date syncs through.
 	React.useEffect(() => {
 		if (!initialDate) return;
+		// GATE-CLOSE (rule 108): a restored date wins over the default
+		// (rules 78/84) — it is a decision, so an open gate must not
+		// overwrite it when availability settles later.
+		placeholderSelectedRef.current = false;
 		React.startTransition(() =>
 			setSelectedDate((prev) =>
 				prev && isSameDay(prev, initialDate) ? prev : initialDate,
@@ -5357,10 +5361,12 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				);
 			}
 		} else if (isCalcom && availabilityKnown) {
-			// No future bookable date anywhere in the loaded window ->
-			// leave NO selected date (never select an unavailable date).
-			// The visitor can page forward to load further months.
-			placeholderSelectedRef.current = false;
+			// Settled window genuinely has nothing bookable — stay
+			// unselected but keep the gate OPEN so a later window
+			// (page-forward, refetch, TTL refresh) can still decide.
+			// setSelectedDate(null) is idempotent across ticks. The gate
+			// closes only on a real decision (above) or an explicit pick
+			// (manual click / restored date clear it) — never on emptiness.
 			setSelectedDate(null);
 		}
 	}, [clockReady, today, hasKnownAvailability, firstAvailableDateFromToday, availableDates, slotsLoading, availabilitySettled, visibleMonth, setVisibleMonth, onDateChange]);
@@ -5477,6 +5483,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	const handleDateSelect = React.useCallback(
 		(date: Date) => {
 			if (startOfDay(date).getTime() < today.getTime()) return;
+			// GATE-CLOSE (rule 108): a manual pick is a selection decision —
+			// an open gate (settled-empty seen earlier) must never clobber
+			// it on a later tick.
+			placeholderSelectedRef.current = false;
 			React.startTransition(() => {
 				setSelectedDate(date);
 				// ADJACENT-FOLLOW fix: picking a live trailing/leading
@@ -7202,6 +7212,12 @@ interface UseCalcomSlotsResult {
 	// submission, error-banner retry) instead of being stuck with whatever
 	// was fetched on step entry.
 	refetch: () => void;
+	// SETTLED-KEY (rule 108): which availability window (monthCacheKey)
+	// the current slots/loading/error actually describe, or null when no
+	// fetch was attempted for the mounted window yet. `loading === false`
+	// alone cannot prove coverage — the null-month pass settles `false`
+	// with zero slots before the first real fetch starts.
+	settledKey: string | null;
 }
 
 // Shared cache key: month (local Y/M) + the timezone the fetch used, since
@@ -7497,6 +7513,11 @@ function useCalcomSlots(
 	// month) settle it to `false` synchronously in the same effect.
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
+	// SETTLED-KEY (rule 108): window identity for the current slots state.
+	// Stamped alongside every setSlots/setLoading(false) commit, cleared
+	// when a new window's fetch starts — never stamped for cancelled (stale)
+	// outcomes, which belong to a newer fetch.
+	const [settledKey, setSettledKey] = React.useState<string | null>(null);
 	// M2 fix: every month navigation re-fetched from scratch, even for a
 	// month already loaded once this session (e.g. paging back and forth
 	// between two months). A plain ref-backed cache, keyed by month + the
@@ -7593,6 +7614,7 @@ function useCalcomSlots(
 			setSlots(cached.slots);
 			setLoading(false);
 			setError(null);
+			setSettledKey(monthKey);
 			return;
 		}
 		// DETERMINISTIC-LIFECYCLE: same month already in flight — follow
@@ -7620,6 +7642,7 @@ function useCalcomSlots(
 					setSlots([]);
 				}
 				setLoading(false);
+				setSettledKey(monthKey);
 			});
 			return () => {
 				cancelled = true;
@@ -7694,6 +7717,9 @@ function useCalcomSlots(
 
 		setLoading(true);
 		setError(null);
+		// SETTLED-KEY: a new window's fetch is starting — previously settled
+		// state describes the OLD window and must not judge the new one.
+		setSettledKey(null);
 		// H5 fix: the previous month's slots stayed in state while the new
 		// month's fetch was in flight, so a visitor could see (and click)
 		// times that belong to whatever month they just navigated away
@@ -7740,6 +7766,7 @@ function useCalcomSlots(
 				setError(copy.offlineError);
 				setSlots([]);
 				setLoading(false);
+				setSettledKey(monthKey);
 				return;
 			}
 			const attemptTimeoutId = window.setTimeout(
@@ -7885,6 +7912,7 @@ function useCalcomSlots(
 					if (cancelled) return;
 					setSlots(mapped);
 					setLoading(false);
+					setSettledKey(monthKey);
 				})
 				.catch((err: unknown) => {
 					// W1-15-TS-08 fix: HTTP failures now arrive as the named
@@ -7988,6 +8016,9 @@ function useCalcomSlots(
 					if (cancelled) return;
 					setSlots([]);
 					setLoading(false);
+					// SETTLED-KEY: an errored window is still a judged window —
+					// empty set + error banner, never a silent limbo.
+					setSettledKey(monthKey);
 				})
 				.finally(() => {
 					window.clearTimeout(attemptTimeoutId);
@@ -8038,7 +8069,7 @@ function useCalcomSlots(
 		cacheTtl,
 	]);
 
-	return { slots, loading, error, refetch };
+	return { slots, loading, error, refetch, settledKey };
 }
 
 // =============================================================================
@@ -11144,6 +11175,8 @@ function useBookingEngineState(
 		error: slotsError,
 		// T3-H4 fix: retry path refetches availability (see handleRetry).
 		refetch: slotsRefetch,
+		// SETTLED-KEY (rule 108): which window the slots state describes.
+		settledKey: slotsSettledKey,
 	} = useCalcomSlots(
 		hasCalConfig ? calApiKey : "",
 		hasCalConfig ? calEventTypeId : "",
@@ -11223,25 +11256,42 @@ function useBookingEngineState(
 		return buildFutureAwareAvailableDates(slots, timeZone, availabilityNowMs);
 	}, [hasCalConfig, slots, timeZone, availabilityNowMs]);
 
-	// SETTLED-GATE (rule 107): the child's one-shot default decision must
-	// never judge a TRANSIENT empty set — monthStart is null until the
-	// visitor reaches the datetime step AND a month is known, and the fetch
-	// effect's null-month pass settles `loading=false` with zero slots.
-	// Judging that moment closed the gate (select-null) before the first
-	// real fetch, stranding the calendar with availability but no
-	// selection. Settle only when a fetch was actually attempted for the
-	// current window (or no fetch is ever needed).
+	// SETTLED-GATE (rule 108): the child's default decision must never
+	// judge a window the fetch hasn't covered. `!slotsLoading` is NOT
+	// coverage — between month-known and fetch-start (layout effects run
+	// before the fetch passive effect) it is true with a stale/empty set,
+	// which consumed the one-shot gate with select-null and stranded the
+	// calendar with availability but no selection. Coverage means the
+	// hook's settled window EQUALS the mounted window. No fetch ever
+	// needed (no config / step not reached) counts as settled.
+	const slotsWindowKey = React.useMemo(() => {
+		if (!hasCalConfig || !visibleMonth) return null;
+		return monthCacheKey(
+			visibleMonth,
+			timeZone,
+			calApiKey,
+			calEventTypeId,
+			calApiBaseUrl,
+		);
+	}, [
+		hasCalConfig,
+		visibleMonth,
+		timeZone,
+		calApiKey,
+		calEventTypeId,
+		calApiBaseUrl,
+	]);
 	const availabilitySettled = React.useMemo(() => {
 		if (!hasCalConfig) return true;
 		if (!hasDatetimeStep || !reachedDatetimeStep) return true;
-		if (!visibleMonth) return false;
-		return !slotsLoading;
+		if (!slotsWindowKey) return false;
+		return slotsSettledKey === slotsWindowKey;
 	}, [
 		hasCalConfig,
 		hasDatetimeStep,
 		reachedDatetimeStep,
-		visibleMonth,
-		slotsLoading,
+		slotsWindowKey,
+		slotsSettledKey,
 	]);
 
 	// Filter slots to the selected date (if a date is picked).
