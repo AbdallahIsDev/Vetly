@@ -1067,8 +1067,8 @@ const FIXED_ERROR_COLOR = "#DC2626";
 // four-value form materializes correctly; the runtime parsers
 // (paddingHorizontalFrom/paddingAxesFrom) read parts[0]/parts[1], which
 // are unchanged, so unconfigured rendering is byte-identical.
-const FIELD_STYLES_INPUT_PADDING = "10px 14px 10px 14px";
-const FIELD_STYLES_SELECT_PADDING = "10px 14px 10px 14px";
+const FIELD_STYLES_INPUT_PADDING = "14px";
+const FIELD_STYLES_SELECT_PADDING = "14px";
 const FIELD_STYLES_CARDS_PADDING = "10px 8px 10px 8px";
 const FIELD_STYLES_CARDS_COMPACT_PADDING = "10px 6px 10px 6px";
 const FIELD_STYLES_PILLS_PADDING = "10px 12px 10px 12px";
@@ -15925,7 +15925,7 @@ function makeVariantChoiceStylesControls(
 	// same constants the runtime resolvers fall back to), so activating
 	// Styles materializes the inherit look and only an author-entered value
 	// becomes an override. Cards (10px 8px), pills (10px 12px, 999px),
-	// segmented (11px 10px) and select/radio (10px 14px) each keep their
+	// segmented (11px 10px) and select/radio (14px) each keep their
 	// own real values here instead of sharing one generic set. Explicit 0
 	// is preserved via ?? checks.
 	const eff = getFieldStylesEffectiveDefaults(variant);
