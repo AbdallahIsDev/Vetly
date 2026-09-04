@@ -515,8 +515,9 @@ const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
 // for instances saved before the controls existed.
 const DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL = "Book another";
 const DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL = "Add to Calendar";
-// CONFIRM-HOME-URL: default destination of the "Done" action — website root.
-// The success screen never auto-redirects (see AGENTS.md).
+// HOME-URL-REMOVED: fixed destination of the "Done" action — website root.
+// No control exposes it (author direction); the success screen never
+// auto-redirects (see AGENTS.md).
 const DEFAULT_CONFIRM_HOME_URL = "/";
 const DEFAULT_FONT_FAMILY = "Inter, system-ui, sans-serif";
 // SYN-03 fix: the in-flight POST cancel button used a hardcoded literal —
@@ -6139,17 +6140,47 @@ interface BookingEngineStyleProps {
 	| "blurSlide";
 }
 
+// BUTTON-GROUPS: per-button Text + style overrides inside the Buttons
+// group (mirrors the field Styles model). Every group is optional — an
+// unopened group leaves the button on its role default, so existing
+// canvases render byte-identically. `text` falls back to the legacy
+// flat label key (author customizations from before the grouping
+// survive), then to the shipped default.
+interface ButtonStyleGroup {
+	text?: string;
+	textColor?: string;
+	backgroundColor?: string;
+	border?: {
+		borderWidth?: number;
+		borderColor?: string;
+		borderStyle?: string;
+		borderTopWidth?: number;
+		borderRightWidth?: number;
+		borderBottomWidth?: number;
+		borderLeftWidth?: number;
+	};
+	radius?: string | number;
+	padding?: string;
+	font?: FramerFont;
+}
 // ===== Copy =====
 interface BookingEngineCopyProps {
 	// Navigation & action button copy, grouped into one control (see
 	// Requirement 5) the same way `styles`/`font`/`copy` are grouped below.
+	// Each button owns a group (Text + full style set); the legacy flat
+	// label keys stay readable (optional) so pre-grouping canvases keep
+	// their custom copy.
 	buttonLabels: {
-		continueLabel: string;
-		backLabel: string;
-		finalActionLabel: string;
+		continueButton?: ButtonStyleGroup;
+		backButton?: ButtonStyleGroup;
+		finalActionButton?: ButtonStyleGroup;
 		// SYN-03 fix: the "Cancel" affordance shown while a booking POST is
 		// in flight — the last footer button without a label control.
-		cancelSubmitLabel: string;
+		cancelButton?: ButtonStyleGroup;
+		continueLabel?: string;
+		backLabel?: string;
+		finalActionLabel?: string;
+		cancelSubmitLabel?: string;
 		// NAV-GROUP-TOGGLE: lives inside the Buttons group. Default (false /
 		// undefined) keeps the Split layout — Back far left, primary action
 		// far right (see AGENTS.md hard rules).
@@ -6157,12 +6188,16 @@ interface BookingEngineCopyProps {
 		// CONFIRM-ACTIONS: confirmation-state labels live in the Buttons
 		// group because they configure confirmation buttons. Defaults keep
 		// the pre-existing copy ("Done" / "Book another" / "Add to calendar").
-		doneLabel: string;
-		bookAnotherLabel: string;
-		addToCalendarLabel: string;
-		// CONFIRM-HOME-URL: destination of the explicit "Done" action.
-		// Default "/" (website root). The success screen never auto-redirects.
-		homeUrl: string;
+		doneButton?: ButtonStyleGroup;
+		bookAnotherButton?: ButtonStyleGroup;
+		addToCalendarButton?: ButtonStyleGroup;
+		doneLabel?: string;
+		bookAnotherLabel?: string;
+		addToCalendarLabel?: string;
+		// HOME-URL-REMOVED: "Done" always navigates to the website root
+		// ("/") — the Home URL control is gone by author direction, the
+		// destination is fixed in the component (DEFAULT_CONFIRM_HOME_URL)
+		// and never exposed. The success screen never auto-redirects.
 	};
 	// Copy (fix #20: configurable terminal-state strings)
 	copy: {
@@ -9938,19 +9973,31 @@ function useBookingEngineState(
 	// NAV-GROUP-TOGGLE: `groupNavButtons` is read from the Buttons group
 	// (moved out of the top-level props). `=== true` keeps the default
 	// Split layout for old instances that never set it.
-	const { continueLabel, backLabel, finalActionLabel, groupNavButtons } = buttonLabels;
-	// CONFIRM-ACTIONS: confirmation-state labels + home destination now live
-	// in the Buttons group. The `??` fallbacks cover instances saved before
-	// these controls existed — they mirror the Property-Control defaults so
-	// old canvases keep their exact previous copy.
-	const doneLabel = buttonLabels?.doneLabel ?? DEFAULT_COPY_RETURN_HOME_LABEL;
-	const bookAnotherLabel =
-		buttonLabels?.bookAnotherLabel ?? DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL;
-	const addToCalendarButtonLabel =
-		buttonLabels?.addToCalendarLabel ?? DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL;
-	// CONFIRM-HOME-URL: explicit "Done" destination. Empty string hides the
-	// Done button; default "/" keeps it working out of the box.
-	const homeUrl = buttonLabels?.homeUrl ?? DEFAULT_CONFIRM_HOME_URL;
+	// BUTTON-GROUPS: per-button Text wins; the legacy flat label keeps
+	// pre-grouping canvases' custom copy; then the shipped default.
+	const { groupNavButtons } = buttonLabels;
+	const bl = buttonLabels ?? {};
+	const continueLabel = resolveButtonText(bl.continueButton?.text, bl.continueLabel, "Continue");
+	const backLabel = resolveButtonText(bl.backButton?.text, bl.backLabel, "Back");
+	const finalActionLabel = resolveButtonText(bl.finalActionButton?.text, bl.finalActionLabel, "Book Now");
+	// CONFIRM-ACTIONS: confirmation-state labels + fixed home destination.
+	// The `??`-style fallbacks cover instances saved before these controls
+	// existed — they mirror the Property-Control defaults so old canvases
+	// keep their exact previous copy.
+	const doneLabel = resolveButtonText(bl.doneButton?.text, bl.doneLabel, DEFAULT_COPY_RETURN_HOME_LABEL);
+	const bookAnotherLabel = resolveButtonText(
+		bl.bookAnotherButton?.text,
+		bl.bookAnotherLabel,
+		DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL,
+	);
+	const addToCalendarButtonLabel = resolveButtonText(
+		bl.addToCalendarButton?.text,
+		bl.addToCalendarLabel,
+		DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+	);
+	// HOME-URL-REMOVED: "Done" always navigates to the website root.
+	// No control, no stored override — DEFAULT_CONFIRM_HOME_URL is the
+	// destination, used directly at the render site.
 
 	// Autosave-to-browser is a permanent, always-on product feature —
 	// never an author toggle and never paired with disclosure UI.
@@ -12216,7 +12263,6 @@ function useBookingEngineState(
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		homeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
@@ -12316,7 +12362,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		homeUrl,
 		regexPreviewVerdicts,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
@@ -12329,10 +12374,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 	// LOCALE-REMOVED: no locale override: pageLocale() follows <html lang>.
 
 	// SYN-03 fix: the in-flight POST cancel button previously hardcoded
-	// "Cancel" — the only footer button not driven by buttonLabels. Use the
-	// shared default for canvases saved before the control existed.
-	const cancelSubmitLabel =
-		buttonLabels?.cancelSubmitLabel ?? DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL;
+	// "Cancel" — the only footer button not driven by buttonLabels. The
+	// Cancel group (Text + styles) drives it now, with the legacy flat
+	// key and shared default behind it for older canvases.
+	const cancelSubmitLabel = resolveButtonText(
+		buttonLabels?.cancelButton?.text,
+		buttonLabels?.cancelSubmitLabel,
+		DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
+	);
 
 	// PRIMARY-FOREGROUND: the submit button and its spinner render directly
 	// on the author's Primary/Accent surface, so their colour comes from the
@@ -12540,7 +12589,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					addToCalendarLabel={addToCalendarButtonLabel}
 					bookAnotherLabel={bookAnotherLabel}
 					doneLabel={doneLabel}
-					homeUrl={homeUrl}
 					timeZone={timeZone}
 					timeZoneLabel={copy.timeZoneLabel}
 					icsSummaryLabel={copy.icsSummaryLabel}
@@ -14875,8 +14923,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
 	doneLabel: string;
-	// CONFIRM-HOME-URL: explicit "Done" destination (empty → hidden).
-	homeUrl: string;
+	// HOME-URL-REMOVED: "Done" always navigates to DEFAULT_CONFIRM_HOME_URL
+	// (website root) — no prop, no control.
 	// CONFIRM-ICON-ANIM: the circle's entrance reuses the selected
 	// Transition Type family + the existing Transition timing control.
 	transitionVariant: TransitionVariantId;
@@ -14925,7 +14973,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		addToCalendarLabel,
 		bookAnotherLabel,
 		doneLabel,
-		homeUrl,
 		transitionVariant,
 		baseTransition,
 		timeZone,
@@ -15440,12 +15487,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				) : null}
 				{/* CONFIRM-ACTIONS: "Done" sits immediately to the left of
                     the primary action. Explicit visitor navigation only —
-                    the success screen never auto-redirects. Hidden when the
-                    author clears Home URL. */}
-				{homeUrl ? (
-					<a
-						href={homeUrl}
-						style={{
+                    the success screen never auto-redirects. The destination
+                    is fixed (website root) — HOME-URL-REMOVED has no control
+                    and no hidden state. */}
+				<a
+					href={DEFAULT_CONFIRM_HOME_URL}
+					style={{
 							display: "inline-flex",
 							alignItems: "center",
 							minHeight: TOUCH_TARGET_MIN,
@@ -15463,7 +15510,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					>
 						{doneLabel}
 					</a>
-				) : null}
 				<button
 					type="button"
 					onClick={onRestart}
@@ -15816,7 +15862,7 @@ function fieldStylesFontControl(
 	title: string,
 	defaultValue?: {
 		fontSize: string;
-		variant: "Regular" | "Medium";
+		variant: "Regular" | "Medium" | "Semibold";
 		lineHeight?: string | number;
 	},
 ) {
@@ -15845,19 +15891,25 @@ function fieldStylesFontControl(
 // back to each field type's own default. A value is stored — and applied —
 // only when the author actually enters one, and reopening the submenu shows
 // Framer's persisted value (previously customized values are never reset).
-function fieldStylesBorderControl() {
+function fieldStylesBorderControl(
+	defaultValue: {
+		borderWidth?: number;
+		borderStyle?: string;
+		borderColor?: string;
+	} = {
+		borderWidth: FIELD_STYLES_BORDER_WIDTH,
+		borderStyle: "solid",
+		borderColor: FIELD_STYLES_BORDER_COLOR,
+	},
+) {
 	return {
 		type: ControlType.Border,
 		title: "Border",
 		optional: true,
-		// STYLES-INIT-EFFECTIVE: mirrors the authored Border token default so
+		// STYLES-INIT-EFFECTIVE: mirrors the surface's effective border so
 		// the materialized value renders identically to the inherit path
-		// (and a zero-width materialization can never strip field borders).
-		defaultValue: {
-			borderWidth: FIELD_STYLES_BORDER_WIDTH,
-			borderStyle: "solid",
-			borderColor: FIELD_STYLES_BORDER_COLOR,
-		},
+		// (and a zero-width materialization can never strip borders).
+		defaultValue,
 	};
 }
 function fieldStylesRadiusControl(defaultValue: string = FIELD_STYLES_FIELD_RADIUS) {
@@ -15979,6 +16031,100 @@ function makeCalendarFieldStylesControls() {
 		radius: fieldStylesRadiusControl(eff.radius),
 		padding: fieldStylesPaddingControl(eff.padding),
 	};
+}
+
+// BUTTON-GROUPS: one reusable factory for every button's rows — Text
+// first (fixes the "Continue/Continue" confusion: the row is now titled
+// "Text" and holds "Continue"), then the same style vocabulary as field
+// Styles. Compound/numeric defaults are the button's own effective
+// values (four-value padding — PADDING-FOUR-VALUE — or Framer drops them
+// to 0 on activation); color keys stay default-free so unset buttons
+// track the live theme tokens (rules 90/93/96/98).
+function makeButtonGroupControls(defaults: {
+	text: string;
+	padding: string;
+	borderWidth: number;
+	borderColor: string;
+}) {
+	return {
+		text: {
+			type: ControlType.String,
+			title: "Text",
+			defaultValue: defaults.text,
+		},
+		textColor: fieldStylesColorControl("Text Color"),
+		backgroundColor: fieldStylesColorControl("Background"),
+		border: fieldStylesBorderControl({
+			borderWidth: defaults.borderWidth,
+			borderStyle: "solid",
+			borderColor: defaults.borderColor,
+		}),
+		radius: fieldStylesRadiusControl("12px"),
+		padding: fieldStylesPaddingControl(defaults.padding),
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Semibold",
+		}),
+	};
+}
+
+interface ButtonRoleDefaults {
+	background: string;
+	color: string;
+	borderWidth: number;
+	borderColor: string;
+	padding: string;
+}
+
+// BUTTON-GROUPS resolver: unset keys fall back to the role defaults
+// (live theme tokens), so untouched buttons render exactly as before
+// and track theme edits; explicit values (incl. 0) apply — `??` for
+// numbers, `||` for colors where "" means unset (rule-96-blessed).
+function resolveButtonStyle(
+	group: ButtonStyleGroup | undefined,
+	role: ButtonRoleDefaults,
+	radiusToken: string | number,
+): React.CSSProperties {
+	const font = group?.font;
+	const width = group?.border?.borderWidth ?? role.borderWidth;
+	const style = group?.border?.borderStyle || "solid";
+	const bColor = group?.border?.borderColor || role.borderColor;
+	return {
+		background: group?.backgroundColor || role.background,
+		color: group?.textColor || role.color,
+		border: width > 0 ? `${width}px ${style} ${bColor}` : "none",
+		borderRadius:
+			typeof group?.radius === "string" && group.radius.trim()
+				? group.radius
+				: typeof group?.radius === "number"
+					? `${group.radius}px`
+					: typeof radiusToken === "number"
+						? `${radiusToken}px`
+						: radiusToken,
+		padding:
+			typeof group?.padding === "string" && group.padding.trim()
+				? group.padding
+				: role.padding,
+		fontFamily: font?.fontFamily ?? "inherit",
+		fontSize: fontPixelSize(font?.fontSize) ?? 14,
+		fontWeight: font?.fontWeight ?? 600,
+		...(font?.fontStyle ? { fontStyle: font.fontStyle } : {}),
+		...(font?.letterSpacing != null
+			? { letterSpacing: font.letterSpacing }
+			: {}),
+		...(font?.lineHeight != null ? { lineHeight: font.lineHeight } : {}),
+	};
+}
+
+// BUTTON-GROUPS text: new group text wins, the legacy flat label keeps
+// pre-grouping canvases' custom copy, then the shipped default. `||`
+// (not `??`) so a materialized "" can never wipe a legacy custom label.
+function resolveButtonText(
+	groupText: string | undefined,
+	legacyLabel: string | undefined,
+	fallback: string,
+): string {
+	return groupText || legacyLabel || fallback;
 }
 
 function makeFieldObjectControls() {
@@ -16429,29 +16575,68 @@ addPropertyControls(BookingEngine, {
 		icon: "object",
 		buttonTitle: "Buttons",
 		controls: {
-			continueLabel: {
-				type: ControlType.String,
+			// BUTTON-GROUPS: one group per button — Text first (this ends
+			// the old "Continue/Continue" confusion: the row is titled
+			// "Text" and holds "Continue"), then the full style set with
+			// the button's own effective defaults. Every group is
+			// optional: unopened renders exactly as before.
+			continueButton: {
+				type: ControlType.Object,
 				title: "Continue",
-				defaultValue: "Continue",
+				buttonTitle: "Continue",
+				icon: "object",
+				optional: true,
+				description: "Primary action on every step except the last.",
+				controls: makeButtonGroupControls({
+					text: "Continue",
+					padding: "10px 22px 10px 22px",
+					borderWidth: 0,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
 			},
-			backLabel: {
-				type: ControlType.String,
-				title: "Back",
-				defaultValue: "Back",
-			},
-			finalActionLabel: {
-				type: ControlType.String,
+			finalActionButton: {
+				type: ControlType.Object,
 				title: "Final Action",
-				defaultValue: "Book Now",
+				buttonTitle: "Final Action",
+				icon: "object",
+				optional: true,
+				description:
+					"Primary action on the LAST step only — its text and style replace Continue's there.",
+				controls: makeButtonGroupControls({
+					text: "Book Now",
+					padding: "10px 22px 10px 22px",
+					borderWidth: 0,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
+			},
+			backButton: {
+				type: ControlType.Object,
+				title: "Back",
+				buttonTitle: "Back",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: "Back",
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
 			},
 			// SYN-03 fix: cancel affordance during an in-flight submission.
 			// The button only appears while the booking POST is in flight;
 			// clicking it aborts the request and returns to the review step.
-			// Short "Cancel" title so it never truncates in the panel.
-			cancelSubmitLabel: {
-				type: ControlType.String,
+			cancelButton: {
+				type: ControlType.Object,
 				title: "Cancel",
-				defaultValue: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
+				buttonTitle: "Cancel",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
 			},
 			// NAV-GROUP-TOGGLE: the grouping control belongs to the
 			// navigation buttons, so it lives inside the Buttons group.
@@ -16464,33 +16649,53 @@ addPropertyControls(BookingEngine, {
 				enabledTitle: "Grouped",
 				disabledTitle: "Split",
 			},
-			// CONFIRM-ACTIONS: confirmation-state button labels. Same group
-			// as every other button label — no standalone group.
-			doneLabel: {
-				type: ControlType.String,
+			// CONFIRM-ACTIONS: confirmation-state buttons. Same group
+			// as every other button — no standalone group.
+			doneButton: {
+				type: ControlType.Object,
 				title: "Done",
-				defaultValue: DEFAULT_COPY_RETURN_HOME_LABEL,
+				buttonTitle: "Done",
+				icon: "object",
+				optional: true,
+				description: "Returns to the website root (/). Always shown.",
+				controls: makeButtonGroupControls({
+					text: DEFAULT_COPY_RETURN_HOME_LABEL,
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
 			},
-			bookAnotherLabel: {
-				type: ControlType.String,
+			bookAnotherButton: {
+				type: ControlType.Object,
 				title: "Book Another",
-				defaultValue: DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL,
+				buttonTitle: "Book Another",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL,
+					padding: "10px 18px 10px 18px",
+					borderWidth: 0,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
 			},
-			addToCalendarLabel: {
-				type: ControlType.String,
+			addToCalendarButton: {
+				type: ControlType.Object,
 				title: "Add to Calendar",
-				defaultValue: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+				buttonTitle: "Add to Calendar",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					// Baked Accent default (#0066BB, same as the Accent
+					// control default) — the live Accent token applies
+					// while untouched; see the factory comment.
+					borderColor: "#0066BB",
+				}),
 			},
-			// CONFIRM-HOME-URL: destination of the explicit "Done" action on
-			// the confirmation screen. Default "/" = website root. The
-			// success screen NEVER auto-redirects — it stays visible until
-			// the visitor chooses an action; clearing the URL hides Done.
-			homeUrl: {
-				type: ControlType.String,
-				title: "Home URL",
-				defaultValue: DEFAULT_CONFIRM_HOME_URL,
-				placeholder: "/ or a full https://… URL",
-			},
+			// HOME-URL-REMOVED: no destination control — "Done" always
+			// navigates to the website root (DEFAULT_CONFIRM_HOME_URL).
 		},
 	},
 
@@ -16791,7 +16996,7 @@ addPropertyControls(BookingEngine, {
 			// characterCountTemplate and requiredFieldMarker are gone;
 			// neither the controls nor their copy remain.
 			// CONFIRM-ACTIONS: the "Done" label moved to the Buttons group
-			// (doneLabel) together with Home URL — see the Buttons group.
+			// (Done group) — see the Buttons group.
 			// W1-02-F9–F23 fix (bundle 14): the remaining visitor-facing
 			// strings. Defaults share the same constants the runtime
 			// fallbacks use (see the W1-02-F24 note above the constants).
@@ -17223,8 +17428,8 @@ addPropertyControls(BookingEngine, {
 	// Property Control is removed — Cal.com event metadata is the single
 	// source of truth for duration. No renamed/replacement fallback
 	// control exists.
-	// CONFIRM-HOME-URL: the former top-level "Return Home URL" control now
-	// lives in the Buttons group as "Home URL" (buttonLabels.homeUrl), next
-	// to the Done label it configures. Same default ("/") and same explicit
+	// HOME-URL-REMOVED: the former "Return Home URL" / "Home URL"
+	// controls are gone by author direction — "Done" always navigates to
+	// the website root (DEFAULT_CONFIRM_HOME_URL). Same explicit
 	// visitor-action behavior — no auto-redirect (see AGENTS.md).
 });
