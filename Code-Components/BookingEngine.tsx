@@ -15798,11 +15798,17 @@ function fieldStylesNumberControl(
 //   - input + choice field labels → 13px Medium (labelEl fallbacks)
 //   - checkbox labels → 14px Regular (check-label fallbacks)
 // Weight comes via `variant` (the control resolves it to fontWeight,
-// which is what the runtime reads). Family/spacing/line-height stay
-// unset so page inheritance is preserved until the author picks one.
+// which is what the runtime reads). Line-height ships at 1.6 for every
+// label row (author direction — airier labels than the browser's
+// `normal`). Family/letter-spacing stay unset so page inheritance
+// survives until the author picks a value.
 function fieldStylesFontControl(
 	title: string,
-	defaultValue?: { fontSize: string; variant: "Regular" | "Medium" },
+	defaultValue?: {
+		fontSize: string;
+		variant: "Regular" | "Medium";
+		lineHeight?: string | number;
+	},
 ) {
 	return {
 		type: ControlType.Font,
@@ -15877,6 +15883,7 @@ function makeInputFieldStylesControls() {
 		labelFont: fieldStylesFontControl("Label Font", {
 			fontSize: "13px",
 			variant: "Medium",
+			lineHeight: 1.6,
 		}),
 		font: fieldStylesFontControl("Font", {
 			fontSize: "14px",
@@ -15912,6 +15919,7 @@ function makeVariantChoiceStylesControls(
 		labelFont: fieldStylesFontControl("Label Font", {
 			fontSize: "13px",
 			variant: "Medium",
+			lineHeight: 1.6,
 		}),
 		font: fieldStylesFontControl("Font", {
 			fontSize: "14px",
@@ -15937,6 +15945,7 @@ function makeCheckboxFieldStylesControls() {
 		labelFont: fieldStylesFontControl("Label Font", {
 			fontSize: "14px",
 			variant: "Regular",
+			lineHeight: 1.6,
 		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
