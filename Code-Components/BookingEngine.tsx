@@ -9861,57 +9861,9 @@ function useBookingEngineState(
 	// HOME-URL-REMOVED: "Done" always navigates to the website root.
 	// No control, no stored override — DEFAULT_CONFIRM_HOME_URL is the
 	// destination, used directly at the render site.
-	// BUTTON-GROUPS (styles): resolved visual surfaces for the footer
-	// buttons. Untouched groups fall back to the role defaults (live
-	// theme tokens) — byte-identical to the previous hardcoded look.
-	const ghostButtonRole: ButtonRoleDefaults = {
-		background: "transparent",
-		color: theme.textPrimaryColor,
-		borderWidth: 1,
-		borderColor: theme.borderColor,
-		padding: "10px 18px 10px 18px",
-	};
-	const primaryButtonRole: ButtonRoleDefaults = {
-		background: theme.accentColor,
-		color: theme.accentForegroundColor,
-		borderWidth: 0,
-		borderColor: theme.borderColor,
-		padding: "10px 22px 10px 22px",
-	};
-	const backButtonStyle = resolveButtonStyle(bl.backButton, ghostButtonRole, borderRadius);
-	const cancelButtonStyle = resolveButtonStyle(bl.cancelButton, ghostButtonRole, borderRadius);
-	// The primary button wears Continue's styles except on the last step,
-	// where Final Action's text AND style take over (mirrors primaryLabel).
-	const primaryButtonStyle = resolveButtonStyle(
-		totalActive === 1 || isLast ? bl.finalActionButton : bl.continueButton,
-		primaryButtonRole,
-		borderRadius,
-	);
-	// BUTTON-GROUPS (success): the ICS link is an accent-outline role;
-	// Done is ghost; "Book another" is primary with tighter padding.
-	const addToCalendarButtonStyle = resolveButtonStyle(
-		bl.addToCalendarButton,
-		{
-			background: "transparent",
-			color: theme.accentColor,
-			borderWidth: 1,
-			borderColor: theme.accentColor,
-			padding: "10px 18px 10px 18px",
-		},
-		borderRadius,
-	);
-	const doneButtonStyle = resolveButtonStyle(
-		bl.doneButton,
-		// Done is a SECONDARY ghost (muted text, unlike Back/Cancel) —
-		// its role default must match, or untouched instances restyle.
-		{ ...ghostButtonRole, color: theme.textSecondaryColor },
-		borderRadius,
-	);
-	const bookAnotherButtonStyle = resolveButtonStyle(
-		bl.bookAnotherButton,
-		{ ...primaryButtonRole, padding: "10px 18px 10px 18px" },
-		borderRadius,
-	);
+	// (Button STYLE surfaces resolve in the engine component, next to
+	// their render sites — theme/totalActive/isLast are declared later
+	// in this hook, so resolving here trips TS2448/TS2454.)
 
 	// Autosave-to-browser is a permanent, always-on product feature —
 	// never an author toggle and never paired with disclosure UI.
@@ -11980,6 +11932,9 @@ function useBookingEngineState(
 	// becomes the final action.
 	const primaryLabel =
 		totalActive === 1 || isLast ? finalActionLabel : continueLabel;
+	// BUTTON-GROUPS: the primary button's STYLE follows the same branch
+	// (Continue vs Final Action) — the engine resolves the surface.
+	const isFinalPrimary = totalActive === 1 || isLast;
 	const isSubmitting = flowStatus === "submitting";
 	// NAV-GROUP-TOGGLE: Back and the primary action default to a split layout
 	// (Back far-left, Continue/Book Now far-right). Grouping them side-by-side
@@ -12055,6 +12010,7 @@ function useBookingEngineState(
 		pickedDate,
 		prefersReducedMotion,
 		primaryLabel,
+		isFinalPrimary,
 		navGrouped,
 		progressAnimate,
 		progressBar,
@@ -12122,12 +12078,6 @@ function useBookingEngineState(
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		backButtonStyle,
-		cancelButtonStyle,
-		primaryButtonStyle,
-		addToCalendarButtonStyle,
-		doneButtonStyle,
-		bookAnotherButtonStyle,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
 		// and the author-tunable fallback meeting duration.
@@ -12195,6 +12145,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		needsNameEmailGuardrail,
 		prefersReducedMotion,
 		primaryLabel,
+		isFinalPrimary,
 		navGrouped,
 		progressAnimate,
 		progressBarStyle,
@@ -12226,12 +12177,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		backButtonStyle,
-		cancelButtonStyle,
-		primaryButtonStyle,
-		addToCalendarButtonStyle,
-		doneButtonStyle,
-		bookAnotherButtonStyle,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
 		// to the SuccessScreen.
@@ -12256,6 +12201,60 @@ export default function BookingEngine(props: BookingEngineProps) {
 	// "Book another", Retry) render their text from the semantic On-Primary
 	// token — never a hard-coded white assumption. Button groups may
 	// override per button; the resolver falls back to this token.
+	// BUTTON-GROUPS (styles): resolved here in engine scope — theme,
+	// borderRadius, totalActive/isLast (via isFinalPrimary) are all
+	// declared before this point (resolving inside the state hook tripped
+	// TS2448/TS2454). Untouched groups fall back to the role defaults
+	// (live theme tokens) — byte-identical to the previous hardcoded look.
+	const blGroups = buttonLabels ?? {};
+	const ghostButtonRole: ButtonRoleDefaults = {
+		background: "transparent",
+		color: theme.textPrimaryColor,
+		borderWidth: 1,
+		borderColor: theme.borderColor,
+		padding: "10px 18px 10px 18px",
+	};
+	const primaryButtonRole: ButtonRoleDefaults = {
+		background: theme.accentColor,
+		color: theme.accentForegroundColor,
+		borderWidth: 0,
+		borderColor: theme.borderColor,
+		padding: "10px 22px 10px 22px",
+	};
+	const backButtonStyle = resolveButtonStyle(blGroups.backButton, ghostButtonRole, borderRadius);
+	const cancelButtonStyle = resolveButtonStyle(blGroups.cancelButton, ghostButtonRole, borderRadius);
+	// The primary button wears Continue's styles except on the last step,
+	// where Final Action's text AND style take over (mirrors primaryLabel).
+	const primaryButtonStyle = resolveButtonStyle(
+		isFinalPrimary ? blGroups.finalActionButton : blGroups.continueButton,
+		primaryButtonRole,
+		borderRadius,
+	);
+	// BUTTON-GROUPS (success): the ICS link is an accent-outline role;
+	// Done is ghost; "Book another" is primary with tighter padding.
+	const addToCalendarButtonStyle = resolveButtonStyle(
+		blGroups.addToCalendarButton,
+		{
+			background: "transparent",
+			color: theme.accentColor,
+			borderWidth: 1,
+			borderColor: theme.accentColor,
+			padding: "10px 18px 10px 18px",
+		},
+		borderRadius,
+	);
+	const doneButtonStyle = resolveButtonStyle(
+		blGroups.doneButton,
+		// Done is a SECONDARY ghost (muted text, unlike Back/Cancel) —
+		// its role default must match, or untouched instances restyle.
+		{ ...ghostButtonRole, color: theme.textSecondaryColor },
+		borderRadius,
+	);
+	const bookAnotherButtonStyle = resolveButtonStyle(
+		blGroups.bookAnotherButton,
+		{ ...primaryButtonRole, padding: "10px 18px 10px 18px" },
+		borderRadius,
+	);
 
 	// W1-19-N3 fix: the form-grid two-column decision was a VIEWPORT media
 	// rule — embeds in narrow desktop sidebars stayed 2-col (cramped,
