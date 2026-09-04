@@ -12798,6 +12798,9 @@ function useBookingEngineState(
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		// ERROR-RETRY-BUTTON: resolved Retry label (Buttons group, legacy
+		// Copy fallback).
+		retryLabel,
 		errorCopy,
 		// W1-02-F26 + W2-23-N1 fixes: the resolved self-hosted base URL
 		// and the author-tunable fallback meeting duration.
@@ -12901,6 +12904,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		retryLabel,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
 		// to the SuccessScreen.
@@ -16278,6 +16282,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	React.useEffect(() => {
 		headingRef.current?.focus();
 	}, []);
+	// ERROR-RETRY-BUTTON: own interaction state so hover/pressed deltas
+	// from the Buttons Retry group apply here (same pattern as the
+	// confirmation actions).
+	const retryIx = useButtonInteraction();
 
 	return (
 		// A11Y-ANNOUNCE: plain wrapper — the focus move to the heading
