@@ -6072,6 +6072,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 // =============================================================================
 
 type StepType = "form" | "datetime";
+// SYSTEM-CALENDAR: "datetime" is a system-only stage type, never authored.
+// There is no Step Type control — every authored step is a Form step, and
+// exactly one system-owned Calendar stage is appended at runtime.
 type FieldType =
 	| "text"
 	| "email"
@@ -6083,10 +6086,11 @@ type FieldType =
 	| "cards"
 	| "checkbox"
 	| "radio"
-	// Requirement 3: a placeholder "field" that marks where the calendar/
-	// time picker renders within a Calendar step's Fields array, so authors
-	// can drag it above or below their custom fields. It carries no value,
-	// is never validated, and has no editable label/placeholder/etc.
+	// SYSTEM-CALENDAR: legacy marker type. No control offers it anymore
+	// and migrateLegacyCalendar strips stored markers before normalize,
+	// so it never reaches rendering — but the union member, the
+	// FieldRenderer null-case, and the panel hidden() guards stay as
+	// defense-in-depth for any stored value that predates the migration.
 	| "calendar-widget";
 type FlowStatus = "in-progress" | "submitting" | "success" | "error";
 
@@ -6594,6 +6598,17 @@ interface BookingEngineConfigProps {
 	step8: StepConfig;
 	step9: StepConfig;
 	step10: StepConfig;
+	// SYSTEM-CALENDAR: standalone configuration for the single mandatory
+	// system-owned Calendar stage (panel item after the Steps, before
+	// Buttons). Optional in the type because canvases saved before it
+	// existed carry no value — the runtime falls back to the migrated
+	// legacy Calendar config, then to the shipped defaults.
+	calendar?: {
+		title: string;
+		subtitle?: string;
+		layout: "single-column" | "two-column";
+		surface?: FieldStyleOverrides;
+	};
 	// Progress - grouped object control (Visible + Step Count Text
 	// Position + Show Text Content + Bar Style).
 	progressBar: {
@@ -6819,32 +6834,6 @@ function makeDefaultFormStep(): StepConfig {
 	};
 }
 
-function makeDefaultCalendarStep(): StepConfig {
-	return {
-		enabled: true,
-		stepType: "datetime",
-		title: "Pick a Time",
-		subtitle: "Choose a date and time that works for you.",
-		layout: "single-column",
-		// Requirement 3: the calendar/time picker now renders in-place at
-		// wherever this "Calendar Widget" marker sits in the Fields array,
-		// rather than always fixed above/below custom fields. It ships here
-		// as the only default entry so it's easy to find and drag; any new
-		// field the author adds via the Array control's "+" gets appended
-		// after it (see makeStepControl's fields.control comment), which is
-		// exactly the "defaults to below the Calendar Widget" behavior
-		// Requirement 3 asks for.
-		fields: [
-			{
-				label: "Calendar",
-				fieldType: "calendar-widget",
-				required: false,
-				width: "full",
-			},
-		],
-	};
-}
-
 function makeDefaultBlankFormStep(n: number): StepConfig {
 	return {
 		enabled: true,
@@ -6870,12 +6859,10 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
 
 // Runtime fallback only (should not normally be reached — each stepN control
 // always has its own defaultValue). Rebuilt fresh on every call, per Safety
-// Rule #1. "Review" is no longer one of the shipped default personas
-// (Requirement 2 — it isn't a selectable step type any more), so slot 3
-// onward all fall back to a blank form step.
+// Rule #1. All fallbacks are form steps — the Calendar is a system-owned
+// runtime stage, never a slot default.
 function getRuntimeFallbackStep(index: number): StepConfig {
 	if (index === 0) return makeDefaultFormStep();
-	if (index === 1) return makeDefaultCalendarStep();
 	return makeDefaultBlankFormStep(index + 1);
 }
 
@@ -7031,6 +7018,72 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 			// dropped silently so old canvases migrate without a hard error.
 			.filter((step) => (step.stepType as string) !== "review")
 	);
+}
+
+// SYSTEM-CALENDAR: legacy migration. Canvases saved before the Calendar
+// became a system-owned stage may contain `datetime` step slots and
+// `calendar-widget` markers. This pure function converts them
+// deterministically: every legacy datetime slot becomes a Form step with
+// its non-marker fields preserved in place; markers are dropped (they
+// rendered the shared calendar state and can never render again); the
+// FIRST legacy datetime slot seeds the system Calendar configuration
+// (title/subtitle/layout + first configured marker surface, each falling
+// back to the shipped Calendar defaults). Multiple legacy Calendars
+// collapse into the single system stage — no authored fields are lost,
+// no duplicate Calendar can survive. Pure + synchronous so the node
+// harness asserts it directly (no React needed).
+interface CalendarStageConfig {
+	title: string;
+	subtitle: string;
+	layout: "single-column" | "two-column";
+	surface?: FieldStyleOverrides;
+}
+const SYSTEM_CALENDAR_ID = "system-calendar";
+const DEFAULT_CALENDAR_TITLE = "Pick a Time";
+const DEFAULT_CALENDAR_SUBTITLE = "Choose a date and time that works for you.";
+function migrateLegacyCalendar(slots: StepConfig[]): {
+	steps: StepConfig[];
+	calendar: CalendarStageConfig;
+} {
+	const datetimeSlots = (slots || []).filter(
+		(slot) => slot && (slot.stepType as string) === "datetime",
+	);
+	const src = datetimeSlots.length > 0 ? datetimeSlots[0] : undefined;
+	const srcMarkers = (src?.fields || []).filter(
+		(field) => field && field.fieldType === "calendar-widget",
+	);
+	const configuredMarker = srcMarkers.find(
+		(marker) => marker.calendarStyles !== undefined,
+	);
+	const calendar: CalendarStageConfig = {
+		title: (src && src.title) || DEFAULT_CALENDAR_TITLE,
+		subtitle:
+			src && src.subtitle !== undefined
+				? src.subtitle
+				: DEFAULT_CALENDAR_SUBTITLE,
+		layout: (src && src.layout) || "single-column",
+		surface: configuredMarker
+			? configuredMarker.calendarStyles
+			: srcMarkers.length > 0
+				? srcMarkers[0].calendarStyles
+				: undefined,
+	};
+	const steps = (slots || []).map((slot) => {
+		const fields = (slot?.fields || []).filter(
+			(field) => field && field.fieldType !== "calendar-widget",
+		);
+		if (!slot || (slot.stepType as string) !== "datetime") {
+			// Non-datetime slots pass through with markers stripped (a
+			// marker in a Form step always rendered nothing).
+			return slot ? { ...slot, fields } : slot;
+		}
+		return {
+			...slot,
+			stepType: "form" as const,
+			fields,
+		};
+	});
+	return { steps, calendar };
 }
 
 // =============================================================================
@@ -7204,8 +7257,9 @@ function validateStep(
 	const vc = validationCopy ?? DEFAULT_VALIDATION_COPY;
 	// Fix #5: datetime step now returns a real error message when no slot is
 	// picked, so the user sees "Please pick a date and time" instead of a
-	// silent block. Calendar steps can also carry custom fields now - those
-	// are validated exactly like fields on a Form step.
+	// silent block. Only the system Calendar stage carries this type, and
+	// it holds no authored fields — but the loop stays generic so any
+	// fields present validate exactly like Form-step fields.
 	if (step.stepType === "datetime") {
 		const errors: Record<string, string | null> = {};
 		for (const field of step.fields) {
@@ -9287,12 +9341,15 @@ async function readJson<
 // T7-M11 fix: findNameField/findEmailField were 95% duplicated iteration
 // loops (and disagreed on fallback heuristics). One generic helper + two
 // one-line callers now.
+// SYSTEM-CALENDAR: every authored step is a Form step and the system
+// Calendar carries no fields, so this scans the whole pipeline with no
+// step-type filter — the old form-only filter is what hid datetime-step
+// fields from attendee mapping.
 function findField(
 	steps: NormalizedStep[],
 	predicate: (field: NormalizedField) => boolean,
 ): NormalizedField | null {
 	for (const step of steps) {
-		if (step.stepType !== "form") continue;
 		for (const field of step.fields) {
 			if (predicate(field)) return field;
 		}
@@ -9345,9 +9402,10 @@ function replaceCopyTokens(
 	timeZone?: string,
 ): string {
 	if (typeof text !== "string" || !text.includes("{")) return text;
-	const formFields =
-		steps.flatMap((step) => (step.stepType === "form" ? step.fields : [])) ||
-		[];
+	// SYSTEM-CALENDAR: single authored-field namespace — every authored
+	// step is Form, so no step-type filter here (the old form-only scan is
+	// what dropped datetime-step names from success copy).
+	const formFields = steps.flatMap((step) => step.fields) || [];
 	const nameField =
 		formFields.find((field) => field.isPrimaryName) || findEmailField(steps);
 	const name = nameField ? String(values[nameField.id] ?? "").trim() : "";
@@ -10168,6 +10226,7 @@ function useBookingEngineState(
 		calEventTypeId,
 		onAnalytics,
 		advanced,
+		calendar,
 	} = props;
 
 	// TYPOGRAPHY-GROUP: read the nested Font-group path first; fall back
@@ -10529,10 +10588,17 @@ function useBookingEngineState(
 		step10,
 	]);
 
-	// Normalize the authored schema into stable IDs.
-	const normalizedSteps = React.useMemo(
-		() => normalizeSteps(effectiveStepsConfig),
+	// Normalize the authored schema into stable IDs. The slots pass
+	// through migrateLegacyCalendar first: legacy `datetime` slots become
+	// Form steps (fields preserved in place, markers dropped) and the
+	// first legacy Calendar seeds the system stage configuration.
+	const legacyCalendar = React.useMemo(
+		() => migrateLegacyCalendar(effectiveStepsConfig),
 		[effectiveStepsConfig],
+	);
+	const normalizedSteps = React.useMemo(
+		() => normalizeSteps(legacyCalendar.steps),
+		[legacyCalendar],
 	);
 
 	// Pipeline: only enabled steps participate, in fixed-slot order
@@ -11219,8 +11285,10 @@ function useBookingEngineState(
 	//    eager pre-Calendar fetch is gone.
 	// 2. INTERACTIVE-GATE (inside useCalcomSlots): no network during SSR,
 	//    the headless prerender, or pre-interaction automation.
-	const hasDatetimeStep =
-		baseActiveSteps.some((step) => step.stepType === "datetime") ?? false;
+	// SYSTEM-CALENDAR: the Calendar is a mandatory structural stage, so a
+	// datetime stage is always present — no authored step needs to carry
+	// the type anymore.
+	const hasDatetimeStep = true;
 	const hasCalConfig = Boolean(calApiKey && calEventTypeId);
 	const [reachedDatetimeStep, setReachedDatetimeStep] =
 		React.useState(false);
@@ -11463,16 +11531,57 @@ function useBookingEngineState(
 			layout: "single-column",
 			fields: autoFields,
 		};
-		const dtIdx = baseActiveSteps.findIndex((s) => s.stepType === "datetime");
-		if (dtIdx >= 0) {
-			return [...baseActiveSteps.slice(0, dtIdx), autoStep, ...baseActiveSteps.slice(dtIdx)];
-		}
+		// SYSTEM-CALENDAR: the auto step always lands at the end of the
+		// authored Form pipeline — the system Calendar stage is appended
+		// after it below, so no authored-step ownership lookup exists.
 		return [...baseActiveSteps, autoStep];
 	}, [baseActiveSteps, missingRequiredCalFields, isCanvas]);
 
+	// SYSTEM-CALENDAR: resolve the single mandatory Calendar stage
+	// configuration. The Calendar panel group, once present, is the source
+	// of truth; untouched legacy canvases (no group value yet) inherit
+	// their migrated Calendar config (first legacy datetime slot).
+	const calendarStageConfig: CalendarStageConfig = React.useMemo(() => {
+		if (calendar) {
+			return {
+				title: calendar.title || DEFAULT_CALENDAR_TITLE,
+				subtitle:
+					calendar.subtitle !== undefined
+						? calendar.subtitle
+						: DEFAULT_CALENDAR_SUBTITLE,
+				layout: calendar.layout || "single-column",
+				surface: calendar.surface,
+			};
+		}
+		return legacyCalendar.calendar;
+	}, [calendar, legacyCalendar]);
+	// The system Calendar stage itself: stable id (never index-derived, so
+	// saved-progress remaps and persistence survive pipeline edits),
+	// always last, exactly one. `stepType: "datetime"` is the internal
+	// contract every downstream consumer already keys on (validation,
+	// slots gating, selection, StepBody branch, submission) — it is
+	// system-only and no longer authorable.
+	const calendarStage: NormalizedStep = React.useMemo(
+		() => ({
+			id: SYSTEM_CALENDAR_ID,
+			enabled: true,
+			stepType: "datetime",
+			title: calendarStageConfig.title,
+			subtitle: calendarStageConfig.subtitle,
+			layout: calendarStageConfig.layout,
+			fields: [],
+		}),
+		[calendarStageConfig],
+	);
+
 	// Final pipeline used for rendering, progress, navigation and submission.
-	// baseActiveSteps remains the author-authored source for hasDatetimeStep and canvas warnings.
-	const activeSteps = effectiveActiveSteps;
+	// Authored Form steps → auto-injected Additional Details (when needed) →
+	// the single system Calendar, always last. baseActiveSteps remains the
+	// author-authored source for canvas warnings.
+	const activeSteps = React.useMemo(
+		() => [...effectiveActiveSteps, calendarStage],
+		[effectiveActiveSteps, calendarStage],
+	);
 	const totalActive = activeSteps.length;
 	const safeCurrentIndex = Math.min(currentIndex, Math.max(0, totalActive - 1));
 	const currentStep: NormalizedStep | undefined =
@@ -11522,7 +11631,8 @@ function useBookingEngineState(
 		// FINAL-04 fix: result is only consumed behind `isCanvas &&` —
 		// skip the sweep entirely on preview/published site.
 		if (!isCanvas) return false;
-		if (!baseActiveSteps.some((step) => step.stepType === "datetime")) return false;
+		// SYSTEM-CALENDAR: the Calendar stage always exists structurally,
+		// so this is purely a name/email presence check now.
 		return !findNameField(baseActiveSteps) || !findEmailField(baseActiveSteps);
 	}, [baseActiveSteps, isCanvas]);
 
@@ -11572,17 +11682,9 @@ function useBookingEngineState(
 				`Cal.com event requires ${missingRequiredCalFields.length === 1 ? "a field" : "fields"} your Engine has no matching field for: ${labels}. Add ${missingRequiredCalFields.length === 1 ? "a field" : "fields"} with ${missingRequiredCalFields.length === 1 ? "that label" : "those labels"} (or matching Cal Field IDs) or make ${missingRequiredCalFields.length === 1 ? "it" : "them"} optional in Cal.com. Visitors will see ${missingRequiredCalFields.length === 1 ? "it" : "them"} as an auto-generated Additional Details step before the calendar.`,
 			);
 		}
-		// FINAL-05 fix (1 of 3): Cal.com credentials configured but no
-		// datetime step exists — the inverse of the needsCalSetup banner.
-		{
-			const hasDatetime =
-				baseActiveSteps.some((step) => step.stepType === "datetime") ?? false;
-			if (calApiKey && calEventTypeId && !hasDatetime) {
-				warnings.push(
-					"Cal.com credentials are set but no step uses the Calender. Add or enable a Calender step, or clear the API key and Event Type ID.",
-				);
-			}
-		}
+		// SYSTEM-CALENDAR: the Calendar is a mandatory structural stage, so
+		// "credentials but no Calendar step" is impossible — this warning
+		// (FINAL-05, 1 of 3) is removed, not replaced.
 		// Review step removed: former FINAL-05 (2 of 3) warning dropped.
 		// Any persisted "review" step is silently filtered in normalizeSteps,
 		// so no canvas warning is needed. Success details are post-booking only.
@@ -12697,6 +12799,9 @@ function useBookingEngineState(
 		// and the author-tunable fallback meeting duration.
 		calApiBaseUrl,
 		meetingDurationMs,
+		// SYSTEM-CALENDAR: resolved Calendar stage config (panel group
+		// with legacy fallback) for the StepBody surface wiring below.
+		calendarStageConfig,
 		// CAL-EVENT-META: normalized event/profile metadata (or null).
 		calEventMeta,
 		calEventMetaStatus,
@@ -12800,6 +12905,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
 		// to the SuccessScreen.
 		meetingDurationMs,
+		calendarStageConfig,
 		calEventMeta,
 		calEventMetaStatus,
 	} = useBookingEngineState(props, engineRootRef);
@@ -13577,6 +13683,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 								visibleMonth={visibleMonth}
 								timeZone={timeZone}
 								timeFormat={timeFormat}
+								// SYSTEM-CALENDAR: stage surface from the
+								// Calendar panel group (legacy marker Styles
+								// feed it on migrated canvases).
+								calendarSurface={calendarStageConfig.surface}
 								copy={copy}
 								ariaLabels={ariaLabels}
 								errorCopy={errorCopy}
@@ -14209,6 +14319,11 @@ interface StepBodyProps {
 	 *  with no Cal.com credentials must not render the fake demo grid —
 	 *  StepBody shows a hard unavailable notice instead. */
 	hideDemoWhenUnconfigured: boolean;
+	/** SYSTEM-CALENDAR: the system Calendar stage's own surface styling,
+	 *  resolved by the parent from the Calendar panel group (legacy
+	 *  marker Styles feed it on migrated canvases). Undefined renders
+	 *  the native look, exactly like an unconfigured marker did. */
+	calendarSurface?: FieldStyleOverrides;
 	/** Fix #20: configurable copy. */
 	copy: BookingEngineProps["copy"];
 	/** W1-02-F9 note: merged copy.aria labels, computed by the parent —
@@ -14331,6 +14446,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		onRetrySlots,
 		retryLabel,
 		hideDemoWhenUnconfigured,
+		calendarSurface,
 		errorCopy,
 		// INSTANCE-ISOLATION (rule 91): hydration-safe per-engine id prefix.
 		instanceId = "",
@@ -14368,8 +14484,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 	}, [touched, errors]);
 
 	// Shared renderer for user-authored fields. Form steps use it directly;
-	// Calendar steps render it above the calendar widget so any fields
-	// authored on a Calendar step behave exactly like Form-step fields.
+	// the system Calendar stage renders its (normally empty) field list
+	// through the same FieldRenderer in its own branch above.
 	const renderFormFields = () => {
 		const isTwoCol =
 			step.layout === "two-column" && engineWidth >= COMPACT_BREAKPOINT;
@@ -14419,22 +14535,14 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		const isTwoCol =
 			step.layout === "two-column" && engineWidth >= COMPACT_BREAKPOINT;
 
-		// Requirement 3: everything that used to be permanently pinned
-		// "above" the custom fields — the Cal.com error/no-times messages,
-		// the calendar/time picker (including its loading state), its inline error,
-		// and the timezone selector — is now a single unit that renders
-		// wherever the "Calendar Widget" marker sits in `step.fields`, so
-		// dragging that marker in the Fields array actually moves the whole
-		// calendar block up or down relative to any custom fields.
-		// CAL-BG-OWNERSHIP: the Calendar Widget marker field carries the
-		// calendar's own Styles set (Background/Radius/Padding). It is
-		// passed straight into DateAndTimeInline so the calendar surface is
-		// owned by the marker's Styles submenu — the global Background
-		// token never reaches the calendar, and the footer/nav wrapper
-		// stays transparent (FOOTER-TRANSPARENT).
-		const calendarMarkerField = step.fields.find(
-			(candidate) => candidate.fieldType === "calendar-widget",
-		);
+		// SYSTEM-CALENDAR: the calendar block below renders exactly once
+		// per datetime stage — there is exactly one datetime stage (the
+		// system Calendar), so per-marker rendering and marker ownership
+		// are gone. The surface comes from the Calendar panel group via
+		// the `calendarSurface` prop (legacy marker Styles feed it on
+		// migrated canvases); undefined renders the native look, exactly
+		// like an unconfigured marker did. The footer/nav wrapper stays
+		// transparent (FOOTER-TRANSPARENT).
 		const calendarBlock = (
 			<div style={{ gridColumn: "1 / -1" }}>
 				{/* Fix #13: surface Cal.com fetch errors as an inline banner.
@@ -14566,12 +14674,9 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// PRIMARY-FOREGROUND: semantic On-Primary for the
 							// selected date + adjacent-month tooltip.
 							accentForegroundColor={theme.accentForegroundColor}
-							// CAL-BG-OWNERSHIP: the marker field's own Styles
-							// set owns the calendar surface (Background,
-							// Radius, Padding). Undefined while untouched —
-							// the calendar renders its native look and the
-							// global Background token is not consulted.
-							calendarStyles={calendarMarkerField?.calendarStyles}
+							// SYSTEM-CALENDAR: surface owned by the Calendar
+							// panel group (not a field marker).
+							calendarStyles={calendarSurface}
 							textColor={theme.textPrimaryColor}
 							borderColor={theme.borderColor}
 							radius={borderRadius}
@@ -14669,9 +14774,9 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 			</div>
 		);
 
-		const hasCalendarMarker = step.fields.some(
-			(candidate) => candidate.fieldType === "calendar-widget",
-		);
+		// SYSTEM-CALENDAR: marker ownership is gone — the surface comes
+		// from the Calendar panel group via `calendarSurface`. This lookup
+		// is removed, not replaced.
 
 		return (
 			<div
@@ -14683,10 +14788,15 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 				}}
 				className={`be-form-grid`}
 			>
-				{step.fields.map((field) =>
-					field.fieldType === "calendar-widget" ? (
-						<React.Fragment key={field.id}>{calendarBlock}</React.Fragment>
-					) : (
+				{/* SYSTEM-CALENDAR: exactly one calendar render per engine —
+					the system stage carries no authored fields, so this is
+					the only DateAndTimeInline mount. Any residual
+					calendar-widget markers (unreachable post-migration)
+					render nothing via the FieldRenderer null-case below. */}
+				{calendarBlock}
+				{step.fields
+					.filter((field) => field.fieldType !== "calendar-widget")
+					.map((field) => (
 						<FieldRenderer
 							key={field.id}
 							field={field}
@@ -14702,13 +14812,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							isSubmitting={isSubmitting}
 							instanceId={instanceId}
 						/>
-					),
-				)}
-				{/* Backward compatibility: an existing Calendar step saved
-                    before the Calendar Widget marker existed won't have one
-                    in its `fields` array. Fall back to rendering the
-                    calendar at the end rather than dropping it entirely. */}
-				{!hasCalendarMarker ? calendarBlock : null}
+					))}
 			</div>
 		);
 	}
@@ -17056,7 +17160,6 @@ function makeFieldObjectControls() {
 				"cards",
 				"checkbox",
 				"radio",
-				"calendar-widget",
 			],
 			optionTitles: [
 				"Text",
@@ -17069,7 +17172,6 @@ function makeFieldObjectControls() {
 				"Cards",
 				"Checkbox",
 				"Radio",
-				"Calendar Widget",
 			],
 			defaultValue: "text",
 		},
@@ -17293,25 +17395,16 @@ function makeFieldObjectControls() {
 	};
 }
 
-// Review step removed per product decision: pre-booking review no longer exists.
-// Success details are shown post-booking in the confirmation state. Only
-// "form" and "datetime" (Calendar) remain as authorable step types.
-function makeStepTypeControl(defaultType: StepType) {
-	return {
-		type: ControlType.Enum,
-		title: "Step Type",
-		options: ["form", "datetime"],
-		optionTitles: ["Form", "Calendar"],
-		defaultValue: (defaultType as string) === "review" ? "form" : defaultType,
-		displaySegmentedControl: true,
-	};
-}
+// SYSTEM-CALENDAR: the Step Type control is removed — every authored step
+// is a Form step. The single system-owned Calendar stage is appended at
+// runtime (never authored, never repeatable).
 
 // Reverted single submenu control per step (Requirement 1): everything
-// about the step — including its `Step Type` (Form/Calendar) toggle — lives
-// inside ONE Object control titled "Step 1", "Step 2", etc. The main
-// properties panel therefore shows exactly one row per step, which opens
-// into this full submenu. `defaults` must be a freshly constructed
+// about the step lives inside ONE Object control titled "Step 1",
+// "Step 2", etc. All steps are Form steps (no Step Type toggle — the
+// Calendar is a single system-owned runtime stage, never authored). The
+// main properties panel therefore shows exactly one row per step, which
+// opens into this full submenu. `defaults` must be a freshly constructed
 // StepConfig (see `makeDefault*Step()`), never a shared reference (Safety
 // Rule #1). Hidden by the `stepCount` sibling Number control.
 function makeStepControl(slotIndex: number, defaults: StepConfig) {
@@ -17330,8 +17423,6 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 				title: "Visible",
 				defaultValue: defaults.enabled,
 			},
-			// Step Type sits directly below Visible.
-			stepType: makeStepTypeControl(defaults.stepType),
 			title: {
 				type: ControlType.String,
 				title: "Title",
@@ -17358,16 +17449,10 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 				defaultValue: defaults.layout,
 				displaySegmentedControl: true,
 			},
-			// Array control — per Safety Rule #2, never conditionally hidden
-			// (not even based on this step's own type). Always visible.
-			// Requirement 3: for a Calendar step, this list also contains a
-			// "Calendar Widget" marker entry (see makeDefaultCalendarStep)
-			// that the author can drag above/below their custom fields —
-			// StepBody renders the actual calendar/time picker at that exact
-			// position. New items added via the Array control's "+" are
-			// always appended at the end, so as long as the Calendar Widget
-			// marker ships as the step's first/only default entry, anything
-			// an author adds lands after it (i.e. below it) by default.
+			// Array control — per Safety Rule #2, never conditionally hidden.
+			// Always visible. All steps are Form steps (SYSTEM-CALENDAR);
+			// New items added via the Array control's "+" are always
+			// appended at the end.
 			fields: {
 				type: ControlType.Array,
 				title: "Fields",
@@ -17397,7 +17482,7 @@ addPropertyControls(BookingEngine, {
 		displayStepper: true,
 	},
 	step1: makeStepControl(0, makeDefaultFormStep()),
-	step2: makeStepControl(1, makeDefaultCalendarStep()),
+	step2: makeStepControl(1, makeDefaultBlankFormStep(2)),
 	step3: makeStepControl(2, makeDefaultBlankFormStep(3)),
 	step4: makeStepControl(3, makeDefaultBlankFormStep(4)),
 	step5: makeStepControl(4, makeDefaultBlankFormStep(5)),
@@ -17406,6 +17491,50 @@ addPropertyControls(BookingEngine, {
 	step8: makeStepControl(7, makeDefaultBlankFormStep(8)),
 	step9: makeStepControl(8, makeDefaultBlankFormStep(9)),
 	step10: makeStepControl(9, makeDefaultBlankFormStep(10)),
+
+	// SYSTEM-CALENDAR: the single mandatory system-owned Calendar stage.
+	// Always present, cannot be removed/hidden/duplicated/reordered/converted.
+	// Placement/lifecycle live here as structure; appearance stays fully
+	// author-configurable (title/subtitle/layout/surface + the existing
+	// global tokens, Font group, Copy labels, Buttons and transitions).
+	calendar: {
+		type: ControlType.Object,
+		title: "Calendar",
+		icon: "object",
+		buttonTitle: "Calendar",
+		controls: {
+			title: {
+				type: ControlType.String,
+				title: "Title",
+				defaultValue: DEFAULT_CALENDAR_TITLE,
+			},
+			subtitle: {
+				type: ControlType.String,
+				title: "Subtitle",
+				defaultValue: DEFAULT_CALENDAR_SUBTITLE,
+				displayTextArea: true,
+			},
+			layout: {
+				type: ControlType.Enum,
+				title: "Layout",
+				options: ["single-column", "two-column"],
+				optionTitles: ["Single", "Two-Column"],
+				defaultValue: "single-column",
+				displaySegmentedControl: true,
+			},
+			// Surface owns the calendar stage background (Background,
+			// Radius, Padding + decor) — promoted from the removed
+			// calendar-widget marker's Styles set, same effective
+			// defaults, so unconfigured renders are unchanged.
+			surface: {
+				type: ControlType.Object,
+				title: "Surface",
+				buttonTitle: "Surface",
+				icon: "color",
+				controls: makeCalendarFieldStylesControls(),
+			},
+		},
+	},
 
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
