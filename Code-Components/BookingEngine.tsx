@@ -1073,8 +1073,8 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 }
 
 // CAL-BG-OWNERSHIP: the calendar surface's own default background. The
-// Calendar Tiles owns its background through the Calendar panel group's
-// Tiles set (`calendarStyles.backgroundColor`); the global Background token no
+// Calendar Styles owns its background through the Calendar panel group's
+// Styles set (`calendarStyles.backgroundColor`); the global Background token no
 // longer reaches the calendar. An UNCONFIGURED calendar keeps rendering the
 // exact look it always had in the default theme (white), so opening its
 // Styles submenu never changes its appearance, and a customized value
@@ -4895,7 +4895,7 @@ interface DateAndTimeInlineProps {
 	// pass it yet.
 	accentForegroundColor?: string;
 	// CAL-BG-OWNERSHIP: the calendar surface is owned by the Calendar
-	// panel group's Tiles set (Background/Text Color/Border/Radius/Padding —
+	// panel group's Styles set (Background/Text Color/Border/Radius/Padding —
 	// the same shared FieldStyleOverrides model). The global Background
 	// token deliberately does NOT reach the calendar anymore; an unset
 	// key falls back to DEFAULT_CALENDAR_SURFACE_BACKGROUND so opening
@@ -5288,7 +5288,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// Semantic token, not a hard-coded white assumption.
 	const selectedAccentText = accentForegroundColor;
 	// CAL-BG-OWNERSHIP: resolved calendar-surface tokens. Every key comes
-	// from the Calendar panel group's Tiles set ONLY when the
+	// from the Calendar panel group's Styles set ONLY when the
 	// author configured it (STYLES-INIT: untouched keys are undefined);
 	// otherwise the native defaults apply — white surface, shared Radius
 	// token, no padding. Opening the Styles submenu therefore never changes
@@ -5299,13 +5299,13 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	const surfaceBackground =
 		normalizedCalendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
 	const surfaceRadius = resolveFieldRadius(normalizedCalendarStyles, radius, "calendar-widget" as FieldType);
-	// TILES-TEXT: tile text color overrides the surface container color
+	// Styles-TEXT: tile text color overrides the surface container color
 	// (every inheriting tile label follows) and the derived muted tones
-	// below. Default-free so untouched tiles track the Text token
+	// below. Default-free so untouched styles track the Text token
 	// (`||` for colors is rule-96-blessed: "" means unset).
 	// On-accent surfaces (selected date/slot, tooltip) stay exempt (rule 70).
 	const resolvedTextColor = normalizedCalendarStyles?.textColor || textColor;
-	// TILES-BORDER: an authored border replaces the native `1px solid`
+	// Styles-BORDER: an authored border replaces the native `1px solid`
 	// Border-token surface border wholesale; an explicit width 0 removes
 	// it entirely; untouched keeps the native border.
 	const tileBorder = normalizedCalendarStyles?.border;
@@ -5804,7 +5804,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				height: "auto",
 				minHeight: 300,
 				// CAL-BG-OWNERSHIP: the calendar surface's radius/background/
-				// padding are owned by the Calendar Tiles set;
+				// padding are owned by the Calendar Styles set;
 				// untouched keys keep the native look. The
 				// global Background token does not reach this surface.
 				borderRadius: surfaceRadius,
@@ -5814,8 +5814,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				// field's Calendar Styles — only when configured.
 				...shadowStyle(normalizedCalendarStyles?.shadow),
 				...backdropStyle(normalizedCalendarStyles?.backgroundBlur),
-				// TILES: tile text + border overrides from the Calendar
-				// Tiles set; untouched keys keep the native tokens.
+				// Styles: tile text + border overrides from the Calendar
+				// Styles set; untouched keys keep the native tokens.
 				color: resolvedTextColor,
 				border: surfaceBorder,
 				overflow: "hidden",
@@ -6303,7 +6303,7 @@ interface FieldConfig {
 	cardsStyles?: FieldStyleOverrides;
 	radioStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
-	// CAL-BG-OWNERSHIP: the Calendar Tiles set (panel group). Its
+	// CAL-BG-OWNERSHIP: the Calendar Styles set (panel group). Its
 	// Background/Text Color/Border/Radius/Padding own the calendar surface - the global
 	// Background token no longer applies to it (see DateAndTimeInline).
 	calendarStyles?: FieldStyleOverrides;
@@ -6371,21 +6371,33 @@ interface BookingEngineStyleProps {
 		// clamped again at runtime (same dual enforcement as Radius).
 		// Replaces the old hard-coded 12px grid gap (AGENTS.md).
 		gap?: number;
+		// TYPOGRAPHY-FIRST: Head + Body fonts top the Styles submenu.
+		// Optional like every nested Styles key; unset tracks the legacy
+		// `typography` group, then top-level props, then engine defaults.
+		font?: FramerFont;
+		headingFont?: FramerFont;
 	};
 	font: FramerFont;
 	// Per-surface heading typography (step + success + error titles).
 	// The base `font` above stays the body control.
 	headingFont?: FramerFont;
-	// TYPOGRAPHY-GROUP: `font` + `headingFont` live in the "Font" panel
-	// group (`typography.*`). Read the nested path first; fall back to
-	// the legacy top-level props for instances saved before the grouping
-	// (same pattern as SYN-01 `validation`). Legacy carriers below.
+	// TYPOGRAPHY-FIRST: `font` + `headingFont` top the Styles submenu
+	// (`styles.font` / `styles.headingFont`). The retired top-level
+	// "Font" group (`typography.*`) stays readable as a legacy fallback.
+	// Legacy carriers below.
 	typography?: {
 		font?: FramerFont;
 		headingFont?: FramerFont;
 	};
-	// Animation — variant (style) + duration (speed). Variant is the single
-	// source of truth for which of the 6 production concepts is used.
+	// Animation — grouped into the Transition submenu (style + behavior).
+	// Variant is the single source of truth for which of the 6 production
+	// concepts is used. Legacy carriers below: top-level `transition` /
+	// `transitionVariant` props stay readable so instances saved before
+	// the grouping keep working. Never re-add the controls.
+	transitionSettings?: {
+		transition?: Transition;
+		variant?: "fadeRise" | "blurScale" | "slide" | "zoom" | "verticalSlide" | "blurSlide";
+	};
 	transition: Transition;
 	transitionVariant?:
 	| "fadeRise"
@@ -6674,6 +6686,9 @@ interface BookingEngineConfigProps {
 	// control — `timezones` was deliberately removed (see AGENTS.md).
 	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
 	// deployments use the engine without forking. Default: Cal.com cloud.
+	// Legacy carrier: the control now lives in the Advanced group below;
+	// no control here — read as fallback so instances saved with a
+	// top-level URL keep working. Never re-add the control.
 	calApiBaseUrl?: string;
 	// LOCALE-REMOVED: the `locale` Property Control (FINAL-12) was removed:
 	// date formatting always follows <html lang>, then the browser default.
@@ -6688,6 +6703,9 @@ interface BookingEngineConfigProps {
 	// session for config-identical siblings.
 	advanced?: {
 		instanceId?: string;
+		// W1-02-F26: self-hosted Cal.com deployments point at a different
+		// origin. Power-user setting — lives in Advanced, not top level.
+		calApiBaseUrl?: string;
 	};
 	// Legacy carrier: Instance ID previously lived at top level before it
 	// moved into `advanced` (same SYN-01 nesting pattern as `validation`).
@@ -10329,8 +10347,7 @@ function useBookingEngineState(
 		progressBar,
 		styles,
 		typography,
-		transition,
-		transitionVariant,
+		transitionSettings,
 		copy,
 		calApiKey,
 		calEventTypeId,
@@ -10339,12 +10356,21 @@ function useBookingEngineState(
 		calendar,
 	} = props;
 
-	// TYPOGRAPHY-GROUP: read the nested Font-group path first; fall back
-	// to the legacy top-level props for instances saved before the
-	// grouping (same pattern as SYN-01 `validation` above). Resolved once
-	// here so every downstream consumer is unchanged.
-	const font = typography?.font ?? props.font;
-	const headingFont = typography?.headingFont ?? props.headingFont;
+	// TRANSITION-GROUP: read the nested Transition-submenu path first; fall
+	// back to the legacy top-level props for instances saved before the
+	// grouping (same pattern as SYN-01 `validation`). Resolved once here
+	// so every downstream consumer is unchanged.
+	const transition = transitionSettings?.transition ?? props.transition;
+	const transitionVariant = transitionSettings?.variant ?? props.transitionVariant;
+
+	// TYPOGRAPHY-FIRST: Head + Body fonts top the Styles submenu
+	// (`styles.font` / `styles.headingFont`). Read the Styles path first;
+	// fall back to the retired `typography` group, then to the legacy
+	// top-level props for instances saved before either grouping
+	// (same pattern as SYN-01 `validation`). Resolved once here so every
+	// downstream consumer is unchanged.
+	const font = styles.font ?? typography?.font ?? props.font;
+	const headingFont = styles.headingFont ?? typography?.headingFont ?? props.headingFont;
 
 	// PERSISTENCE-IDENTITY: read the nested Advanced path first; fall back
 	// to the legacy top-level prop for instances saved before the control
@@ -10526,7 +10552,7 @@ function useBookingEngineState(
 	// normalized so the "/v2/..." suffix always joins cleanly. `??` covers
 	// instances saved before the control existed.
 	const calApiBaseUrl = (
-		props.calApiBaseUrl ?? DEFAULT_CAL_API_BASE_URL
+		advanced?.calApiBaseUrl ?? props.calApiBaseUrl ?? DEFAULT_CAL_API_BASE_URL
 	).replace(/\/+$/, "");
 	// DURATION-SOURCE (hard rule): the author-tunable
 	// `defaultMeetingDurationMs` Property Control AND its props fallback are
@@ -16897,7 +16923,7 @@ function makeInputFieldStylesControls() {
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		// SHADOW-LAST (global rule): Shadow is always the final row in
 		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Tiles, buttons, and interaction states.
+		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
 	};
 }
@@ -16942,7 +16968,7 @@ function makeVariantChoiceStylesControls(
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
 		// SHADOW-LAST (global rule): Shadow is always the final row in
 		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Tiles, buttons, and interaction states.
+		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
 	};
 }
@@ -16962,20 +16988,20 @@ function makeCheckboxFieldStylesControls() {
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		// SHADOW-LAST (global rule): Shadow is always the final row in
 		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Tiles, buttons, and interaction states.
+		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
 	};
 }
 
-function makeCalendarTilesStylesControls() {
+function makeCalendarStylesStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
 		backgroundColor: fieldStylesColorControl("Background"),
-		// TILES-TEXT: tile text color — drives the surface container color
+		// Styles-TEXT: tile text color — drives the surface container color
 		// (every inheriting tile label follows) plus the derived muted
-		// tones. Default-free so untouched tiles track the Text token.
+		// tones. Default-free so untouched Styles track the Text token.
 		textColor: fieldStylesColorControl("Text Color"),
-		// TILES-BORDER: the surface container natively renders `1px solid`
+		// Styles-BORDER: the surface container natively renders `1px solid`
 		// in the Border token, so the effective default mirrors exactly
 		// that — opening Border materializes the inherit look. An explicit
 		// width 0 removes the border entirely; positive widths replace it
@@ -16990,7 +17016,7 @@ function makeCalendarTilesStylesControls() {
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		// SHADOW-LAST (global rule): Shadow is always the final row in
 		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Tiles, buttons, and interaction states.
+		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
 	};
 }
@@ -17105,7 +17131,7 @@ function makeButtonGroupControls(defaults: {
 		},
 		// SHADOW-LAST (global rule): Shadow is always the final row in
 		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Tiles, buttons, and interaction states.
+		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
 	};
 }
@@ -17548,7 +17574,7 @@ function makeFieldObjectControls() {
 			buttonTitle: "Styles",
 			icon: "color",
 			optional: true,
-			controls: makeCalendarTilesStylesControls(),
+			controls: makeCalendarStylesStylesControls(),
 			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
@@ -17692,22 +17718,22 @@ addPropertyControls(BookingEngine, {
 				defaultValue: DEFAULT_CALENDAR_SUBTITLE,
 				displayTextArea: true,
 			},
-			// Tiles owns the calendar stage tile/surface presentation
+			// Styles owns the calendar stage tile/surface presentation
 			// (Background, Text Color, Border, Radius, Padding + decor) —
 			// promoted from the removed calendar-widget marker's Styles
 			// set, same effective defaults, so unconfigured renders are
 			// unchanged. The prop key stays `surface` (the Calendar group
 			// is new — no stored values exist under either key); only
-			// the visible label is Tiles. The Calendar stage itself is
+			// the visible label is Styles. The Calendar stage itself is
 			// always single-column by product rule: there is deliberately
 			// no Layout control here (Form Steps keep their own
 			// Single/Two-Column control).
 			surface: {
 				type: ControlType.Object,
-				title: "Tiles",
-				buttonTitle: "Tiles",
+				title: "Styles",
+				buttonTitle: "Styles",
 				icon: "color",
-				controls: makeCalendarTilesStylesControls(),
+				controls: makeCalendarStylesStylesControls(),
 			},
 		},
 	},
@@ -17907,6 +17933,37 @@ addPropertyControls(BookingEngine, {
 		icon: "color",
 		buttonTitle: "Styles",
 		controls: {
+			// TYPOGRAPHY-FIRST: Head Font then Body Font top the Styles
+			// submenu (typography first, then color tokens and metrics).
+			// Per-surface heading typography (step + success + error
+			// titles). Titled "Head Font" (not "Heading Font") so the full
+			// label fits the Framer panel.
+			headingFont: {
+				type: ControlType.Font,
+				title: "Head Font",
+				controls: "extended",
+				defaultFontType: "sans-serif",
+				defaultValue: {
+					fontSize: "22px",
+					variant: "Bold",
+					letterSpacing: "0em",
+					lineHeight: "1.2em",
+					textAlign: "left",
+				},
+			},
+			font: {
+				type: ControlType.Font,
+				title: "Body Font",
+				controls: "extended",
+				defaultFontType: "sans-serif",
+				defaultValue: {
+					fontSize: "15px",
+					variant: "Regular",
+					letterSpacing: "0em",
+					lineHeight: "1.4em",
+					textAlign: "left",
+				},
+			},
 			accentColor: {
 				type: ControlType.Color,
 				title: "Accent",
@@ -17980,65 +18037,34 @@ addPropertyControls(BookingEngine, {
 			},
 		},
 	},
-	// TYPOGRAPHY-GROUP: Body + Head fonts live in the "Font" panel
-	// submenu. Control types, values, and defaults are unchanged — only
-	// the panel organization moved (nested `typography.*`, legacy
-	// top-level props still read as fallback).
-	typography: {
-		type: ControlType.Object,
-		title: "Font",
-		icon: "font",
-		buttonTitle: "Font",
-		controls: {
-			// Per-surface heading typography (step + success + error titles).
-			// Listed first; body text keeps the control below; buttons keep
-			// their per-button Font rows. Defaults equal the previous
-			// hardcoded titles. Titled "Head Font" (not "Heading Font") so
-			// the full label fits the Framer panel.
-			headingFont: {
-				type: ControlType.Font,
-				title: "Head Font",
-				controls: "extended",
-				defaultFontType: "sans-serif",
-				defaultValue: {
-					fontSize: "22px",
-					variant: "Bold",
-					letterSpacing: "0em",
-					lineHeight: "1.2em",
-					textAlign: "left",
-				},
-			},
-			font: {
-				type: ControlType.Font,
-				title: "Body Font",
-				controls: "extended",
-				defaultFontType: "sans-serif",
-				defaultValue: {
-					fontSize: "15px",
-					variant: "Regular",
-					letterSpacing: "0em",
-					lineHeight: "1.4em",
-					textAlign: "left",
-				},
-			},
-		},
-	},
+	// TYPOGRAPHY-GROUP (retired): Body + Head fonts lived in a top-level
+	// "Font" panel submenu; they now live at the top of the Styles
+	// submenu. The `typography` prop stays readable as a legacy fallback
+	// (same pattern as SYN-01 `validation`). Never re-add the group.
 
-	// ----- Animation -----
-	transitionVariant: {
-		type: ControlType.Enum,
-		title: "Transition Type",
-		options: ["fadeRise", "blurScale", "slide", "zoom", "verticalSlide", "blurSlide"],
-		optionTitles: ["Fade Rise", "Blur Scale", "Slide", "Zoom", "Vertical Slide", "Blur Slide"],
-		defaultValue: "blurScale",
-	},
-	transition: {
-		type: ControlType.Transition,
+	// ----- Animation (grouped: style + behavior in one Transition submenu) -----
+	transitionSettings: {
+		type: ControlType.Object,
 		title: "Transition",
-		defaultValue: {
-			type: "tween",
-			ease: [0.44, 0, 0.56, 1],
-			duration: 0.4,
+		icon: "object",
+		buttonTitle: "Transition",
+		controls: {
+			transition: {
+				type: ControlType.Transition,
+				title: "Transition",
+				defaultValue: {
+					type: "tween",
+					ease: [0.44, 0, 0.56, 1],
+					duration: 0.4,
+				},
+			},
+			variant: {
+				type: ControlType.Enum,
+				title: "Transition Type",
+				options: ["fadeRise", "blurScale", "slide", "zoom", "verticalSlide", "blurSlide"],
+				optionTitles: ["Fade Rise", "Blur Scale", "Slide", "Zoom", "Vertical Slide", "Blur Slide"],
+				defaultValue: "blurScale",
+			},
 		},
 	},
 
@@ -18483,15 +18509,9 @@ addPropertyControls(BookingEngine, {
 	// author list, no manual time-zone picker, no Framer user exposure (see
 	// AGENTS.md).
 	//
-	// W1-02-F26 fix: Cal.com v2 API base URL — lets self-hosted Cal.com
-	// deployments use the engine. Trailing slashes are stripped at use.
-	// (Self-hosted Cal.com support is still being evaluated; keep this
-	// control for now.)
-	calApiBaseUrl: {
-		type: ControlType.String,
-		title: "Cal.com API Base URL",
-		defaultValue: DEFAULT_CAL_API_BASE_URL,
-	},
+	// W1-02-F26 fix: Cal.com v2 API base URL control moved into the
+	// Advanced group (power-user setting; top-level prop stays readable
+	// as a legacy fallback). Trailing slashes are stripped at use.
 	// LOCALE-REMOVED: the `locale` author override was removed: date
 	// formatting always follows <html lang>, then the browser default
 	// (see AGENTS.md).
@@ -18525,6 +18545,14 @@ addPropertyControls(BookingEngine, {
 				description:
 					"Use a unique ID when multiple identical Booking Engines share a page.",
 				defaultValue: "",
+			},
+			// W1-02-F26: self-hosted Cal.com base URL. Advanced/power-user
+			// setting — normal users keep the default hosted endpoint and
+			// never need to open this. Trailing slashes stripped at use.
+			calApiBaseUrl: {
+				type: ControlType.String,
+				title: "Cal.com API Base URL",
+				defaultValue: DEFAULT_CAL_API_BASE_URL,
 			},
 		},
 	},
