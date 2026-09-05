@@ -6668,6 +6668,13 @@ interface BookingEngineCopyProps {
 		// undefined) keeps the Split layout — Back far left, primary action
 		// far right (see AGENTS.md hard rules).
 		groupNavButtons?: boolean;
+		// NAV-GROUPED-ALIGN: where the buttons sit when grouped (Split mode
+		// is space-between by definition). Right preserves the historical
+		// grouped look; Left/Center are opt-in. No control reorders Back
+		// past the primary action — DOM order (Back, then primary) is the
+		// keyboard tab order, and visual-vs-DOM order mismatch is an
+		// accessibility violation.
+		groupedNavAlignment?: "left" | "center" | "right";
 		// CONFIRM-ACTIONS: confirmation-state labels live in the Buttons
 		// group because they configure confirmation buttons. Defaults keep
 		// the pre-existing copy ("Done" / "Book another" / "Add to calendar").
@@ -6848,6 +6855,13 @@ interface BookingEngineConfigProps {
 		showTextContent?: boolean;
 		progressText?: "top" | "bottom";
 		stepCountPosition?: "top" | "bottom";
+	};
+	// Header — step title + subtitle alignment (Left/Center/Right).
+	// Scoped to the Form/Calendar step header only: success/error
+	// terminal states keep their own designed alignment. Unset renders
+	// exactly the historical look (inherited left).
+	header?: {
+		alignment?: "left" | "center" | "right";
 	};
 	// Cal.com
 	//
@@ -10619,6 +10633,7 @@ function useBookingEngineState(
 		onAnalytics,
 		advanced,
 		calendar,
+		header,
 	} = props;
 
 	// TRANSITION-GROUP: read the nested Transition-submenu path first; fall
@@ -10751,7 +10766,7 @@ function useBookingEngineState(
 	// Split layout for old instances that never set it.
 	// BUTTON-GROUPS: per-button Text wins; the legacy flat label keeps
 	// pre-grouping canvases' custom copy; then the shipped default.
-	const { groupNavButtons } = buttonLabels;
+	const { groupNavButtons, groupedNavAlignment } = buttonLabels;
 	const bl = buttonLabels ?? {};
 	const continueLabel = resolveButtonText(bl.continueButton?.text, bl.continueLabel, "Continue");
 	const backLabel = resolveButtonText(bl.backButton?.text, bl.backLabel, "Back");
@@ -13100,6 +13115,30 @@ function useBookingEngineState(
 	// is an OPT-IN author choice via the `groupNavButtons` property control —
 	// never the default (see AGENTS.md hard rules).
 	const navGrouped = groupNavButtons === true;
+	// NAV-GROUPED-ALIGN: where grouped buttons sit. Split mode (and any
+	// single-button step) keeps the historical justification; only the
+	// grouped two-button row follows the alignment. Right preserves the
+	// historical grouped look.
+	const navJustify: "flex-start" | "center" | "flex-end" | "space-between" =
+		navGrouped && !isFirst
+			? groupedNavAlignment === "left"
+				? "flex-start"
+				: groupedNavAlignment === "center"
+					? "center"
+					: "flex-end"
+			: navGrouped || isFirst
+				? "flex-end"
+				: "space-between";
+	// HEADER-ALIGN: step title + subtitle alignment (Left/Center/Right).
+	// Scoped to the step header only — success/error terminal states keep
+	// their designed alignment. Unset (older canvases) renders exactly the
+	// historical inherited-left look.
+	const headerAlignment: "left" | "center" | "right" =
+		header?.alignment === "center"
+			? "center"
+			: header?.alignment === "right"
+				? "right"
+				: "left";
 	// T9-M11 fix: the animate target was an inline object literal - a new
 	// reference every render forced framer-motion to re-evaluate the
 	// animation target on each keystroke. Memoized on the only thing
@@ -14071,6 +14110,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 								className="be-focus-target"
 								style={{
 									color: theme.textPrimaryColor,
+									// HEADER-ALIGN: applied only when the
+									// author sets it — untouched renders
+									// exactly the historical inherit look.
+									...(header?.alignment
+										? { textAlign: headerAlignment }
+										: {}),
 									// Per-surface Heading Font (Body control
 									// stays the base). Unset = previous look.
 									fontFamily: headingFont?.fontFamily ?? "inherit",
@@ -14107,6 +14152,11 @@ export default function BookingEngine(props: BookingEngineProps) {
 										fontSize: 14,
 										marginBottom: 16,
 										lineHeight: 1.5,
+										// HEADER-ALIGN: follows the title;
+										// omitted unless explicitly set.
+										...(header?.alignment
+											? { textAlign: headerAlignment }
+											: {}),
 									}}
 								>
 									{step.subtitle}
@@ -14186,14 +14236,18 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* NAV-GROUP-TOGGLE: default = split layout. Back sits far left and
                 the primary action far right (`justifyContent: space-between`
                 with a right-aligned action group). Only when the author opts
-                into `groupNavButtons` do they become adjacent (flex-end). */}
+                into `groupNavButtons` do they become adjacent (flex-end).
+                NAV-GROUPED-ALIGN: the grouped row follows `navJustify`
+                (Left/Center/Right); split and single-button rows keep the
+                historical justification. DOM order is never changed —
+                visual order always matches keyboard tab order. */}
 			<div
 				style={{
 					display: "flex",
 					gap: 8,
 					marginTop: 24,
 					alignItems: "center",
-					justifyContent: navGrouped || isFirst ? "flex-end" : "space-between",
+					justifyContent: navJustify,
 					position: "sticky",
 					bottom: 0,
 					zIndex: 10,
@@ -16989,6 +17043,10 @@ type ProgressBarControlProps = Pick<
 	BookingEngineProps["progressBar"],
 	"showText" | "showTextContent" | "barVisible" | "visible"
 >;
+type ButtonLabelsControlProps = Pick<
+	BookingEngineProps["buttonLabels"],
+	"groupNavButtons"
+>;
 
 // =============================================================================
 // FIELD-STYLES control factories (AGENTS.md rule 83)
@@ -18047,6 +18105,28 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
+	// ----- Header (step title + subtitle alignment) -----
+	header: {
+		type: ControlType.Object,
+		title: "Header",
+		icon: "object",
+		buttonTitle: "Header",
+		controls: {
+			// One expressive Alignment control (not three booleans).
+			// Scoped to the Form/Calendar step header; success/error
+			// terminal states keep their designed alignment. Unset
+			// renders exactly the historical inherited look.
+			alignment: {
+				type: ControlType.Enum,
+				title: "Alignment",
+				options: ["left", "center", "right"],
+				optionTitles: ["Left", "Center", "Right"],
+				defaultValue: "left",
+				displaySegmentedControl: true,
+			},
+		},
+	},
+
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
 		type: ControlType.Object,
@@ -18124,6 +18204,21 @@ addPropertyControls(BookingEngine, {
 				defaultValue: false,
 				enabledTitle: "Grouped",
 				disabledTitle: "Split",
+			},
+			// NAV-GROUPED-ALIGN: where grouped buttons sit. Only meaningful
+			// in Grouped mode, so it hides in Split mode (native `hidden`,
+			// same sibling pattern as the Progress group). Right preserves
+			// the historical grouped look. Never reorders Back past the
+			// primary action — DOM order is the tab order.
+			groupedNavAlignment: {
+				type: ControlType.Enum,
+				title: "Grouped Alignment",
+				options: ["left", "center", "right"],
+				optionTitles: ["Left", "Center", "Right"],
+				defaultValue: "right",
+				displaySegmentedControl: true,
+				hidden: (p: ButtonLabelsControlProps) =>
+					p?.groupNavButtons !== true,
 			},
 			// CONFIRM-ACTIONS: confirmation-state buttons. Same group
 			// as every other button — no standalone group.
