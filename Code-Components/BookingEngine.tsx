@@ -6679,9 +6679,11 @@ interface BookingEngineCopyProps {
 		// far right (see AGENTS.md hard rules).
 		groupNavButtons?: boolean;
 		// NAV-GROUPED-ALIGN: where the buttons sit when grouped (Split mode
-		// is space-between by definition). Right preserves the historical
-		// grouped look; Left/Center are opt-in. No control reorders Back
-		// past the primary action — DOM order (Back, then primary) is the
+		// is space-between by definition; a single-button Split row sits at
+		// flex-end definitionally). Grouped rows follow the alignment whether
+		// one or both buttons are visible (rule 126). Right preserves the
+		// historical grouped look; Left/Center are opt-in. No control reorders
+		// Back past the primary action — DOM order (Back, then primary) is the
 		// keyboard tab order, and visual-vs-DOM order mismatch is an
 		// accessibility violation.
 		groupedNavAlignment?: "left" | "center" | "right";
@@ -13246,18 +13248,24 @@ function useBookingEngineState(
 	// is an OPT-IN author choice via the `groupNavButtons` property control —
 	// never the default (see AGENTS.md hard rules).
 	const navGrouped = groupNavButtons === true;
-	// NAV-GROUPED-ALIGN: where grouped buttons sit. Split mode (and any
-	// single-button step) keeps the historical justification; only the
-	// grouped two-button row follows the alignment. Right preserves the
-	// historical grouped look.
+	// NAV-GROUPED-ALIGN (rule 126): where the grouped row sits. In Grouped
+	// mode the authored alignment controls the row REGARDLESS of how many
+	// buttons are visible — one button (first/final/calendar-only steps)
+	// aligns exactly like the two-button group would (Left → flex-start,
+	// Center → center, Right → flex-end). The number of visible buttons
+	// never changes the semantics. Right (the default) preserves the
+	// historical grouped look. Split mode keeps its definitional
+	// justifications: single-button rows sit at flex-end, two-button rows
+	// use space-between (Back far left, primary far right). DOM order is
+	// never changed — visual order always matches keyboard tab order.
 	const navJustify: "flex-start" | "center" | "flex-end" | "space-between" =
-		navGrouped && !isFirst
+		navGrouped
 			? groupedNavAlignment === "left"
 				? "flex-start"
 				: groupedNavAlignment === "center"
 					? "center"
 					: "flex-end"
-			: navGrouped || isFirst
+			: isFirst
 				? "flex-end"
 				: "space-between";
 	// T9-M11 fix: the animate target was an inline object literal - a new
@@ -14364,11 +14372,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* NAV-GROUP-TOGGLE: default = split layout. Back sits far left and
                 the primary action far right (`justifyContent: space-between`
                 with a right-aligned action group). Only when the author opts
-                into `groupNavButtons` do they become adjacent (flex-end).
-                NAV-GROUPED-ALIGN: the grouped row follows `navJustify`
-                (Left/Center/Right); split and single-button rows keep the
-                historical justification. DOM order is never changed —
-                visual order always matches keyboard tab order. */}
+                into `groupNavButtons` do they become adjacent, positioned by
+                `navJustify` (Buttons Alignment: Left/Center/Right) — which
+                governs the row whether one or both buttons are visible
+                (rule 126); split rows keep their definitional justification.
+                DOM order is never changed — visual order always matches
+                keyboard tab order. */}
 			<div
 				style={{
 					display: "flex",
@@ -18328,14 +18337,18 @@ addPropertyControls(BookingEngine, {
 				enabledTitle: "Grouped",
 				disabledTitle: "Split",
 			},
-			// NAV-GROUPED-ALIGN: where grouped buttons sit. Only meaningful
-			// in Grouped mode, so it hides in Split mode (native `hidden`,
-			// same sibling pattern as the Progress group). Right preserves
-			// the historical grouped look. Never reorders Back past the
-			// primary action — DOM order is the tab order.
+			// NAV-GROUPED-ALIGN: where the buttons sit when grouped. Only
+			// meaningful in Grouped mode, so it hides in Split mode (native
+			// `hidden`, same sibling pattern as the Progress group). Right
+			// preserves the historical grouped look; Left/Center are opt-in
+			// and apply to the row whether one or both buttons are visible
+			// (rule 126). Never reorders Back past the primary action — DOM
+			// order is the tab order. BUTTONS-ALIGNMENT-RENAME: titled
+			// "Buttons Alignment" — the row is the navigation buttons'
+			// alignment (label-only rename; behavior/defaults unchanged).
 			groupedNavAlignment: {
 				type: ControlType.Enum,
-				title: "Grouped Alignment",
+				title: "Buttons Alignment",
 				options: ["left", "center", "right"],
 				optionTitles: ["Left", "Center", "Right"],
 				defaultValue: "right",

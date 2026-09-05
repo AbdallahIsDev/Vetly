@@ -779,3 +779,11 @@ This supersedes the earlier load-time-detection design (`navigator.webdriver` / 
 
 **The system Calendar is a separate standalone stage and must NOT inherit authored Step alignment.** `calendarStage` carries no `alignment` and there is deliberately no Calendar-specific alignment control; if one is ever requested, that is a new deliberate Calendar setting — not a reason to couple the stages.
 
+### 126. Buttons Alignment governs the grouped nav row regardless of visible button count; label is "Buttons Alignment" (NAV-GROUPED-ALIGN / BUTTONS-ALIGNMENT-RENAME)
+
+**The control's title is `Buttons Alignment`** (`groupedNavAlignment`, inside the Buttons group). It was renamed from "Grouped Alignment" — label-only; options (Left/Center/Right), default (Right), and the conditional visibility (hidden unless `Layout = Grouped`) are unchanged. Do not rename it back, and do not change its gating to any other condition.
+
+**Grouped navigation alignment must apply consistently whether one or multiple navigation buttons are visible.** In Grouped mode (`groupNavButtons = true`), `navJustify` resolves ONLY from the authored alignment — Left → `flex-start`, Center → `center`, Right → `flex-end` — for every step: first step (only Continue), middle steps (Back + Continue), final step, calendar-only flows, and the in-flight Cancel variant. The number of visible buttons must never change the semantics; a single button centers/aligns exactly as the two-button group would. Never reintroduce a `!isFirst`/button-count/step-position condition into the grouped branch, and never special-case the single-button row with margins, absolute positioning, width calculations, or JS measurement — the coherent rule is one `justify-content` on the full-width footer row whose children (Back?, action-group) are content-sized.
+
+**Split mode is untouched and definitional:** single-button rows sit at `flex-end`, two-button rows use `space-between` (Back far left, primary far right) — Buttons Alignment never applies to Split and stays hidden there. DOM order (Back, then primary) is never changed: visual order always matches keyboard tab order.
+
