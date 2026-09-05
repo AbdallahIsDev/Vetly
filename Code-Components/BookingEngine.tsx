@@ -789,8 +789,15 @@ function getMinutesInTimeZone(date: Date, timeZone: string): number {
 // reads browser-local Y/M/D, so a slot near midnight UTC can be labeled with
 // the visitor's selected timezone's date but bucketed into the browser's
 // date. This returns a canonical Y-M-D key for an instant in a given zone
-// (zero-padded, so it is interchangeable with itself but NOT with the
-// 0-based unpadded key in `dateKeyOf`'s local fallback).
+// (zero-padded 1-based month/day — the single canonical key shape; the
+// local fallback below and `dateKeyOf`'s no-timezone fallback both use it,
+// so padded sets always match lookups).
+function getLocalDateKey(date: Date): string {
+	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+		2,
+		"0",
+	)}-${String(date.getDate()).padStart(2, "0")}`;
+}
 function getDateKeyInTimeZone(date: Date, timeZone: string): string {
 	try {
 		const parts = getCachedDateTimeFormat("en-US", {
@@ -806,10 +813,7 @@ function getDateKeyInTimeZone(date: Date, timeZone: string): string {
 	} catch {
 		// Invalid/unsupported timeZone string — fall back to local time.
 	}
-	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-		2,
-		"0",
-	)}-${String(date.getDate()).padStart(2, "0")}`;
+	return getLocalDateKey(date);
 }
 
 function startOfDay(d: Date): Date {
@@ -5368,9 +5372,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// shift.
 	const dateKeyOf = React.useCallback(
 		(date: Date) =>
-			timeZone
-				? getDateKeyInTimeZone(date, timeZone)
-				: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
+			timeZone ? getDateKeyInTimeZone(date, timeZone) : getLocalDateKey(date),
 		[timeZone],
 	);
 
