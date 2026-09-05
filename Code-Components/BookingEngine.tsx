@@ -3396,6 +3396,11 @@ interface TimeSlotListProps {
 	backgroundColor: string;
 	loadingLabel: string;
 	slotsLoading: boolean;
+	// INITIAL-RESOLUTION-GATE: while the authoritative first date is
+	// undecided, the header renders its skeleton bar and the list renders
+	// the slot skeleton (even if a fetch hasn't started yet) — never the
+	// pre-decision date's header or slots.
+	selectionPending?: boolean;
 	selectedDate: Date | null;
 	/** W2-51: the default/active date when nothing is selected yet (today) —
 	 *  keeps the time header populated on first entry. */
@@ -3611,6 +3616,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		backgroundColor,
 		loadingLabel,
 		slotsLoading,
+		// INITIAL-RESOLUTION-GATE (see TimeSlotListProps).
+		selectionPending = false,
 		selectedDate,
 		fallbackDate,
 		clockReady,
@@ -3770,9 +3777,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						whiteSpace: "nowrap",
 					}}
 				>
-					{!clockReady ? (
+					{!clockReady || selectionPending ? (
 						// PRERENDER-SAFE skeleton: neutral bars, byte-identical on
 						// the prerender and every visitor's first paint.
+						// INITIAL-RESOLUTION-GATE reuses it while the
+						// authoritative first date is undecided — the header
+						// never flashes the pre-decision date.
 						<span
 							aria-hidden="true"
 							style={{
@@ -3905,7 +3915,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 					{/* Fix #18: when no date is picked (and the engine asked
                             us to hide times until a date is chosen), show a
                             hint instead of dumping all month slots. */}
-					{slotsLoading ? (
+					{slotsLoading || selectionPending ? (
 						/* biome-ignore lint/a11y/useSemanticElements: intentional polite
 				       live region (T5-H8) — announces slot loading; <output> is not
 				       a standalone status message and would change inline layout. */
@@ -3922,7 +3932,8 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				radius — rule 56 geometry) instead of loading text. The
 				loading copy survives sr-only so screen readers still hear
 				the status; the bars are decorative (aria-hidden). Driven
-				by the real fetch lifecycle (slotsLoading), never timers. */}
+				by the real fetch lifecycle (slotsLoading) plus the
+				initial-resolution gate — never timers. */}
 							<span
 								style={{
 									position: "absolute",
@@ -3946,21 +3957,14 @@ const TimeSlotList = React.memo(function TimeSlotList(
 									gap: 8,
 								}}
 							>
-								<Skeleton
-									height={36}
-									borderRadius={borderRadius}
-									background={withAlpha(borderColor, 0.5)}
-								/>
-								<Skeleton
-									height={36}
-									borderRadius={borderRadius}
-									background={withAlpha(borderColor, 0.5)}
-								/>
-								<Skeleton
-									height={36}
-									borderRadius={borderRadius}
-									background={withAlpha(borderColor, 0.5)}
-								/>
+								{Array.from({ length: TIME_SLOT_SKELETON_COUNT }, (_, i) => (
+									<Skeleton
+										key={`be-slot-skeleton-${i}`}
+										height={36}
+										borderRadius={borderRadius}
+										background={withAlpha(borderColor, 0.5)}
+									/>
+								))}
 							</div>
 						</div>
 					) : !selectedDate && !showTimesWithoutDate ? (
@@ -5317,6 +5321,16 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		() => initialDate ?? HYDRATION_PLACEHOLDER_TODAY,
 	);
 	const placeholderSelectedRef = React.useRef(!initialDate);
+	// INITIAL-SELECTION-PENDING: the render-readable mirror of the
+	// placeholder gate above — true on fresh visits until the authoritative
+	// first date is decided (settled-availability default, manual pick, or
+	// late restored date), false from mount when a saved date wins. While
+	// true in Cal.com mode with an unsettled window, date-dependent UI
+	// (grid highlight, time header, time list) stays in skeleton instead
+	// of flashing today's date before availability corrects it. Closed at
+	// exactly the same sites as the ref gate — the two can never disagree.
+	const [initialSelectionPending, setInitialSelectionPending] =
+		React.useState(!initialDate);
 	const {
 		selectedTime,
 		setSelectedTime,
@@ -5398,6 +5412,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		// (rules 78/84) — it is a decision, so an open gate must not
 		// overwrite it when availability settles later.
 		placeholderSelectedRef.current = false;
+		setInitialSelectionPending(false);
 		React.startTransition(() =>
 			setSelectedDate((prev) =>
 				prev && isSameDay(prev, initialDate) ? prev : initialDate,
@@ -5572,6 +5587,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// WAI-ARIA grid/roving-tabindex contract.
 	const activeDateKey = selectedOrFirstDateKey;
 
+	// INITIAL-RESOLUTION-GATE: while a fresh visit's first date is still
+	// undecided (gate open + Cal.com mode + current window unsettled),
+	// date-dependent UI must not present the pre-decision today as
+	// resolved — grid highlight, time header, and time list render
+	// skeleton instead. False in every decided state: manual pick, settled
+	// default (state closed above), restored date (false from mount),
+	// demo mode (no availability set to wait for), and settled-empty
+	// (settled with nothing bookable → honest empty state, not skeleton).
+	const selectionUnresolved =
+		initialSelectionPending &&
+		availableDates !== undefined &&
+		!availabilitySettled;
+
 	// DEFAULT-SELECTION algorithm (hard rules 77/78 + rule 107 — never an
 	// isToday mirror, never an unavailable date, never a day whose slots
 	// all elapsed):
@@ -5608,6 +5636,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		const defaultDate = todayAvailable ? today : firstAvailableDateFromToday;
 		if (defaultDate) {
 			placeholderSelectedRef.current = false;
+			setInitialSelectionPending(false);
 			React.startTransition(() => {
 				setSelectedDate(defaultDate);
 				// Keep the engine in sync so the time panel lists the
@@ -5744,6 +5773,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			// an open gate (settled-empty seen earlier) must never clobber
 			// it on a later tick.
 			placeholderSelectedRef.current = false;
+			setInitialSelectionPending(false);
 			React.startTransition(() => {
 				setSelectedDate(date);
 				// ADJACENT-FOLLOW fix: picking a live trailing/leading
@@ -6150,7 +6180,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						weekdayLabels={weekdayLabels}
 						cells={calendarCells}
 						visibleMonth={visibleMonth}
-						selectedDate={selectedDate}
+						// INITIAL-RESOLUTION-GATE: no accent highlight for
+						// the pre-decision today — the grid shows no
+						// selection until the authoritative date resolves.
+						selectedDate={selectionUnresolved ? null : selectedDate}
 						today={today}
 						clockReady={clockReady}
 						// SLOTS-LOADING: skeleton cells while fetching.
@@ -6211,6 +6244,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					borderRadius={String(radius)}
 					loadingLabel={loadingLabel}
 					slotsLoading={slotsLoading}
+					// INITIAL-RESOLUTION-GATE: skeleton header + list until
+					// the authoritative first date resolves.
+					selectionPending={selectionUnresolved}
 					selectedDate={selectedDate}
 					fallbackDate={today}
 					clockReady={clockReady}
@@ -6918,6 +6954,12 @@ const PHONE_REGEX =
 const TOUCH_TARGET_MIN = 44;
 const COMPACT_BREAKPOINT = 768;
 const CALENDAR_WEEKS_TO_RENDER = 6;
+// TIME-SLOTS-SKELETON: the loading placeholder mirrors the resolved
+// single-column slot list — 8 rows at the real 36px slot height (rule 56),
+// same gap and radius vocabulary. Eight is the resolved list's normal
+// visible count, not an arbitrary filler number; the rows are fluid
+// full-width blocks, so the skeleton stays responsive at every size.
+const TIME_SLOT_SKELETON_COUNT = 8;
 const PROGRESS_BAR_HEIGHT = 4;
 const CHECKMARK_ICON_SIZE = 64;
 const ERROR_ICON_SIZE = 40;
