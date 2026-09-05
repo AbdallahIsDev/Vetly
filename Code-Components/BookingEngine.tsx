@@ -11322,6 +11322,9 @@ function useBookingEngineState(
 	// pre-gate flush stamps live:false) and still restore saved progress
 	// below, so the always-on autosave restore contract (AGENTS.md rules
 	// 7/16/20) is unchanged; only mid-session resurrection is gone.
+	// Declared here (first use is inside this effect) — see the
+	// RESTORE-FOCUS-PARITY note at the step-focus effect below.
+	const loadFocusSuppressedRef = React.useRef(false);
 	useIsomorphicLayoutEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
@@ -11520,18 +11523,30 @@ function useBookingEngineState(
 					// out-of-range restore would stick. Uses base
 					// pipeline; auto-injected step not yet known at restore time.
 					let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length);
-				for (let i = 0; i < restoredIndex; i++) {
-					const prior = baseActiveSteps[i];
-					if (
-						prior &&
-						!validateStep(prior, filteredValues, validationCopy)
-							.valid
-					) {
-						restoredIndex = i;
-						break;
+					for (let i = 0; i < restoredIndex; i++) {
+						const prior = baseActiveSteps[i];
+						if (
+							prior &&
+							!validateStep(prior, filteredValues, validationCopy)
+								.valid
+						) {
+							restoredIndex = i;
+							break;
+						}
 					}
-				}
-				setCurrentIndex(restoredIndex);
+					// RESTORE-FOCUS-PARITY: this setCurrentIndex IS the autosave
+					// restore commit (arm only when it actually changes the index
+					// from the pristine mount state — a same-index restore is a
+					// no-op that never re-runs the step-focus effect). The
+					// step-focus effect stays silent while the flag is armed, so
+					// the restored step never paints a programmatic
+					// :focus-visible ring (the unexpected horizontal line under
+					// the Calendar title after refresh). Cleared by the first
+					// visitor navigation handler.
+					if (restoredIndex > 0) {
+						loadFocusSuppressedRef.current = true;
+					}
+					setCurrentIndex(restoredIndex);
 				if (migratedLegacy) {
 					try {
 						window.sessionStorage.removeItem(LEGACY_SESSION_KEY);
@@ -12255,12 +12270,59 @@ function useBookingEngineState(
 	// FINAL-42 fix: programmatic focus target for the submitting state —
 	// focusing the aria-busy button announces the in-flight status to SRs.
 	const submitButtonRef = React.useRef<HTMLButtonElement | null>(null);
+	// RESTORE-FOCUS-PARITY: the step-change focus effect below keys on
+	// safeCurrentIndex, so it also fires on the autosave-restore commit. A
+	// fresh page load ALWAYS re-renders there — the mount commit renders
+	// step 0, then the pre-paint storage restore (rules 7/16/20) calls
+	// setCurrentIndex(saved step) before the browser paints — and that
+	// focus landed on the restored step's .be-focus-target heading.
+	// Chromium resolves :focus-visible by comparing its Modality-Evaluated
+	// timestamp with the Last-Input event timestamp; on a page where no
+	// input event has ever been delivered the two disagree, and
+	// pointer-unrelated programmatic focus paints a :focus-visible ring.
+	// On the full-width step heading that ring reads as an unexpected
+	// horizontal border under the Calendar title, vanishing only after the
+	// first click (the input event syncs the timestamps). Continue/Back
+	// navigation never shows it because a real input event always precedes
+	// them.
+	// The fix is lifecycle ordering, not cosmetics: restoring a saved step
+	// is not visitor navigation, so the whole LOAD LIFECYCLE is focus-
+	// neutral. The restore effect arms loadFocusSuppressedRef; every
+	// visitor navigation handler (Continue/Back/Edit jump) clears it BEFORE
+	// its setCurrentIndex; the effect below skips the heading focus while
+	// the flag is armed (no consume — the late auto-inject remap that can
+	// shift the Calendar index when Cal.com metadata lands is still part of
+	// the load lifecycle and stays silent too). The ring is therefore never
+	// rendered at all — no timers, no delayed CSS, no cleanup passes
+	// (AGENTS.md). The first real navigation re-enables announcing, and
+	// every later step change announces exactly as before. Keyboard users
+	// lose nothing: Tab order and every interaction-driven focus move
+	// (invalid-field, slot pick, month nav, retry/cancel) are untouched,
+	// and .be-focus-target:focus-visible keeps its ring for all of them.
+	// Live-session remounts (rule 74) never arm the flag — their commits
+	// are real in-session navigation and keep announcing — and their seed
+	// setCurrentIndex lands in the same mount flush, where this effect's
+	// first run is the normal mount pass (no focus), so behavior there is
+	// byte-identical to the pre-fix build.
+	// (Pointer flow: the restored Calendar paints with
+	// document.activeElement = <body> — the same as every normal render
+	// of this step.)
 	const hasMountedStepRef = React.useRef(false);
 	React.useEffect(() => {
+		// Mount pass: never steal focus from the page on initial load.
+		// Deliberately does NOT touch loadFocusSuppressedRef: in the
+		// mount-flip restore path the restore setCurrentIndex lands in a
+		// synchronous pre-paint re-render whose passive effect runs AFTER
+		// this mount pass within the same flush — that re-run is the one
+		// the suppression must cover.
 		if (!hasMountedStepRef.current) {
 			hasMountedStepRef.current = true;
 			return;
 		}
+		// Load-lifecycle commit (autosave restore / pre-input pipeline
+		// remaps): focus-neutral, exactly like every normal first render
+		// of a step (the ring must never exist to remove).
+		if (loadFocusSuppressedRef.current) return;
 		stepTitleRef.current?.focus();
 	}, [safeCurrentIndex]);
 
@@ -12737,6 +12799,9 @@ function useBookingEngineState(
 		// validation. Other steps' errors are untouched.
 		const destStep = activeSteps[Math.min(safeCurrentIndex + 1, totalActive - 1)];
 		if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
+		// RESTORE-FOCUS-PARITY: this is real visitor navigation — the next
+		// step change announces via the heading focus again.
+		loadFocusSuppressedRef.current = false;
 		setCurrentIndex((i) => Math.min(i + 1, totalActive - 1));
 	}, [
 		currentStep,
@@ -12779,6 +12844,8 @@ function useBookingEngineState(
 		// fresh validation.
 		const destStep = activeSteps[Math.max(0, safeCurrentIndex - 1)];
 		if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
+		// RESTORE-FOCUS-PARITY: explicit Back is real visitor navigation.
+		loadFocusSuppressedRef.current = false;
 		setCurrentIndex((i) => Math.max(0, i - 1));
 	}, [isFirst, activeSteps, safeCurrentIndex]);
 
@@ -12825,6 +12892,8 @@ function useBookingEngineState(
 			// ERROR-LIFECYCLE: arrival-clean rule applies to jumps too.
 			const destStep = activeSteps[stepIndex];
 			if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
+			// RESTORE-FOCUS-PARITY: the Edit jump is real visitor navigation.
+			loadFocusSuppressedRef.current = false;
 			setCurrentIndex(stepIndex);
 		},
 		[activeSteps, flowStatus, transitionFlowStatus, safeCurrentIndex],
@@ -12869,6 +12938,9 @@ function useBookingEngineState(
 				setValues((prev) => ({ ...prev, [SELECTED_SLOT_KEY]: undefined }));
 				setPickedDate(null);
 				idempotencyKeyRef.current = null;
+				// RESTORE-FOCUS-PARITY: Retry-back-to-calendar is real visitor
+				// navigation — its scheduled heading focus must not be suppressed.
+				loadFocusSuppressedRef.current = false;
 				setCurrentIndex(dtIdx);
 				slotsRefetch();
 			}
@@ -12905,6 +12977,9 @@ function useBookingEngineState(
 		idempotencyKeyRef.current = null;
 		setSubmitError(null);
 		transitionFlowStatus("in-progress");
+		// RESTORE-FOCUS-PARITY: a visitor Cancel is real navigation back to
+		// the form — its own heading focus below must not be suppressed.
+		loadFocusSuppressedRef.current = false;
 		// W2-29-N1 fix: the Cancel button unmounts the moment the submit
 		// spinner leaves — focus dropped to <body> (WCAG 2.4.3). Mirror
 		// handleRetry's focus hand-off to the step heading.
@@ -12952,6 +13027,9 @@ function useBookingEngineState(
 		setVisibleMonth(null);
 		setSubmitError(null);
 		setBookingResult(null);
+		// RESTORE-FOCUS-PARITY: "Book another" is real visitor action —
+		// step-change announcing must be active for the fresh flow.
+		loadFocusSuppressedRef.current = false;
 		setCurrentIndex(0);
 		transitionFlowStatus("in-progress");
 		submittingRef.current = false;
@@ -13255,6 +13333,12 @@ function useBookingEngineState(
 		submitButtonRef,
 		stepTransition,
 		resolvedTransitionVariant,
+		// HEADER-ALIGN (rule 123): the raw Header group + resolved alignment
+		// for the step title/subtitle inline styles.
+		header,
+		headerAlignment,
+		// NAV-GROUPED-ALIGN: the resolved footer-row justification.
+		navJustify,
 		style,
 		styles,
 		submitError,
@@ -13357,6 +13441,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 		primaryLabel,
 		isFinalPrimary,
 		navGrouped,
+		// HEADER-ALIGN (rule 123): the raw Header group + resolved alignment
+		// (gates the inline styles so untouched canvases stay inherit), and
+		// NAV-GROUPED-ALIGN's resolved footer justification.
+		header,
+		headerAlignment,
+		navJustify,
 		progressAnimate,
 		progressBarStyle,
 		progressPct,
