@@ -474,7 +474,6 @@ function pageLocale(): string | undefined {
 // string through these.
 const DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL = "Confirmation #";
 const DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL = "Reschedule or cancel";
-const DEFAULT_COPY_EDIT_LABEL = "Edit";
 const DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL = "Pick a date to see times";
 const DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL = "No available times";
 const DEFAULT_COPY_SELECT_OPTION_LABEL = "Choose an option…";
@@ -6415,8 +6414,11 @@ interface BookingEngineCopyProps {
 		// notes section headers, error fallbacks and the demo-grid times.
 		confirmationNumberLabel: string;
 		rescheduleOrCancelLabel: string;
-		editLabel: string;
-		pickDateToSeeTimesLabel: string;
+		// COPY-SIMPLIFICATION: the dead "Edit" control (orphaned by the
+		// Review-step removal) is gone — no key, no control, no constant.
+		// COPY-SIMPLIFICATION: the pick-a-date hint is fixed internal
+		// behavior (unreachable in the engine) — no control.
+		selectOptionLabel: string;
 		// COPY-SIMPLIFICATION: demo empty-state text is fixed internal
 		// behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL), never a control.
 		selectOptionLabel: string;
@@ -6428,8 +6430,8 @@ interface BookingEngineCopyProps {
 		errorFallbackMessage: string;
 		// COPY-SIMPLIFICATION: AM/PM + duration suffixes are fixed
 		// structural tokens (DEFAULT_COPY_*), never Property Controls.
-		icsProdid: string;
-		icsSummaryFallback: string;
+		// COPY-SIMPLIFICATION: ICS protocol values are fixed internals
+		// (DEFAULT_COPY_ICS_*) — no controls ever existed for these keys.
 		// FINAL-06 fix: author-facing ICS LOCATION text (where to go).
 		// Empty string omits the LOCATION line entirely, preserving the
 		// historical output for virtual bookings.
@@ -6441,9 +6443,8 @@ interface BookingEngineCopyProps {
 		notesSelectedTimeLabel: string;
 		notesDatePrefix: string;
 		notesTimePrefix: string;
-		demoStartTime: string;
-		demoEndTime: string;
-		demoInterval: number;
+		// COPY-SIMPLIFICATION: demo-grid times + ICS protocol values are
+		// fixed internals — no controls ever existed for these keys.
 		aria: {
 			choiceGroup: string;
 			timeSlots: string;
@@ -6990,8 +6991,9 @@ type ValidationCopy = {
 	maxLengthError: string;
 	pickDateTimeError: string;
 	pastTimeError: string;
-	customRegexError: string;
-	invalidRegexError: string;
+	// COPY-SIMPLIFICATION: custom-regex messages are gone — custom
+	// patterns were removed (rule 100), so these strings could never
+	// be emitted. No keys, no controls, no defaults.
 	minLength: number;
 };
 
@@ -7003,8 +7005,6 @@ const DEFAULT_VALIDATION_COPY: ValidationCopy = {
 	maxLengthError: "Must be at most {max} characters",
 	pickDateTimeError: "Please pick a date and time",
 	pastTimeError: "Please pick a future time",
-	customRegexError: "This value doesn't match the required format",
-	invalidRegexError: "This field's custom regex pattern is invalid",
 	minLength: MIN_TEXT_LENGTH,
 };
 
@@ -10282,12 +10282,6 @@ function useBookingEngineState(
 			pastTimeError:
 				validationMessages?.pastTimeError ??
 				DEFAULT_VALIDATION_COPY.pastTimeError,
-			customRegexError:
-				validationMessages?.customRegexError ??
-				DEFAULT_VALIDATION_COPY.customRegexError,
-			invalidRegexError:
-				validationMessages?.invalidRegexError ??
-				DEFAULT_VALIDATION_COPY.invalidRegexError,
 			// VALIDATION-REMOVED (rule 100): the minimum is fixed (3) —
 			// no control, and stored overrides are ignored.
 			minLength: DEFAULT_VALIDATION_COPY.minLength,
@@ -13224,8 +13218,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					notesSelectedTimeLabel={copy.notesSelectedTimeLabel}
 					notesDatePrefix={copy.notesDatePrefix}
 					notesTimePrefix={copy.notesTimePrefix}
-					icsProdid={copy.icsProdid}
-					icsSummaryFallback={copy.icsSummaryFallback}
 					icsLocationLabel={copy.icsLocationLabel}
 					// W2-23-N1 fix: author-tunable fallback meeting duration
 					// (ICS + deep links).
@@ -14688,9 +14680,12 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							radius={borderRadius}
 							// W1-02-F17 fix: demo-grid times run the fixed
 							// DEFAULT_DEMO_* constants (no author controls).
-							startTime={copy.demoStartTime ?? DEFAULT_DEMO_START_TIME}
-							endTime={copy.demoEndTime ?? DEFAULT_DEMO_END_TIME}
-							interval={copy.demoInterval ?? DEFAULT_DEMO_INTERVAL}
+							// COPY-SIMPLIFICATION: demo grid is fixed at
+							// 09:00–17:00/30min (DEFAULT_DEMO_*) — no
+							// controls ever existed for these keys.
+							startTime={DEFAULT_DEMO_START_TIME}
+							endTime={DEFAULT_DEMO_END_TIME}
+							interval={DEFAULT_DEMO_INTERVAL}
 							timeFormat={timeFormat}
 							initialDate={selectedDate}
 							initialTime={
@@ -14710,7 +14705,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							onTimeFormatChange={onTimeFormatChange}
 							timeZone={timeZone}
 							showTimesWithoutDate
-							pickDateToSeeTimesLabel={copy.pickDateToSeeTimesLabel}
+							// COPY-SIMPLIFICATION: fixed internal hint
+							// (unreachable in the engine — times always
+							// show; kept for standalone wiring).
+							pickDateToSeeTimesLabel={DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL}
 							noTimesFallbackLabel={DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL}
 							timeSlotsAriaLabel={ariaLabels.timeSlots}
 							availableTimesAriaLabel={ariaLabels.availableTimes}
@@ -15586,8 +15584,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	notesSelectedTimeLabel: string;
 	notesDatePrefix: string;
 	notesTimePrefix: string;
-	icsProdid: string;
-	icsSummaryFallback: string;
 	// FINAL-06 fix: author ICS LOCATION text (empty → line omitted).
 	icsLocationLabel?: string;
 	// W2-23-N1 fix: author-tunable fallback meeting duration (ms).
@@ -15635,8 +15631,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		notesSelectedTimeLabel,
 		notesDatePrefix,
 		notesTimePrefix,
-		icsProdid,
-		icsSummaryFallback,
 		icsLocationLabel,
 		meetingDurationMs,
 	} = props;
@@ -15805,8 +15799,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					values[SELECTED_SLOT_KEY],
 					icsDescription || undefined,
 					icsSummaryLabel,
-					icsProdid,
-					icsSummaryFallback,
+					// COPY-SIMPLIFICATION: fixed protocol internals —
+					// function defaults apply.
+					undefined,
+					undefined,
 					// W2-23-N1 fix: author-tunable fallback duration.
 					meetingDurationMs,
 					// FINAL-06 fix: author ICS LOCATION (empty omits line).
@@ -15819,8 +15815,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			values,
 			icsDescription,
 			icsSummaryLabel,
-			icsProdid,
-			icsSummaryFallback,
 			meetingDurationMs,
 			icsLocationLabel,
 			bookingResult,
@@ -17949,17 +17943,10 @@ addPropertyControls(BookingEngine, {
 				title: "Reschedule / Cancel Link",
 				defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
 			},
-			editLabel: {
-				type: ControlType.String,
-				title: "Edit",
-				defaultValue: DEFAULT_COPY_EDIT_LABEL,
-			},
-			pickDateToSeeTimesLabel: {
-				type: ControlType.String,
-				title: "Pick A Date Hint",
-				defaultValue: DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL,
-				displayTextArea: true,
-			},
+			// COPY-SIMPLIFICATION: the dead "Edit" control (orphaned by
+			// the Review-step removal) is gone. The pick-a-date hint is
+			// fixed internal behavior (unreachable in the engine) — no
+			// control for it either.
 			// COPY-SIMPLIFICATION: the demo empty-state text is fixed
 			// internal behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL).
 			selectOptionLabel: {
@@ -18259,16 +18246,8 @@ addPropertyControls(BookingEngine, {
 						title: "Past Time",
 						defaultValue: DEFAULT_VALIDATION_COPY.pastTimeError,
 					},
-					customRegexError: {
-						type: ControlType.String,
-						title: "Custom Regex Mismatch",
-						defaultValue: DEFAULT_VALIDATION_COPY.customRegexError,
-					},
-					invalidRegexError: {
-						type: ControlType.String,
-						title: "Invalid Custom Regex",
-						defaultValue: DEFAULT_VALIDATION_COPY.invalidRegexError,
-					},
+					// COPY-SIMPLIFICATION: no Custom Regex controls —
+					// custom patterns were removed (rule 100).
 					// VALIDATION-REMOVED (rule 100): no Min Length control.
 					// The minimum is fixed in code (3 for text/textarea) —
 					// never author-set.
