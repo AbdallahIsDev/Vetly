@@ -2446,6 +2446,10 @@ interface CalendarCellProps {
 	textColor: string;
 	selectedAccentText: string;
 	mutedSoftText: string;
+	// TILE-FONT: date-number typography override from the Calendar panel
+	// Styles set (family/size/line-height; weight stays 500 per rule 55).
+	// Undefined keeps the native look (14px, inherit family).
+	tileFont?: FramerFont;
 	// F-17-3 fix: radius token cascaded so the cell follows the author's
 	// borderRadius control instead of the hardcoded 6px.
 	borderRadius: string | number;
@@ -2478,6 +2482,8 @@ const CalendarCell = React.memo(function CalendarCell({
 	textColor,
 	selectedAccentText,
 	mutedSoftText,
+	// TILE-FONT: date-number typography override (see CalendarCellProps).
+	tileFont,
 	// F-17-3 fix: radius token (author's borderRadius control).
 	borderRadius,
 	onSelect,
@@ -2608,9 +2614,15 @@ const CalendarCell = React.memo(function CalendarCell({
 					// another date must never leave two highlighted cells.
 					background: isSelected ? accentColor : isUnavailable ? "transparent" : subtleFill,
 					color: isSelected ? selectedAccentText : isUnavailable ? mutedSoftText : textColor,
-					cursor: isUnavailable ? "default" : "pointer",
-					fontSize: 14,
-					// W1-18-F1 fix: gated on prefers-reduced-motion.
+				cursor: isUnavailable ? "default" : "pointer",
+				// TILE-FONT: family/size/line-height from the Calendar
+				// Styles set; unset renders exactly the native look
+				// (inherit family, 14px, inherit line-height). Weight is
+				// intentionally fixed at 500 in every state (rule 55).
+				fontFamily: tileFont?.fontFamily ?? "inherit",
+				fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
+				...(tileFont?.lineHeight != null ? { lineHeight: tileFont.lineHeight } : {}),
+				// W1-18-F1 fix: gated on prefers-reduced-motion.
 					transition: reducedMotion
 						? "none"
 						: "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
@@ -2768,6 +2780,8 @@ interface CalendarGridProps {
 	selectedAccentText: string;
 	mutedSoftText: string;
 	mutedText: string;
+	// TILE-FONT: forwarded to every date cell (see CalendarCellProps).
+	tileFont?: FramerFont;
 	// F-17-3 fix: radius token cascaded to cells + nav buttons.
 	borderRadius: string | number;
 	onPrevMonth: (focusAfter?: boolean) => void;
@@ -2812,6 +2826,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	selectedAccentText,
 	mutedSoftText,
 	mutedText,
+	// TILE-FONT: forwarded to cells.
+	tileFont,
 	// F-17-3 fix: radius token.
 	borderRadius,
 	onPrevMonth,
@@ -2961,10 +2977,12 @@ const CalendarGrid = React.memo(function CalendarGrid({
 							borderColor={borderColor}
 							subtleFill={subtleFill}
 							textColor={textColor}
-							selectedAccentText={selectedAccentText}
-							mutedSoftText={mutedSoftText}
-							// F-17-3 fix: radius token.
-							borderRadius={borderRadius}
+						selectedAccentText={selectedAccentText}
+						mutedSoftText={mutedSoftText}
+						// TILE-FONT: date-number typography override.
+						tileFont={tileFont}
+						// F-17-3 fix: radius token.
+						borderRadius={borderRadius}
 							onSelect={onSelectDate}
 							onMoveFocus={onMoveFocus}
 							onGoToNextMonth={onNextMonth}
@@ -6017,12 +6035,15 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						borderColor={borderColor}
 						subtleFill={subtleFill}
 						textColor={resolvedTextColor}
-						selectedAccentText={selectedAccentText}
-						mutedSoftText={mutedSoftText}
-						mutedText={mutedText}
-						// F-17-3 fix: radius token (the `radius` prop this
-						// inline component already receives).
-						borderRadius={String(radius)}
+					selectedAccentText={selectedAccentText}
+					mutedSoftText={mutedSoftText}
+					mutedText={mutedText}
+					// TILE-FONT: date-number typography from the Calendar
+					// Styles set (undefined = native look).
+					tileFont={normalizedCalendarStyles?.font}
+					// F-17-3 fix: radius token (the `radius` prop this
+					// inline component already receives).
+					borderRadius={String(radius)}
 						onPrevMonth={goToPreviousMonth}
 						onNextMonth={goToNextMonth}
 						onSelectDate={handleDateSelect}
@@ -6645,13 +6666,19 @@ interface BookingEngineConfigProps {
 		subtitle?: string;
 		surface?: FieldStyleOverrides;
 	};
-	// Progress - grouped object control (Visible + Step Count Text
-	// Position + Show Text Content + Bar Style).
+	// Progress - grouped object control (Bar Visible + Bar Style +
+	// Show Text + Progress Text). `visible` / `showTextContent` /
+	// `stepCountPosition` are legacy carriers: same-group renames (SYN-01
+	// pattern) — readable as fallback so saved instances keep working;
+	// their controls are gone, never re-add them.
 	progressBar: {
-		visible: boolean;
-		stepCountPosition: "top" | "bottom";
-		showTextContent: boolean;
+		barVisible?: boolean;
+		visible?: boolean;
 		barStyle: "solid" | "dashed";
+		showText?: boolean;
+		showTextContent?: boolean;
+		progressText?: "top" | "bottom";
+		stepCountPosition?: "top" | "bottom";
 	};
 	// Cal.com
 	//
@@ -10470,12 +10497,13 @@ function useBookingEngineState(
 		const n = Number.isFinite(raw) ? raw : 16;
 		return Math.max(0, Math.min(32, Math.round(n)));
 	}, [styles?.gap]);
-	// Progress settings (grouped object control). Defaults keep
-	// previous instances behaving exactly as before.
-	const progressVisible = progressBar?.visible !== false;
+	// Progress settings (grouped object control). New keys first, legacy
+	// rename carriers as fallback — saved instances behave exactly as
+	// before (SYN-01 pattern; see the progressBar interface).
+	const progressVisible = (progressBar?.barVisible ?? progressBar?.visible) !== false;
 	const stepCountPosition: "top" | "bottom" =
-		progressBar?.stepCountPosition === "bottom" ? "bottom" : "top";
-	const progressShowTextContent = progressBar?.showTextContent !== false;
+		(progressBar?.progressText ?? progressBar?.stepCountPosition) === "bottom" ? "bottom" : "top";
+	const progressShowTextContent = (progressBar?.showText ?? progressBar?.showTextContent) !== false;
 	const progressBarStyle: "solid" | "dashed" =
 		progressBar?.barStyle === "solid" ? "solid" : "dashed";
 
@@ -16696,7 +16724,7 @@ type FieldControlProps = Partial<FieldConfig>;
 type StepSlotControlProps = Pick<BookingEngineProps, "stepCount">;
 type ProgressBarControlProps = Pick<
 	BookingEngineProps["progressBar"],
-	"showTextContent"
+	"showText" | "showTextContent" | "barVisible" | "visible"
 >;
 
 // =============================================================================
@@ -16996,6 +17024,18 @@ function makeCheckboxFieldStylesControls() {
 function makeCalendarStylesStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
+		// TILE-FONT: the date-number typography (family/size/line-height).
+		// Effective default mirrors the native look — 14px, inherit
+		// family and line-height — so activating Styles materializes the
+		// inherit look (STYLES-INIT-EFFECTIVE, same convention as the
+		// field/choice Font rows). Weight is deliberately NOT applied:
+		// date numbers stay 500 in every state (rule 55). Scoped to date
+		// numbers only — weekday labels (12px/700), month title, and time
+		// slots keep their own specs and inherit everything else.
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Regular",
+		}),
 		backgroundColor: fieldStylesColorControl("Background"),
 		// Styles-TEXT: tile text color — drives the surface container color
 		// (every inheriting tile label follows) plus the derived muted
@@ -17884,38 +17924,29 @@ addPropertyControls(BookingEngine, {
 	},
 
 	// ----- Progress (grouped, like Buttons/Styles) -----
+	// Two separate concepts: whether the visual bar exists (Bar Visible
+	// + its Bar Style) and how the progress text presents around it
+	// (Show Text + its Progress Text position). Show Text is independent
+	// of Bar Visible — text never disappears merely because the bar is
+	// hidden. Bar Style and Progress Text are meaningless without the
+	// bar, so they hide while Bar Visible = No (native `hidden`, not
+	// runtime CSS).
 	progressBar: {
 		type: ControlType.Object,
 		title: "Progress",
 		icon: "object",
 		buttonTitle: "Progress",
 		controls: {
-			visible: {
+			barVisible: {
 				type: ControlType.Boolean,
-				title: "Visible",
+				title: "Bar Visible",
 				defaultValue: true,
-			},
-			// Requirement 1: independent of `visible` above (which hides the
-			// whole progress row) — this only toggles the "Step X of Y" /
-			// "N% complete" text, leaving the bar/dashes itself alone.
-			showTextContent: {
-				type: ControlType.Boolean,
-				title: "Show Text Content",
-				defaultValue: true,
-			},
-			stepCountPosition: {
-				type: ControlType.Enum,
-				title: "Step Count Text Position",
-				options: ["top", "bottom"],
-				optionTitles: ["Top", "Bottom"],
-				defaultValue: "top",
-				displaySegmentedControl: true,
-				// Scalar hidden by a sibling scalar — ordinary, safe pattern.
-				hidden: (p: ProgressBarControlProps) => p?.showTextContent === false,
 			},
 			// Requirement 1: Solid (single continuous line, the original
 			// look) vs Dashed (segmented into `totalActive`-many equal-width
 			// pieces with a visible gap — a modern segmented indicator).
+			// Hidden while the bar itself is hidden (legacy `visible`
+			// included so old canvases keep the correct panel state).
 			barStyle: {
 				type: ControlType.Enum,
 				title: "Bar Style",
@@ -17923,6 +17954,30 @@ addPropertyControls(BookingEngine, {
 				optionTitles: ["Solid", "Dashed"],
 				defaultValue: "dashed",
 				displaySegmentedControl: true,
+				hidden: (p: ProgressBarControlProps) =>
+					(p?.barVisible ?? p?.visible) === false,
+			},
+			// Independent of `barVisible` above (which hides only the
+			// visual bar) — this toggles the "Step X of Y" / "N% complete"
+			// text, leaving the bar/dashes itself alone.
+			showText: {
+				type: ControlType.Boolean,
+				title: "Show Text",
+				defaultValue: true,
+			},
+			progressText: {
+				type: ControlType.Enum,
+				title: "Progress Text",
+				options: ["top", "bottom"],
+				optionTitles: ["Top", "Bottom"],
+				defaultValue: "top",
+				displaySegmentedControl: true,
+				// Scalar hidden by sibling scalars — ordinary, safe pattern
+				// (same as the old stepCountPosition hidden). Position is
+				// meaningless with no text or no bar, so both hide it.
+				hidden: (p: ProgressBarControlProps) =>
+					(p?.showText ?? p?.showTextContent) === false ||
+					(p?.barVisible ?? p?.visible) === false,
 			},
 		},
 	},
