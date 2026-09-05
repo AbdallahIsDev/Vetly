@@ -730,3 +730,15 @@ This supersedes the earlier load-time-detection design (`navigator.webdriver` / 
 **The slots fetch window is ±15 days per side, never less.** The 6×7 grid renders up to 14 trailing adjacent days (28-day month starting on the grid-start weekday, e.g. Feb 2026 → Mar 1–14); anything under +14 leaves real cells falsely unavailable until navigation. Do not shrink the window back to ±12.
 
 **Investigated and deliberately unchanged:** post-success availability already refetches (`slotsRefetch` on the success path, cache entry deleted); the 12h/24h toggle already re-publishes the slot label (M7 effect — notes/success derive live from values); ASCII-only email and the 7-digit phone floor are intentional product rules; demo-grid elapsed quirks are demo-only and out of scope while Cal.com is configured.
+
+### 120. Loading states use the shared Skeleton primitive, driven by the real async lifecycle (SKELETON-SYSTEM)
+
+**Data-driven loading with a known final UI renders structural skeleton placeholders — never generic loading text or spinners.** The shared `Skeleton` primitive (shadcn-Skeleton-equivalent: neutral tone, shared radius vocabulary, opacity-only `be-skeleton-pulse`) is the single loading-placeholder implementation; event-info, date-grid, and time-slot skeletons all compose it with the real content's geometry (avatar circle + text bars; 6×7 grid tracks; 36px slot bars). Do not build parallel placeholder markups.
+
+**No shadcn CLI install.** This repo has no Tailwind/shadcn scaffold and Framer code components cannot import local files, so a CLI-added skeleton component would be unimportable — the in-file primitive IS the shadcn implementation adapted to this architecture. Do not "migrate" it without solving those constraints first.
+
+**Lifecycle, not timers.** Skeletons render exactly while the real fetch state is loading (`eventMetaStatus === "loading"`, `slotsLoading` from the slots hook, pre-gate `clockReady === false`) — cache hits resolve synchronously and never paint one; stale requests never hide a newer state (existing leader/follower guards). Never add minimum-duration hacks or fake loading periods. Skeleton unmounts grid buttons, so DateAndTimeInline restores focus to the new roving tab stop when a fetch that stole focus resolves (body-focus-guarded, never overriding deliberate focus).
+
+**Accessibility rides the existing live regions, never the skeleton tree.** Skeleton markup is always `aria-hidden`; announcements come from the section `aria-label`/`aria-busy` (event meta) and the `role="status"` region (time slots, whose loading copy survives sr-only). Reduced motion collapses the pulse entirely.
+
+**No Skeleton property controls, and no copy removals beyond the visual.** Skeleton appearance derives from surrounding tokens; nothing configures it. The time-slots loading string was already internal (never a Copy control) and stays as the sr-only announcement. Submit-button spinner, error banners/retry, and empty states (no-times, pick-a-date hint) are not skeletons and stay as they are.

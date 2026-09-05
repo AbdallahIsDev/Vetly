@@ -1224,6 +1224,55 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
 }
 
 // =============================================================================
+// Skeleton — reusable loading placeholder primitive (shadcn-Skeleton
+// equivalent, adapted to this component's architecture).
+//
+// Why in-file instead of `npx shadcn add skeleton`: this repo has no
+// Tailwind/shadcn scaffold (no package.json, no components.json) and
+// Framer code components cannot import other local files — a CLI-added
+// components/ui/skeleton.tsx would be unimportable. shadcn's Skeleton is
+// itself a ~10-line pulse div (`animate-pulse` + neutral surface +
+// radius); this primitive is that same design, driven by the engine's
+// own tokens instead of Tailwind classes. Do not "migrate" it to the
+// CLI component without first solving those two constraints.
+//
+// Contract: purely visual (always aria-hidden at use sites — announcements
+// ride the existing live regions), opacity-only pulse (markup-neutral, so
+// server/prerender/first-paint markup is identical), responsive by
+// construction (width/height accept the same fluid values as the real
+// content; never hardcode viewport-dependent pixels here).
+// =============================================================================
+function Skeleton({
+	width = "100%",
+	height = 12,
+	borderRadius = 6,
+	background,
+	style,
+}: {
+	width?: number | string;
+	height?: number | string;
+	borderRadius?: number | string;
+	background: string;
+	style?: React.CSSProperties;
+}) {
+	return (
+		<div
+			aria-hidden="true"
+			className="be-skeleton"
+			style={{
+				width,
+				height,
+				borderRadius,
+				background,
+				flexShrink: 0,
+				boxSizing: "border-box",
+				...style,
+			}}
+		/>
+	);
+}
+
+// =============================================================================
 // Shared SegmentedControl — single moving-thumb implementation for all
 // segmented controls (Calendar Time Format 12h/24h and BookingEngine
 // segmented choice variant). Uses an absolutely positioned thumb that
@@ -2766,6 +2815,12 @@ interface CalendarGridProps {
 	// markup), then the real calendar appears pre-paint in the same pass
 	// the gate flips. No prerender-day values ever reach the served HTML.
 	clockReady: boolean;
+	// SLOTS-LOADING: true while the availability fetch for the visible
+	// window is in flight. The date cells render the same neutral skeleton
+	// as the pre-gate state (never a flash of false-unavailable cells);
+	// month header/nav stay live. Driven by the real request lifecycle —
+	// cache hits resolve synchronously and never paint it.
+	slotsLoading: boolean;
 	hoveredDateKey: string | null;
 	isNarrow: boolean;
 	firstDayOfWeek: number;
@@ -2813,6 +2868,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	today,
 	// PRERENDER-SAFE: date-neutral skeleton while the gate is closed.
 	clockReady,
+	// SLOTS-LOADING: skeleton cells while the fetch is in flight.
+	slotsLoading,
 	hoveredDateKey,
 	isNarrow,
 	firstDayOfWeek,
@@ -2861,7 +2918,11 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// month-dependent states — so the served HTML matches the visitor's
 	// first paint byte-for-byte. The real grid appears pre-paint in the
 	// same pass the gate flips (clockReady → true).
-	if (!clockReady) {
+	// SLOTS-LOADING reuses the identical skeleton while the availability
+	// fetch is in flight (month navigation, refetch): same 6×7 structure
+	// the cells resolve into, so loading never flashes false-unavailable
+	// cells and never shifts layout. Header/nav above stay live.
+	if (!clockReady || slotsLoading) {
 		for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
 			rows.push(
 				<div key={`skeleton-row-${r}`} style={{ display: "contents" }}>
@@ -3854,13 +3915,53 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							aria-atomic="true"
 							style={{
 								padding: "16px 8px",
-								textAlign: "center",
-								color: mutedText,
-								fontSize: 13,
-								fontFamily: "inherit",
+								boxSizing: "border-box",
 							}}
 						>
-							{loadingLabel}
+							{/* TimeSlotsSkeleton: slot-shaped bars (36px, shared
+				radius — rule 56 geometry) instead of loading text. The
+				loading copy survives sr-only so screen readers still hear
+				the status; the bars are decorative (aria-hidden). Driven
+				by the real fetch lifecycle (slotsLoading), never timers. */}
+							<span
+								style={{
+									position: "absolute",
+									width: 1,
+									height: 1,
+									padding: 0,
+									margin: -1,
+									overflow: "hidden",
+									clip: "rect(0, 0, 0, 0)",
+									whiteSpace: "nowrap",
+									border: 0,
+								}}
+							>
+								{loadingLabel}
+							</span>
+							<div
+								aria-hidden="true"
+								style={{
+									display: "flex",
+									flexDirection: "column",
+									gap: 8,
+								}}
+							>
+								<Skeleton
+									height={36}
+									borderRadius={borderRadius}
+									background={withAlpha(borderColor, 0.5)}
+								/>
+								<Skeleton
+									height={36}
+									borderRadius={borderRadius}
+									background={withAlpha(borderColor, 0.5)}
+								/>
+								<Skeleton
+									height={36}
+									borderRadius={borderRadius}
+									background={withAlpha(borderColor, 0.5)}
+								/>
+							</div>
 						</div>
 					) : !selectedDate && !showTimesWithoutDate ? (
 						<div
@@ -5825,6 +5926,31 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		onSelectionReady,
 		getPayload,
 	]);
+	// SKELETON-FOCUS-RESTORE: skeleton cells unmount the grid's buttons, so
+	// keyboard focus inside the grid would drop to <body> when a fetch
+	// starts. If focus is still lost when the fetch resolves, move it to
+	// the new roving tab stop (the cell carrying data-be-active-date).
+	// Guarded on body-focus so month-nav focus management (which places
+	// focus deliberately) is never overridden. Passive effect — never
+	// blocks paint, never touches the loading state itself.
+	const gridFocusRestoreRef = React.useRef(false);
+	React.useEffect(() => {
+		if (typeof document === "undefined") return;
+		if (slotsLoading) {
+			const ae = document.activeElement;
+			gridFocusRestoreRef.current =
+				!!ae && !!rootRef.current?.contains(ae);
+		} else if (gridFocusRestoreRef.current) {
+			gridFocusRestoreRef.current = false;
+			const ae = document.activeElement;
+			if (!ae || ae === document.body) {
+				const el = rootRef.current?.querySelector(
+					'[data-be-active-date="true"]',
+				) as HTMLElement | null;
+				el?.focus?.();
+			}
+		}
+	}, [slotsLoading]);
 
 	return (
 		<div
@@ -5945,9 +6071,12 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							>
 								{calEventMetaUnavailableCopy}
 							</div>
-						) : (
-							/* Loading skeleton — static neutral blocks, no
-				shimmer, identical markup on server and client. */
+						) 						: (
+							/* Loading skeleton — EventInfoSkeleton geometry:
+				avatar circle + organizer/title/metadata bars mirroring the
+				resolved CalEventInfoPanel rows. Static markup on server
+				and client (pulse is CSS-only); announcements ride the
+				section's aria-label/aria-busy above, never this tree. */
 							<div
 								aria-hidden="true"
 								style={{
@@ -5963,47 +6092,36 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 										gap: 10,
 									}}
 								>
-									<div
-										style={{
-											width: 40,
-											height: 40,
-											borderRadius: "50%",
-											background: withAlpha(borderColor, 0.5),
-											flexShrink: 0,
-										}}
+									<Skeleton
+										width={40}
+										height={40}
+										borderRadius="50%"
+										background={withAlpha(borderColor, 0.5)}
 									/>
-									<div
-										style={{
-											width: "60%",
-											height: 14,
-											borderRadius: 7,
-											background: withAlpha(borderColor, 0.5),
-										}}
+									<Skeleton
+										width="60%"
+										height={14}
+										borderRadius={7}
+										background={withAlpha(borderColor, 0.5)}
 									/>
 								</div>
-								<div
-									style={{
-										width: "85%",
-										height: 18,
-										borderRadius: 7,
-										background: withAlpha(borderColor, 0.5),
-									}}
+								<Skeleton
+									width="85%"
+									height={18}
+									borderRadius={7}
+									background={withAlpha(borderColor, 0.5)}
 								/>
-								<div
-									style={{
-										width: "45%",
-										height: 13,
-										borderRadius: 7,
-										background: withAlpha(borderColor, 0.5),
-									}}
+								<Skeleton
+									width="45%"
+									height={13}
+									borderRadius={7}
+									background={withAlpha(borderColor, 0.5)}
 								/>
-								<div
-									style={{
-										width: "70%",
-										height: 13,
-										borderRadius: 7,
-										background: withAlpha(borderColor, 0.5),
-									}}
+								<Skeleton
+									width="70%"
+									height={13}
+									borderRadius={7}
+									background={withAlpha(borderColor, 0.5)}
 								/>
 							</div>
 						)}
@@ -6035,6 +6153,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						selectedDate={selectedDate}
 						today={today}
 						clockReady={clockReady}
+						// SLOTS-LOADING: skeleton cells while fetching.
+						slotsLoading={slotsLoading}
 						hoveredDateKey={hoveredDateKey}
 						isNarrow={isNarrow}
 						firstDayOfWeek={firstDayOfWeek}
@@ -14309,18 +14429,24 @@ export default function BookingEngine(props: BookingEngineProps) {
     opacity: 1;
 }
 /* CSS-CONSOLIDATED: static Calendar CSS defined ONCE here instead of being
-   re-injected per Calendar/time-panel instance. Both rules are constant —
+   re-injected per Calendar/time-panel instance. All rules are constant —
    no dynamic tokens inside.
    1. Adjacent-month custom tooltip: revealed on hover/focus of the date
       button; the tooltip element itself is aria-hidden + pointer-events:none
       and only renders for AVAILABLE adjacent-month dates.
    2. Time list (.be-dt-scroll): scrollable with an invisible browser
-      scrollbar (::-webkit-scrollbar cannot be targeted by inline styles). */
+      scrollbar (::-webkit-scrollbar cannot be targeted by inline styles).
+   3. Skeleton pulse (shadcn animate-pulse equivalent): opacity-only, so
+      skeleton markup is identical on server/prerender/first paint; motion
+      collapses entirely under prefers-reduced-motion. */
 .be-motion-root button:hover .be-adj-tooltip,
 .be-motion-root button:focus .be-adj-tooltip,
 .be-motion-root button:focus-visible .be-adj-tooltip { opacity: 1 !important; }
 .be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.be-skeleton { animation: be-skeleton-pulse 1.6s ease-in-out infinite; }
+@keyframes be-skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .be-skeleton { animation: none; } }
 @keyframes be-spin { to { transform: rotate(360deg); } }
 `}</style>
 		</RootShell>
