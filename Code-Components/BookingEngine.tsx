@@ -10443,6 +10443,15 @@ type InSessionFormSnapshot = {
 	values: BookingValues;
 	currentIndex: number;
 	timeFormat: "12h" | "24h";
+	// RESTORE-RACE provenance: true only when this entry was written by a
+	// live session (interactive gate open, or real visitor input) — a later
+	// remount must trust it over sessionStorage (rule-74 teleport guard).
+	// Entries seeded by a mount's own pre-gate passive flush carry
+	// live:false (pristine defaults, no input yet) and must NEVER gate a
+	// storage restore — otherwise the first interaction after a refresh
+	// would skip the restore forever (the entry "proves" a live session
+	// that never existed) and the saved payload would sit unread.
+	live: boolean;
 };
 const inSessionFormSnapshots = new Map<string, InSessionFormSnapshot>();
 
@@ -11254,6 +11263,11 @@ function useBookingEngineState(
 	// Keep this instance's snapshot in lockstep so a remount (animation
 	// unmount, Framer canvas) rehydrates from memory, not empty useState.
 	// Per-identity map — never another instance's session (rule 91).
+	// RESTORE-RACE: stamp provenance — a pre-gate mount flush writes
+	// live:false (defaults, no input), so the restore effect below can
+	// tell "fresh load, storage may be fresher" from "live-session
+	// remount, memory wins". The gate rides the deps so the stamp flips
+	// the moment the session goes live.
 	React.useEffect(() => {
 		inSessionFormSnapshots.set(instanceKeyRef.current, {
 			values,
@@ -11262,8 +11276,9 @@ function useBookingEngineState(
 			// restores exact position via the seed clamp above.
 			currentIndex,
 			timeFormat,
+			live: beInteractiveForRestore,
 		});
-	}, [values, currentIndex, timeFormat]);
+	}, [values, currentIndex, timeFormat, beInteractiveForRestore]);
 
 	// Persisted-state restore. Autosave is always-on (rule 7); payloads
 	// carry a schema version so a future shape change can migrate or purge
@@ -11278,19 +11293,20 @@ function useBookingEngineState(
 	// already used as initial state and is more recent than debounced storage,
 	// so skip the sessionStorage read to avoid stale overwrite.
 	//
-	// BE-REMOUNT-RESTORE fix: the snapshot gate is now "any snapshot at all",
-	// not "snapshot with data". A non-null module snapshot proves THIS mount
-	// is a remount of a live page session (Framer breakpoint switches re-mount
-	// code components when the preview/published page crosses a breakpoint,
-	// animation unmounts, canvas re-parents) — not a fresh visit. On such a
-	// remount the live snapshot is authoritative even when it looks pristine:
-	// re-reading sessionStorage here resurrected progress saved EARLIER in the
-	// same tab and teleported the visitor onto a previously-saved step (e.g.
-	// straight onto the Calendar step with its final-action button) purely
-	// because they resized across a breakpoint boundary. Fresh page loads have
-	// a null snapshot and still restore saved progress below, so the
-	// always-on autosave restore contract (AGENTS.md rules 7/16/20) is
-	// unchanged; only mid-session resurrection is gone.
+	// BE-REMOUNT-RESTORE fix: the snapshot gate is liveness-gated, not
+	// "any snapshot at all". A live:true module snapshot proves THIS mount
+	// is a remount of a live page session (Framer breakpoint switches
+	// re-mount code components when the preview/published page crosses a
+	// breakpoint, animation unmounts, canvas re-parents) — not a fresh
+	// visit. On such a remount the live snapshot is authoritative even
+	// when it looks pristine: re-reading sessionStorage here resurrected
+	// progress saved EARLIER in the same tab and teleported the visitor
+	// onto a previously-saved step (e.g. straight onto the Calendar step
+	// with its final-action button) purely because they resized across a
+	// breakpoint boundary. Fresh page loads have no live entry (their own
+	// pre-gate flush stamps live:false) and still restore saved progress
+	// below, so the always-on autosave restore contract (AGENTS.md rules
+	// 7/16/20) is unchanged; only mid-session resurrection is gone.
 	useIsomorphicLayoutEffect(() => {
 		if (!persistState) return;
 		if (typeof window === "undefined") return;
@@ -11304,10 +11320,16 @@ function useBookingEngineState(
 		// get the pre-paint restore in the same pass the gate flips.
 		if (!beInteractiveForRestore) return;
 		// INSTANCE-ISOLATION: the gate is THIS instance's own snapshot — a
-		// non-null entry for our identity proves this mount is a remount of
+		// LIVE entry for our identity proves this mount is a remount of
 		// a live session (rule 74 semantics, now per instance). Another
 		// instance's snapshot must never gate our restore.
-		if (inSessionFormSnapshots.has(instanceKeyRef.current)) return;
+		// RESTORE-RACE: "any snapshot at all" over-gated. A live:false
+		// entry is just the current mount's own pre-gate passive flush
+		// (pristine defaults, written before any input was possible) —
+		// treating it as a live session skipped the storage read on the
+		// first post-refresh interaction, permanently stranding the saved
+		// payload. Only live:true entries gate the restore.
+		if (inSessionFormSnapshots.get(instanceKeyRef.current)?.live) return;
 		try {
 			let raw = window.sessionStorage.getItem(instanceKeyRef.current);
 			// One-time upgrade path for saves written before per-instance
@@ -12269,13 +12291,16 @@ function useBookingEngineState(
 			// mid-keystroke remount never loses the typed value (the
 			// per-identity write effect also runs, but a remount can land
 			// between keystroke and its debounce-free tick).
-			const liveKey = instanceKeyRef.current;
-			const liveSnap = inSessionFormSnapshots.get(liveKey);
-			inSessionFormSnapshots.set(liveKey, {
-				values: valuesRef.current,
-				currentIndex: liveSnap?.currentIndex ?? 0,
-				timeFormat: liveSnap?.timeFormat ?? "12h",
-			});
+		const liveKey = instanceKeyRef.current;
+		const liveSnap = inSessionFormSnapshots.get(liveKey);
+		inSessionFormSnapshots.set(liveKey, {
+			values: valuesRef.current,
+			currentIndex: liveSnap?.currentIndex ?? 0,
+			timeFormat: liveSnap?.timeFormat ?? "12h",
+			// RESTORE-RACE: a keystroke IS visitor input — this entry is
+			// live-session truth even if the gate somehow hasn't flipped.
+			live: true,
+		});
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
 			// SUBMIT-DRIVEN-VALIDATION: typing alone never validates and
 			// never INTRODUCES an error. Only a field that already shows
