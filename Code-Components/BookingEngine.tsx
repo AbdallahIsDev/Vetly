@@ -2902,7 +2902,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 					// drives the month-abbreviation indicator.
 					// CAL-ADJ-SOURCE: `hasAvailability` is the SAME normalized
 					// availability source used by the in-month view (the
-					// parent's month-wide Cal.com slots, fetched with ±12-day
+					// parent's month-wide Cal.com slots, fetched with ±15-day
 					// edge widening) — a previewed adjacent date shows exactly
 					// the state it will have after navigating into its month.
 					// Unknown/not-yet-fetched dates are unavailable, never
@@ -5400,7 +5400,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// visitor-local today across the ENTIRE loaded grid window. Unlike
 	// firstAvailableDate above this is NOT restricted to the visible month —
 	// calendarCells spans the leading/trailing adjacent-month rows and the
-	// slots fetch covers ±12 days beyond the month, so adjacent-window
+	// slots fetch covers ±15 days beyond the month, so adjacent-window
 	// availability is the same normalized Cal.com source the grid renders.
 	// This is what makes "today unavailable late in the month" select the
 	// first available date in the following days/month instead of leaving
@@ -5440,10 +5440,21 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		if (firstAvailableDate) {
 			return dateKeyOf(firstAvailableDate);
 		}
+		// EMPTY-MONTH-TABSTOP: no available day in-month (e.g. a fully
+		// booked month with live trailing adjacent-month days) — fall back
+		// to the first available date anywhere in the loaded grid so the
+		// grid keeps exactly one tab stop (roving-tabindex contract, rule
+		// 63). firstAvailableDateFromToday scans the same selectable cells
+		// the grid renders (non-past + available), so the target is always
+		// a real, focusable cell — never an empty placeholder.
+		if (firstAvailableDateFromToday) {
+			return dateKeyOf(firstAvailableDateFromToday);
+		}
 		return null;
 	}, [
 		selectedDate,
 		firstAvailableDate,
+		firstAvailableDateFromToday,
 		visibleMonth,
 		dateKeyOf,
 		hasKnownAvailability,
@@ -8026,16 +8037,21 @@ function useCalcomSlots(
 		// 24h45m for Chatham +12:45), so a visitor's first-of-month
 		// 00:00–01:59 slot instants could still land BEFORE the widened
 		// start.
-		// FINAL-23 fix: the buffer is intentionally TWELVE days per side,
+		// FINAL-23 fix: the buffer is intentionally FIFTEEN days per side,
 		// not two — it must cover (a) the drift above AND (b) the full
 		// leading/trailing adjacent-month rows the grid renders (AGENTS.md
 		// rules 51/57: trailing next-month cells stay selectable and their
 		// previewed availability must exactly match the real Cal.com source),
-		// which a ±2-day window cannot reach. The grid only renders visible
-		// dates, so extra neighboring-day slots are unused data, never
-		// orphaned UI; the cost is a larger fetch window by design.
+		// which a ±2-day window cannot reach. Fifteen (not twelve): the
+		// 6×7 grid holds 42 cells, so a 28-day month starting on the
+		// grid-start weekday (e.g. Feb 2026, Feb 1 = Sunday) renders FOURTEEN
+		// trailing next-month days (Mar 1–14) — a ±12 window ended Mar 12
+		// and left the last two cells falsely unavailable until navigation.
+		// The grid only renders visible dates, so extra neighboring-day
+		// slots are unused data, never orphaned UI; the cost is a larger
+		// fetch window by design.
 		const start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
-		start.setDate(start.getDate() - 12);
+		start.setDate(start.getDate() - 15);
 		const end = new Date(
 			monthStart.getFullYear(),
 			monthStart.getMonth() + 1,
@@ -8044,7 +8060,7 @@ function useCalcomSlots(
 			59,
 			59,
 		);
-		end.setDate(end.getDate() + 12);
+		end.setDate(end.getDate() + 15);
 		const startStr = start.toISOString();
 		const endStr = end.toISOString();
 		const url = `${apiBase}/v2/slots?eventTypeId=${encodeURIComponent(
@@ -9671,6 +9687,19 @@ function slugifyLabel(label: string): string {
 		.replace(/^-+|-+$/g, "")
 		.replace(/-+/g, "-");
 }
+// PAYLOAD-EMPTY: validation treats whitespace-only strings as empty
+// (T4-H1: nine spaces must not pass required/min-length) and an unchecked
+// checkbox (false) as unanswered — the payload builders must agree with
+// that verdict, or Cal.com receives junk validation itself would never
+// produce ("false", "   "). One shared predicate for all three builders
+// (bookingFields responses, notes, success-screen entries) so they can
+// never diverge again. Checked checkboxes (true) and real strings pass
+// through untouched.
+function isEmptyPayloadValue(value: unknown): boolean {
+	if (value === undefined || value === "" || value === false) return true;
+	return typeof value === "string" && value.trim() === "";
+}
+
 function buildBookingFieldsResponses(
 	steps: NormalizedStep[],
 	values: BookingValues,
@@ -9680,7 +9709,9 @@ function buildBookingFieldsResponses(
 		if (step.stepType !== "form" && step.stepType !== "datetime") continue;
 		for (const field of step.fields) {
 			const value = values[field.id];
-			if (value === undefined || value === "") continue;
+			// PAYLOAD-EMPTY: skip validation-empty equivalents (see
+			// isEmptyPayloadValue) so Cal.com never receives junk.
+			if (isEmptyPayloadValue(value)) continue;
 			let key = (field.calFieldId || "").trim();
 			if (!key) {
 				if (field.isPrimaryName || field.fieldType === "email" || field.fieldType === "calendar-widget") continue;
@@ -9724,7 +9755,8 @@ function buildNotesPayload(
 		for (const field of step.fields) {
 			if (field.isPrimaryName || field.fieldType === "email") continue;
 			const value = values[field.id];
-			if (value === undefined || value === "") continue;
+			// PAYLOAD-EMPTY: same shared verdict as bookingFields (above).
+			if (isEmptyPayloadValue(value)) continue;
 			// PHONE-INPUT-RAW: same payload-boundary sanitize as
 			// buildBookingFieldsResponses — notes carry clean digits.
 			const shown =
@@ -15939,7 +15971,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					continue;
 				for (const field of stepEntry.fields) {
 					const value = values[field.id];
-					if (value === undefined || value === "") continue;
+					// PAYLOAD-EMPTY: the success screen never shows junk
+					// rows ("SomeBox: false", "Notes:    ") — same shared
+					// verdict as the Cal.com builders.
+					if (isEmptyPayloadValue(value)) continue;
 					list.push({
 						id: field.id,
 						label: field.label,
