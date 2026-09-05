@@ -1073,8 +1073,8 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 }
 
 // CAL-BG-OWNERSHIP: the calendar surface's own default background. The
-// Calendar Widget owns its background through the marker field's Styles
-// submenu (`calendarStyles.backgroundColor`); the global Background token no
+// Calendar Tiles owns its background through the Calendar panel group's
+// Tiles set (`calendarStyles.backgroundColor`); the global Background token no
 // longer reaches the calendar. An UNCONFIGURED calendar keeps rendering the
 // exact look it always had in the default theme (white), so opening its
 // Styles submenu never changes its appearance, and a customized value
@@ -4895,7 +4895,7 @@ interface DateAndTimeInlineProps {
 	// pass it yet.
 	accentForegroundColor?: string;
 	// CAL-BG-OWNERSHIP: the calendar surface is owned by the Calendar
-	// Widget marker's own `calendarStyles` (Background/Radius/Padding —
+	// panel group's Tiles set (Background/Text Color/Border/Radius/Padding —
 	// the same shared FieldStyleOverrides model). The global Background
 	// token deliberately does NOT reach the calendar anymore; an unset
 	// key falls back to DEFAULT_CALENDAR_SURFACE_BACKGROUND so opening
@@ -5287,7 +5287,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// adjacent-month tooltip — all render on the author's Primary surface.
 	// Semantic token, not a hard-coded white assumption.
 	const selectedAccentText = accentForegroundColor;
-	const mutedText = React.useMemo(() => withAlpha(textColor, 0.6), [textColor]);
+	const mutedText = React.useMemo(() => withAlpha(resolvedTextColor, 0.6), [resolvedTextColor]);
 	const mutedSoftText = React.useMemo(
 		() => withAlpha(textColor, 0.42),
 		[textColor],
@@ -5305,7 +5305,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		[borderColor],
 	);
 	// CAL-BG-OWNERSHIP: resolved calendar-surface tokens. Every key comes
-	// from the Calendar Widget marker's own `calendarStyles` ONLY when the
+	// from the Calendar panel group's Tiles set ONLY when the
 	// author configured it (STYLES-INIT: untouched keys are undefined);
 	// otherwise the native defaults apply — white surface, shared Radius
 	// token, no padding. Opening the Styles submenu therefore never changes
@@ -5316,6 +5316,23 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	const surfaceBackground =
 		normalizedCalendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND;
 	const surfaceRadius = resolveFieldRadius(normalizedCalendarStyles, radius, "calendar-widget" as FieldType);
+	// TILES-TEXT: tile text color overrides the surface container color
+	// (every inheriting tile label follows) and the derived muted tones
+	// below. Default-free so untouched tiles track the Text token
+	// (`||` for colors is rule-96-blessed: "" means unset).
+	// On-accent surfaces (selected date/slot, tooltip) stay exempt (rule 70).
+	const resolvedTextColor = normalizedCalendarStyles?.textColor || textColor;
+	// TILES-BORDER: an authored border replaces the native `1px solid`
+	// Border-token surface border wholesale; an explicit width 0 removes
+	// it entirely; untouched keeps the native border.
+	const tileBorder = normalizedCalendarStyles?.border;
+	const tileBorderWidth =
+		typeof tileBorder?.borderWidth === "number" ? tileBorder.borderWidth : 1;
+	const surfaceBorder = !tileBorder
+		? subtleBorder
+		: tileBorderWidth > 0
+			? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
+			: "none";
 	const surfacePadding =
 		typeof normalizedCalendarStyles?.padding === "string" && normalizedCalendarStyles.padding.trim()
 			? normalizedCalendarStyles.padding
@@ -5787,8 +5804,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				height: "auto",
 				minHeight: 300,
 				// CAL-BG-OWNERSHIP: the calendar surface's radius/background/
-				// padding are owned by the marker field's own Styles submenu
-				// (calendarStyles); untouched keys keep the native look. The
+				// padding are owned by the Calendar Tiles set;
+				// untouched keys keep the native look. The
 				// global Background token does not reach this surface.
 				borderRadius: surfaceRadius,
 				background: surfaceBackground,
@@ -5797,8 +5814,10 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				// field's Calendar Styles — only when configured.
 				...shadowStyle(normalizedCalendarStyles?.shadow),
 				...backdropStyle(normalizedCalendarStyles?.backgroundBlur),
-				color: textColor,
-				border: subtleBorder,
+				// TILES: tile text + border overrides from the Calendar
+				// Tiles set; untouched keys keep the native tokens.
+				color: resolvedTextColor,
+				border: surfaceBorder,
 				overflow: "hidden",
 				display: "flex",
 				flexDirection: "column",
@@ -5875,7 +5894,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 								meta={eventMeta}
 								fallbackDurationMinutes={eventMetaFallbackDurationMinutes}
 								accentColor={accentColor}
-								textPrimaryColor={textColor}
+								textPrimaryColor={resolvedTextColor}
 								textSecondaryColor={mutedText}
 								borderColor={borderColor}
 								borderRadius={radius}
@@ -5997,7 +6016,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						accentColor={accentColor}
 						borderColor={borderColor}
 						subtleFill={subtleFill}
-						textColor={textColor}
+						textColor={resolvedTextColor}
 						selectedAccentText={selectedAccentText}
 						mutedSoftText={mutedSoftText}
 						mutedText={mutedText}
@@ -6025,7 +6044,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					softerFill={softerFill}
 					subtleBorder={subtleBorder}
 					borderColor={borderColor}
-					textColor={textColor}
+					textColor={resolvedTextColor}
 					selectedAccentText={selectedAccentText}
 					mutedText={mutedText}
 					mutedSoftText={mutedSoftText}
@@ -6284,8 +6303,8 @@ interface FieldConfig {
 	cardsStyles?: FieldStyleOverrides;
 	radioStyles?: FieldStyleOverrides;
 	checkStyles?: FieldStyleOverrides;
-	// CAL-BG-OWNERSHIP: the Calendar Widget marker's own Styles set. Its
-	// Background/Radius/Padding own the calendar surface — the global
+	// CAL-BG-OWNERSHIP: the Calendar Tiles set (panel group). Its
+	// Background/Text Color/Border/Radius/Padding own the calendar surface - the global
 	// Background token no longer applies to it (see DateAndTimeInline).
 	calendarStyles?: FieldStyleOverrides;
 }
@@ -6606,11 +6625,12 @@ interface BookingEngineConfigProps {
 	// system-owned Calendar stage (panel item after the Steps, before
 	// Buttons). Optional in the type because canvases saved before it
 	// existed carry no value — the runtime falls back to the migrated
-	// legacy Calendar config, then to the shipped defaults.
+	// legacy Calendar config, then to the shipped defaults. The stage is
+	// always single-column by product rule: no layout key exists here
+	// (Form Steps keep their own layout control).
 	calendar?: {
 		title: string;
 		subtitle?: string;
-		layout: "single-column" | "two-column";
 		surface?: FieldStyleOverrides;
 	};
 	// Progress - grouped object control (Visible + Step Count Text
@@ -7083,18 +7103,25 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 // its non-marker fields preserved in place; markers are dropped (they
 // rendered the shared calendar state and can never render again); the
 // FIRST legacy datetime slot seeds the system Calendar configuration
-// (title/subtitle/layout + first configured marker surface, each falling
-// back to the shipped Calendar defaults). Multiple legacy Calendars
-// collapse into the single system stage — no authored fields are lost,
-// no duplicate Calendar can survive. Pure + synchronous so the node
-// harness asserts it directly (no React needed).
+// (title/subtitle + first configured marker surface, each falling back
+// to the shipped Calendar defaults). The stage layout is always
+// single-column by product rule — a legacy two-column layout is not
+// carried over. Multiple legacy Calendars collapse into the single
+// system stage — no authored fields are lost, no duplicate Calendar can
+// survive. Pure + synchronous so the node harness asserts it directly
+// (no React needed).
 interface CalendarStageConfig {
 	title: string;
 	subtitle: string;
-	layout: "single-column" | "two-column";
 	surface?: FieldStyleOverrides;
 }
 const SYSTEM_CALENDAR_ID = "system-calendar";
+// SYSTEM-CALENDAR: the runtime pipeline appends at most two system stages
+// after the authored Form steps (auto-injected Additional Details + the
+// mandatory Calendar). Index ceilings computed before those stages exist
+// (hook order is fixed) use baseTotalActive + this margin instead of a
+// base-only bound, which would pin navigation inside the authored range.
+const MAX_SYSTEM_STAGES = 2;
 const DEFAULT_CALENDAR_TITLE = "Pick a Time";
 const DEFAULT_CALENDAR_SUBTITLE = "Choose a date and time that works for you.";
 function migrateLegacyCalendar(slots: StepConfig[]): {
@@ -7117,7 +7144,6 @@ function migrateLegacyCalendar(slots: StepConfig[]): {
 			src && src.subtitle !== undefined
 				? src.subtitle
 				: DEFAULT_CALENDAR_SUBTITLE,
-		layout: (src && src.layout) || "single-column",
 		surface: configuredMarker
 			? configuredMarker.calendarStyles
 			: srcMarkers.length > 0
@@ -10142,6 +10168,10 @@ function StepVisibilityWrapper(props: {
 type InSessionFormSnapshot = {
 	values: BookingValues;
 	currentIndex: number;
+	// SYSTEM-CALENDAR: runtime-pipeline index plus the step id it pointed
+	// at, so a remount on the Calendar (or auto-injected) stage restores
+	// exact position instead of collapsing to the last authored step.
+	currentStepId?: string;
 	timeFormat: "12h" | "24h";
 };
 const inSessionFormSnapshots = new Map<string, InSessionFormSnapshot>();
@@ -10710,7 +10740,16 @@ function useBookingEngineState(
 	// instance's session.
 	const [currentIndex, setCurrentIndex] = useStateGuarded(
 		0,
-		baseTotalActive,
+		// SYSTEM-CALENDAR: the guard ceiling covers the FULL runtime
+		// pipeline, not just authored steps. The runtime appends up to two
+		// system stages below this declaration (auto-injected Additional
+		// Details + the mandatory Calendar) and hook order is fixed, so a
+		// later-computed total cannot feed this call — the margin covers
+		// both. Every reader clamps via safeCurrentIndex and every writer
+		// bounds its own destination, so the margin is purely anti-runaway
+		// (a base-only ceiling silently pinned every advance to the last
+		// authored step: Continue could never reach the Calendar).
+		baseTotalActive + MAX_SYSTEM_STAGES,
 	);
 	// CC-8 fix: `useStateGuarded` only re-clamps when its setter is called —
 	// it does not retroactively clamp the already-committed state when
@@ -10721,15 +10760,6 @@ function useBookingEngineState(
 	// and crash on `currentStep.title`. This is defense-in-depth: clamp for
 	// this render too, not just in the effect.
 	const baseSafeCurrentIndex = Math.min(currentIndex, Math.max(0, baseTotalActive - 1));
-	// FINAL-63 fix: explicit bounds guard — the indexed read is honest about
-	// being fallible (empty pipeline / mid-flow step removal), matching the
-	// SYN-04 handling downstream instead of relying on clamp arithmetic alone.
-	const baseCurrentStep: NormalizedStep | undefined =
-		baseSafeCurrentIndex >= 0 && baseSafeCurrentIndex < baseActiveSteps.length
-			? baseActiveSteps[baseSafeCurrentIndex]
-			: undefined;
-	const baseIsFirst = baseSafeCurrentIndex === 0;
-	const baseIsLast = baseSafeCurrentIndex === baseTotalActive - 1;
 
 	// F-03-1 fix: the pipeline used to track position by array index only,
 	// so when an author toggled an intermediate step's `enabled` OFF
@@ -10908,12 +10938,25 @@ function useBookingEngineState(
 			);
 		}
 		// Seeding is scoped to THIS instance's key, so Instance A's
-		// step/values can never seed Instance B.
+		// step/values can never seed Instance B. Position restores by
+		// step id when the snapshot carries one (exact even for the
+		// Calendar/auto stages); otherwise the runtime index clamped to
+		// the full pipeline range. Deps stay mount-scoped on purpose —
+		// re-seeding on pipeline change would teleport a live visitor.
 		const snap = inSessionFormSnapshots.get(instanceKeyRef.current);
 		if (snap) {
 			setValues({ ...snap.values });
+			const idIdx =
+				snap.currentStepId !== undefined
+					? activeSteps.findIndex((step) => step.id === snap.currentStepId)
+					: -1;
 			setCurrentIndex(
-				Math.min(snap.currentIndex, Math.max(0, baseTotalActive - 1)),
+				idIdx >= 0
+					? idIdx
+					: Math.min(
+							snap.currentIndex,
+							Math.max(0, baseTotalActive + MAX_SYSTEM_STAGES - 1),
+						),
 			);
 			setTimeFormat(snap.timeFormat);
 			// Mirror the storage-restore month handling: keep the calendar on
@@ -10942,12 +10985,14 @@ function useBookingEngineState(
 	React.useEffect(() => {
 		inSessionFormSnapshots.set(instanceKeyRef.current, {
 			values,
-			// Uses base index before auto-inject; effective index is handled after
-			// effectiveActiveSteps is resolved (visitor auto step).
-			currentIndex: baseSafeCurrentIndex,
+			// SYSTEM-CALENDAR: runtime-pipeline position (not base-only),
+			// so a remount on the Calendar/auto stage restores exact
+			// position; the seed resolves the step id first.
+			currentIndex: safeCurrentIndex,
+			currentStepId: activeSteps[safeCurrentIndex]?.id,
 			timeFormat,
 		});
-	}, [values, baseSafeCurrentIndex, timeFormat]);
+	}, [values, safeCurrentIndex, activeSteps, timeFormat]);
 
 	// Persisted-state restore. Autosave is always-on (rule 7); payloads
 	// carry a schema version so a future shape change can migrate or purge
@@ -11159,8 +11204,12 @@ function useBookingEngineState(
 					// `currentIndex` (e.g. 1e6) used to loop a million times
 					// (same-origin DoS); bound the iteration to the number of
 					// active steps before re-validating prior steps.
-					// Uses base pipeline; auto-injected step not yet known at restore time.
-				let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length);
+					// SYSTEM-CALENDAR: bound covers the full runtime pipeline
+					// (base + system stages) so a save on the Calendar/auto
+					// stage restores exact position; the clamp + pinned-id
+					// remap below still settle author edits. Uses base
+					// pipeline; auto-injected step not yet known at restore time.
+					let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length + MAX_SYSTEM_STAGES);
 				for (let i = 0; i < restoredIndex; i++) {
 					const prior = baseActiveSteps[i];
 					if (
@@ -11247,11 +11296,10 @@ function useBookingEngineState(
 			// F-12-9 fix: the very first write on a fresh mount is redundant —
 			// an untouched form has nothing worth persisting. Only write once
 			// the visitor actually entered something or left step 0.
-			// Uses base index before auto-inject; effective persist is handled
-			// via the same base value (auto step is always before calendar, so
-			// the offset is stable and the restore clamp handles any shift).
+			// SYSTEM-CALENDAR: runtime-pipeline position (leaving step 0
+			// includes reaching the Calendar/auto stages).
 			const hasAnything =
-				baseSafeCurrentIndex > 0 ||
+				safeCurrentIndex > 0 ||
 				Object.values(values).some(
 					(v) => v !== undefined && v !== null && v !== "",
 				);
@@ -11280,7 +11328,10 @@ function useBookingEngineState(
 						// refresh mid-flow silently dropped the visitor back to
 						// step 0 (the layout effect below re-clamps the restored
 						// value if the author changed the step count meanwhile).
-						currentIndex: baseSafeCurrentIndex,
+						// SYSTEM-CALENDAR: runtime-pipeline position (not
+						// base-only) so reloads on the Calendar/auto stage
+						// restore exact position.
+						currentIndex: safeCurrentIndex,
 						// PERSISTENCE-IDENTITY: fingerprint of the authored
 						// pipeline this payload belongs to (diagnostic aid;
 						// schema version intentionally unchanged so the
@@ -11313,7 +11364,7 @@ function useBookingEngineState(
 		// TZ-TIME-HARD-RULE: `timeZone` is intentionally absent — it is no
 		// longer persisted, so it must not trigger persistence writes.
 		timeFormat,
-		baseSafeCurrentIndex,
+		safeCurrentIndex,
 		isStaticRender,
 		beInteractiveForRestore,
 		persistenceFingerprint,
@@ -11345,10 +11396,11 @@ function useBookingEngineState(
 		// a deferred update commits after paint, so the layout-effect
 		// guarantee (correction applied before paint) was defeated. The
 		// clamp now commits synchronously inside the layout phase.
-		// Uses baseTotalActive here; effective clamp is handled after
-		// auto-injected step is resolved below.
-		if (currentIndex >= baseTotalActive && baseTotalActive > 0) {
-			setCurrentIndex(Math.max(0, baseTotalActive - 1));
+		// Uses baseTotalActive plus system-stage margin here (see the
+		// MAX_SYSTEM_STAGES note at the guard above); effective clamp is
+		// handled after auto-injected step is resolved below.
+		if (currentIndex >= baseTotalActive + MAX_SYSTEM_STAGES && baseTotalActive + MAX_SYSTEM_STAGES > 0) {
+			setCurrentIndex(Math.max(0, baseTotalActive + MAX_SYSTEM_STAGES - 1));
 		} else if (baseTotalActive === 0) {
 			setCurrentIndex(0);
 		}
@@ -11633,7 +11685,6 @@ function useBookingEngineState(
 					calendar.subtitle !== undefined
 						? calendar.subtitle
 						: DEFAULT_CALENDAR_SUBTITLE,
-				layout: calendar.layout || "single-column",
 				surface: calendar.surface,
 			};
 		}
@@ -11644,7 +11695,9 @@ function useBookingEngineState(
 	// always last, exactly one. `stepType: "datetime"` is the internal
 	// contract every downstream consumer already keys on (validation,
 	// slots gating, selection, StepBody branch, submission) — it is
-	// system-only and no longer authorable.
+	// system-only and no longer authorable. Layout is fixed single-column
+	// by product rule (no control); the two-column grid path in StepBody
+	// stays for Form steps.
 	const calendarStage: NormalizedStep = React.useMemo(
 		() => ({
 			id: SYSTEM_CALENDAR_ID,
@@ -11652,7 +11705,7 @@ function useBookingEngineState(
 			stepType: "datetime",
 			title: calendarStageConfig.title,
 			subtitle: calendarStageConfig.subtitle,
-			layout: calendarStageConfig.layout,
+			layout: "single-column",
 			fields: [],
 		}),
 		[calendarStageConfig],
@@ -11948,6 +12001,9 @@ function useBookingEngineState(
 			inSessionFormSnapshots.set(liveKey, {
 				values: valuesRef.current,
 				currentIndex: liveSnap?.currentIndex ?? 0,
+				// SYSTEM-CALENDAR: carry the step id through so a
+				// mid-keystroke remount still resolves exact position.
+				currentStepId: liveSnap?.currentStepId,
 				timeFormat: liveSnap?.timeFormat ?? "12h",
 			});
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
@@ -16850,9 +16906,12 @@ function makeInputFieldStylesControls() {
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
-		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
+		// SHADOW-LAST (global rule): Shadow is always the final row in
+		// every Styles submenu — field sets, choice sets, checkbox,
+		// calendar Tiles, buttons, and interaction states.
+		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -16889,12 +16948,15 @@ function makeVariantChoiceStylesControls(
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
-		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
+		// SHADOW-LAST (global rule): Shadow is always the final row in
+		// every Styles submenu — field sets, choice sets, checkbox,
+		// calendar Tiles, buttons, and interaction states.
+		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -16909,20 +16971,40 @@ function makeCheckboxFieldStylesControls() {
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
 		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
-		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
+		// SHADOW-LAST (global rule): Shadow is always the final row in
+		// every Styles submenu — field sets, choice sets, checkbox,
+		// calendar Tiles, buttons, and interaction states.
+		shadow: fieldStylesShadowControl(),
 	};
 }
 
-function makeCalendarFieldStylesControls() {
+function makeCalendarTilesStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
 		backgroundColor: fieldStylesColorControl("Background"),
+		// TILES-TEXT: tile text color — drives the surface container color
+		// (every inheriting tile label follows) plus the derived muted
+		// tones. Default-free so untouched tiles track the Text token.
+		textColor: fieldStylesColorControl("Text Color"),
+		// TILES-BORDER: the surface container natively renders `1px solid`
+		// in the Border token, so the effective default mirrors exactly
+		// that — opening Border materializes the inherit look. An explicit
+		// width 0 removes the border entirely; positive widths replace it
+		// wholesale (color falls back to the live Border token).
+		border: fieldStylesBorderControl({
+			borderWidth: 1,
+			borderStyle: "solid",
+			borderColor: FIELD_STYLES_BORDER_COLOR,
+		}),
 		radius: fieldStylesRadiusControl(eff.radius),
 		padding: fieldStylesPaddingControl(eff.padding),
-		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
+		// SHADOW-LAST (global rule): Shadow is always the final row in
+		// every Styles submenu — field sets, choice sets, checkbox,
+		// calendar Tiles, buttons, and interaction states.
+		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -17017,7 +17099,6 @@ function makeButtonGroupControls(defaults: {
 			fontSize: "14px",
 			variant: "Semibold",
 		}),
-		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		hover: {
 			type: ControlType.Object,
@@ -17035,6 +17116,10 @@ function makeButtonGroupControls(defaults: {
 			optional: true,
 			controls: makeButtonInteractionControls(defaults.borderColor),
 		},
+		// SHADOW-LAST (global rule): Shadow is always the final row in
+		// every Styles submenu — field sets, choice sets, checkbox,
+		// calendar Tiles, buttons, and interaction states.
+		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -17476,7 +17561,7 @@ function makeFieldObjectControls() {
 			buttonTitle: "Styles",
 			icon: "color",
 			optional: true,
-			controls: makeCalendarFieldStylesControls(),
+			controls: makeCalendarTilesStylesControls(),
 			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
@@ -17620,24 +17705,22 @@ addPropertyControls(BookingEngine, {
 				defaultValue: DEFAULT_CALENDAR_SUBTITLE,
 				displayTextArea: true,
 			},
-			layout: {
-				type: ControlType.Enum,
-				title: "Layout",
-				options: ["single-column", "two-column"],
-				optionTitles: ["Single", "Two-Column"],
-				defaultValue: "single-column",
-				displaySegmentedControl: true,
-			},
-			// Surface owns the calendar stage background (Background,
-			// Radius, Padding + decor) — promoted from the removed
-			// calendar-widget marker's Styles set, same effective
-			// defaults, so unconfigured renders are unchanged.
+			// Tiles owns the calendar stage tile/surface presentation
+			// (Background, Text Color, Border, Radius, Padding + decor) —
+			// promoted from the removed calendar-widget marker's Styles
+			// set, same effective defaults, so unconfigured renders are
+			// unchanged. The prop key stays `surface` (the Calendar group
+			// is new — no stored values exist under either key); only
+			// the visible label is Tiles. The Calendar stage itself is
+			// always single-column by product rule: there is deliberately
+			// no Layout control here (Form Steps keep their own
+			// Single/Two-Column control).
 			surface: {
 				type: ControlType.Object,
-				title: "Surface",
-				buttonTitle: "Surface",
+				title: "Tiles",
+				buttonTitle: "Tiles",
 				icon: "color",
-				controls: makeCalendarFieldStylesControls(),
+				controls: makeCalendarTilesStylesControls(),
 			},
 		},
 	},
