@@ -18628,6 +18628,14 @@ addPropertyControls(BookingEngine, {
 		icon: "object",
 		buttonTitle: "Advanced",
 		controls: {
+			// W1-02-F26: self-hosted Cal.com base URL. Advanced/power-user
+			// setting — normal users keep the default hosted endpoint and
+			// never need to open this. Trailing slashes stripped at use.
+			calApiBaseUrl: {
+				type: ControlType.String,
+				title: "Cal.com API Base URL",
+				defaultValue: DEFAULT_CAL_API_BASE_URL,
+			},
 			// PERSISTENCE-IDENTITY (rule 106): stable per-instance autosave
 			// namespace. Optional and deliberately secondary — only needed
 			// (unique per instance) when 2+ engines share a page with
@@ -18639,14 +18647,6 @@ addPropertyControls(BookingEngine, {
 				description:
 					"Use a unique ID when multiple identical Booking Engines share a page.",
 				defaultValue: "",
-			},
-			// W1-02-F26: self-hosted Cal.com base URL. Advanced/power-user
-			// setting — normal users keep the default hosted endpoint and
-			// never need to open this. Trailing slashes stripped at use.
-			calApiBaseUrl: {
-				type: ControlType.String,
-				title: "Cal.com API Base URL",
-				defaultValue: DEFAULT_CAL_API_BASE_URL,
 			},
 		},
 	},
