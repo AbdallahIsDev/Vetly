@@ -6903,7 +6903,12 @@ function makeDefaultFormStep(): StepConfig {
 	};
 }
 
-function makeDefaultBlankFormStep(n: number): StepConfig {
+// DEFAULT-STEP-INIT: slot 2 is the first step a user can reveal (the
+// component ships with 1 authored step), so its default is the intentional
+// Notes/Text Area convenience — Step 2 is the natural place for optional
+// notes. Every call returns a BRAND NEW object/array, never a shared
+// reference (Safety Rule #1).
+function makeDefaultNotesFormStep(n: number): StepConfig {
 	return {
 		enabled: true,
 		stepType: "form",
@@ -6926,12 +6931,40 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
 	};
 }
 
+// DEFAULT-STEP-INIT: the neutral default for slots 3+ (second and later
+// user-added steps). One generic text field mirroring the Array "+"
+// field-item defaults ("Field Label" / "text" / "" / optional) — a useful
+// blank starting point that never duplicates the slot-2 Notes convenience
+// and never assumes what the step is for. Fresh array per call (Safety
+// Rule #1). Existing authored steps are never touched: Framer applies a
+// slot defaultValue only to never-configured slots.
+function makeDefaultBlankFormStep(n: number): StepConfig {
+	return {
+		enabled: true,
+		stepType: "form",
+		title: `Step ${n}`,
+		subtitle: "",
+		layout: "single-column",
+		fields: [
+			{
+				label: "Field Label",
+				fieldType: "text",
+				placeholder: "",
+				required: false,
+				width: "full",
+			},
+		],
+	};
+}
+
 // Runtime fallback only (should not normally be reached — each stepN control
 // always has its own defaultValue). Rebuilt fresh on every call, per Safety
 // Rule #1. All fallbacks are form steps — the Calendar is a system-owned
-// runtime stage, never a slot default.
+// runtime stage, never a slot default. Mirrors the slot defaults above:
+// slot 2 seeds Notes, slots 3+ seed the neutral text field.
 function getRuntimeFallbackStep(index: number): StepConfig {
 	if (index === 0) return makeDefaultFormStep();
+	if (index === 1) return makeDefaultNotesFormStep(index + 1);
 	return makeDefaultBlankFormStep(index + 1);
 }
 
@@ -10733,7 +10766,7 @@ function useBookingEngineState(
 			step9,
 			step10,
 		];
-		const clampedCount = clamp(Math.round(stepCount ?? 2), 1, 10);
+		const clampedCount = clamp(Math.round(stepCount ?? 1), 1, 10);
 		return slots.slice(0, clampedCount).map((slot, idx) => {
 			const fallback = getRuntimeFallbackStep(idx);
 			return slot || fallback;
@@ -17659,7 +17692,7 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 		// effective default from nested controls' defaults, but the contract
 		// is now stated instead of implicit.
 		defaultValue: defaults,
-		hidden: (p: StepSlotControlProps) => (p?.stepCount ?? 2) <= slotIndex,
+		hidden: (p: StepSlotControlProps) => (p?.stepCount ?? 1) <= slotIndex,
 		controls: {
 			// Visible is the first control in the step submenu.
 			enabled: {
@@ -17704,7 +17737,9 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 				// allowed 12.
 				maxCount: 10,
 				// Own defaultValue, unique to this slot (Safety Rule #1) —
-				// only Step 1's default carries Full Name/Email/Phone.
+				// only Step 1's default carries Full Name/Email/Phone;
+				// slot 2 seeds the Notes convenience, slots 3+ seed the
+				// neutral text field (DEFAULT-STEP-INIT).
 				defaultValue: defaults.fields,
 				control: {
 					type: ControlType.Object,
@@ -17719,14 +17754,18 @@ addPropertyControls(BookingEngine, {
 	stepCount: {
 		type: ControlType.Number,
 		title: "Steps",
-		defaultValue: 2,
+		// DEFAULT-STEP-INIT: ships with exactly 1 authored Form Step (Full
+		// Name / Email / Phone) + the mandatory system Calendar. The first
+		// revealed slot (Step 2) seeds the Notes convenience default;
+		// slots 3+ seed a neutral text field.
+		defaultValue: 1,
 		min: 1,
 		max: 10,
 		step: 1,
 		displayStepper: true,
 	},
 	step1: makeStepControl(0, makeDefaultFormStep()),
-	step2: makeStepControl(1, makeDefaultBlankFormStep(2)),
+	step2: makeStepControl(1, makeDefaultNotesFormStep(2)),
 	step3: makeStepControl(2, makeDefaultBlankFormStep(3)),
 	step4: makeStepControl(3, makeDefaultBlankFormStep(4)),
 	step5: makeStepControl(4, makeDefaultBlankFormStep(5)),
@@ -18589,6 +18628,14 @@ addPropertyControls(BookingEngine, {
 		icon: "object",
 		buttonTitle: "Advanced",
 		controls: {
+			// W1-02-F26: self-hosted Cal.com base URL. Advanced/power-user
+			// setting — normal users keep the default hosted endpoint and
+			// never need to open this. Trailing slashes stripped at use.
+			calApiBaseUrl: {
+				type: ControlType.String,
+				title: "Cal.com API Base URL",
+				defaultValue: DEFAULT_CAL_API_BASE_URL,
+			},
 			// PERSISTENCE-IDENTITY (rule 106): stable per-instance autosave
 			// namespace. Optional and deliberately secondary — only needed
 			// (unique per instance) when 2+ engines share a page with
@@ -18600,14 +18647,6 @@ addPropertyControls(BookingEngine, {
 				description:
 					"Use a unique ID when multiple identical Booking Engines share a page.",
 				defaultValue: "",
-			},
-			// W1-02-F26: self-hosted Cal.com base URL. Advanced/power-user
-			// setting — normal users keep the default hosted endpoint and
-			// never need to open this. Trailing slashes stripped at use.
-			calApiBaseUrl: {
-				type: ControlType.String,
-				title: "Cal.com API Base URL",
-				defaultValue: DEFAULT_CAL_API_BASE_URL,
 			},
 		},
 	},
