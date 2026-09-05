@@ -5287,23 +5287,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// adjacent-month tooltip — all render on the author's Primary surface.
 	// Semantic token, not a hard-coded white assumption.
 	const selectedAccentText = accentForegroundColor;
-	const mutedText = React.useMemo(() => withAlpha(resolvedTextColor, 0.6), [resolvedTextColor]);
-	const mutedSoftText = React.useMemo(
-		() => withAlpha(textColor, 0.42),
-		[textColor],
-	);
-	const subtleFill = React.useMemo(
-		() => withAlpha(textColor, 0.08),
-		[textColor],
-	);
-	const softerFill = React.useMemo(
-		() => withAlpha(textColor, 0.05),
-		[textColor],
-	);
-	const subtleBorder = React.useMemo(
-		() => `1px solid ${borderColor}`,
-		[borderColor],
-	);
 	// CAL-BG-OWNERSHIP: resolved calendar-surface tokens. Every key comes
 	// from the Calendar panel group's Tiles set ONLY when the
 	// author configured it (STYLES-INIT: untouched keys are undefined);
@@ -5328,6 +5311,23 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	const tileBorder = normalizedCalendarStyles?.border;
 	const tileBorderWidth =
 		typeof tileBorder?.borderWidth === "number" ? tileBorder.borderWidth : 1;
+	const mutedText = React.useMemo(() => withAlpha(resolvedTextColor, 0.6), [resolvedTextColor]);
+	const mutedSoftText = React.useMemo(
+		() => withAlpha(resolvedTextColor, 0.42),
+		[resolvedTextColor],
+	);
+	const subtleFill = React.useMemo(
+		() => withAlpha(resolvedTextColor, 0.08),
+		[resolvedTextColor],
+	);
+	const softerFill = React.useMemo(
+		() => withAlpha(resolvedTextColor, 0.05),
+		[resolvedTextColor],
+	);
+	const subtleBorder = React.useMemo(
+		() => `1px solid ${borderColor}`,
+		[borderColor],
+	);
 	const surfaceBorder = !tileBorder
 		? subtleBorder
 		: tileBorderWidth > 0
@@ -10168,10 +10168,6 @@ function StepVisibilityWrapper(props: {
 type InSessionFormSnapshot = {
 	values: BookingValues;
 	currentIndex: number;
-	// SYSTEM-CALENDAR: runtime-pipeline index plus the step id it pointed
-	// at, so a remount on the Calendar (or auto-injected) stage restores
-	// exact position instead of collapsing to the last authored step.
-	currentStepId?: string;
 	timeFormat: "12h" | "24h";
 };
 const inSessionFormSnapshots = new Map<string, InSessionFormSnapshot>();
@@ -10938,26 +10934,19 @@ function useBookingEngineState(
 			);
 		}
 		// Seeding is scoped to THIS instance's key, so Instance A's
-		// step/values can never seed Instance B. Position restores by
-		// step id when the snapshot carries one (exact even for the
-		// Calendar/auto stages); otherwise the runtime index clamped to
-		// the full pipeline range. Deps stay mount-scoped on purpose —
-		// re-seeding on pipeline change would teleport a live visitor.
+		// step/values can never seed Instance B. Clamped to the base
+		// pipeline length: exact for every position the base pipeline
+		// can express (including the Calendar slot), and any remainder
+		// (auto-stage saves) lands at most one step forward with values
+		// intact — safeCurrentIndex and the pinned-id remaps settle it.
+		// Deliberately not wider: an out-of-range seed would stick and
+		// make Back feel dead until the pipeline shifts. Deps stay
+		// mount-scoped on purpose — re-seeding on pipeline change
+		// would teleport a live visitor.
 		const snap = inSessionFormSnapshots.get(instanceKeyRef.current);
 		if (snap) {
 			setValues({ ...snap.values });
-			const idIdx =
-				snap.currentStepId !== undefined
-					? activeSteps.findIndex((step) => step.id === snap.currentStepId)
-					: -1;
-			setCurrentIndex(
-				idIdx >= 0
-					? idIdx
-					: Math.min(
-							snap.currentIndex,
-							Math.max(0, baseTotalActive + MAX_SYSTEM_STAGES - 1),
-						),
-			);
+			setCurrentIndex(Math.min(snap.currentIndex, baseTotalActive));
 			setTimeFormat(snap.timeFormat);
 			// Mirror the storage-restore month handling: keep the calendar on
 			// the month of the seeded selection (M3 fix parity).
@@ -10985,14 +10974,13 @@ function useBookingEngineState(
 	React.useEffect(() => {
 		inSessionFormSnapshots.set(instanceKeyRef.current, {
 			values,
-			// SYSTEM-CALENDAR: runtime-pipeline position (not base-only),
-			// so a remount on the Calendar/auto stage restores exact
-			// position; the seed resolves the step id first.
-			currentIndex: safeCurrentIndex,
-			currentStepId: activeSteps[safeCurrentIndex]?.id,
+			// SYSTEM-CALENDAR: the raw runtime-pipeline position (not
+			// base-only), so a remount on the Calendar/auto stage
+			// restores exact position via the seed clamp above.
+			currentIndex,
 			timeFormat,
 		});
-	}, [values, safeCurrentIndex, activeSteps, timeFormat]);
+	}, [values, currentIndex, timeFormat]);
 
 	// Persisted-state restore. Autosave is always-on (rule 7); payloads
 	// carry a schema version so a future shape change can migrate or purge
@@ -11204,12 +11192,14 @@ function useBookingEngineState(
 					// `currentIndex` (e.g. 1e6) used to loop a million times
 					// (same-origin DoS); bound the iteration to the number of
 					// active steps before re-validating prior steps.
-					// SYSTEM-CALENDAR: bound covers the full runtime pipeline
-					// (base + system stages) so a save on the Calendar/auto
-					// stage restores exact position; the clamp + pinned-id
-					// remap below still settle author edits. Uses base
+					// SYSTEM-CALENDAR: bound at the base length. The Calendar
+					// sits exactly there pre-auto-inject, so saves on any
+					// stage restore exactly-or-one-forward with values
+					// intact; the clamp + pinned-id remap below still
+					// settle author edits. Deliberately not wider — an
+					// out-of-range restore would stick. Uses base
 					// pipeline; auto-injected step not yet known at restore time.
-					let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length + MAX_SYSTEM_STAGES);
+					let restoredIndex = Math.min(parsed.currentIndex, baseActiveSteps.length);
 				for (let i = 0; i < restoredIndex; i++) {
 					const prior = baseActiveSteps[i];
 					if (
@@ -11299,7 +11289,7 @@ function useBookingEngineState(
 			// SYSTEM-CALENDAR: runtime-pipeline position (leaving step 0
 			// includes reaching the Calendar/auto stages).
 			const hasAnything =
-				safeCurrentIndex > 0 ||
+				currentIndex > 0 ||
 				Object.values(values).some(
 					(v) => v !== undefined && v !== null && v !== "",
 				);
@@ -11331,7 +11321,7 @@ function useBookingEngineState(
 						// SYSTEM-CALENDAR: runtime-pipeline position (not
 						// base-only) so reloads on the Calendar/auto stage
 						// restore exact position.
-						currentIndex: safeCurrentIndex,
+						currentIndex,
 						// PERSISTENCE-IDENTITY: fingerprint of the authored
 						// pipeline this payload belongs to (diagnostic aid;
 						// schema version intentionally unchanged so the
@@ -11364,7 +11354,7 @@ function useBookingEngineState(
 		// TZ-TIME-HARD-RULE: `timeZone` is intentionally absent — it is no
 		// longer persisted, so it must not trigger persistence writes.
 		timeFormat,
-		safeCurrentIndex,
+		currentIndex,
 		isStaticRender,
 		beInteractiveForRestore,
 		persistenceFingerprint,
@@ -12001,9 +11991,6 @@ function useBookingEngineState(
 			inSessionFormSnapshots.set(liveKey, {
 				values: valuesRef.current,
 				currentIndex: liveSnap?.currentIndex ?? 0,
-				// SYSTEM-CALENDAR: carry the step id through so a
-				// mid-keystroke remount still resolves exact position.
-				currentStepId: liveSnap?.currentStepId,
 				timeFormat: liveSnap?.timeFormat ?? "12h",
 			});
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
