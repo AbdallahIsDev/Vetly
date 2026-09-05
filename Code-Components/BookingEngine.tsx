@@ -6507,6 +6507,16 @@ interface StepConfig {
 	subtitle?: string;
 	fields: FieldConfig[];
 	layout: "single-column" | "two-column";
+	// HEADER-ALIGN-PER-STEP: header alignment is a per-authored-Step
+	// design decision (Left/Center/Right), configured inside each Step's
+	// own submenu — never a global component-wide setting. Unset
+	// (undefined) renders exactly the historical inherited-left look, so
+	// older canvases and untouched steps are byte-identical. The system
+	// Calendar stage deliberately carries no alignment: it is a separate
+	// standalone stage with its own configuration and keeps its historical
+	// alignment unless a dedicated Calendar-specific control is ever
+	// introduced.
+	alignment?: "left" | "center" | "right";
 }
 
 // Reverted: each step slot is once again a single Object control (the
@@ -6856,10 +6866,15 @@ interface BookingEngineConfigProps {
 		progressText?: "top" | "bottom";
 		stepCountPosition?: "top" | "bottom";
 	};
-	// Header — step title + subtitle alignment (Left/Center/Right).
-	// Scoped to the Form/Calendar step header only: success/error
-	// terminal states keep their own designed alignment. Unset renders
-	// exactly the historical look (inherited left).
+	// Header — LEGACY CARRIER ONLY (HEADER-ALIGN-PER-STEP): the global
+	// `Header` Property Control group was removed — header alignment is a
+	// per-authored-Step setting now (`StepConfig.alignment`, Alignment row
+	// inside each Step's submenu). This interface key stays readable solely
+	// so canvases saved before the move keep their authored alignment: the
+	// stored global value becomes the fallback default for steps that never
+	// authored their own. No control writes it anymore; never re-add the
+	// group, and never read it outside the single resolution site in
+	// useBookingEngineState.
 	header?: {
 		alignment?: "left" | "center" | "right";
 	};
@@ -7065,6 +7080,7 @@ function makeDefaultFormStep(): StepConfig {
 		subtitle:
 			"Tell us a bit about yourself so we can prepare for your booking.",
 		layout: "single-column",
+		alignment: "left",
 		fields: [
 			{
 				label: "Full Name",
@@ -7104,6 +7120,7 @@ function makeDefaultNotesFormStep(n: number): StepConfig {
 		title: `Step ${n}`,
 		subtitle: "",
 		layout: "single-column",
+		alignment: "left",
 		// T8-M4 fix: seed one starter field so a freshly-added form step never
 		// renders empty (the canvas-only emptyStepWarnings guard used to trip
 		// on every step beyond step 1). Still its own fresh array, never a
@@ -7134,6 +7151,7 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
 		title: `Step ${n}`,
 		subtitle: "",
 		layout: "single-column",
+		alignment: "left",
 		fields: [
 			{
 				label: "Field Label",
@@ -7307,6 +7325,16 @@ function filterEmptyOptions(field: {
 	};
 }
 
+// HEADER-ALIGN-PER-STEP: type guard for an authored per-step header
+// alignment. Anything the control never authored (undefined, junk from
+// older stored values) fails the guard, so the runtime never receives a
+// non-CSS text-align value. Pure.
+function isStepAlignment(
+	value: unknown,
+): value is "left" | "center" | "right" {
+	return value === "left" || value === "center" || value === "right";
+}
+
 function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 	return (
 		(steps || [])
@@ -7318,7 +7346,13 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 				title: step.title || `Step ${stepIdx + 1}`,
 				subtitle: step.subtitle || "",
 				layout: step.layout || "single-column",
-			fields: (step.fields || []).map((field, fieldIdx) => ({
+				// HEADER-ALIGN-PER-STEP: `alignment` is NOT normalized here —
+				// the `...step` spread above carries each step's authored
+				// value verbatim (undefined stays undefined), so the render
+				// site can distinguish "never authored" (historical inherit
+				// look) from an explicit Left. Resolution happens per step at
+				// the render site via isStepAlignment.
+				fields: (step.fields || []).map((field, fieldIdx) => ({
 				...field,
 				id: `step-${stepIdx}-field-${fieldIdx}`,
 				required: field.required !== false,
@@ -10633,6 +10667,7 @@ function useBookingEngineState(
 		onAnalytics,
 		advanced,
 		calendar,
+		// HEADER-ALIGN-PER-STEP: legacy carrier only (see interface comment).
 		header,
 	} = props;
 
@@ -11013,9 +11048,27 @@ function useBookingEngineState(
 		() => migrateLegacyCalendar(effectiveStepsConfig),
 		[effectiveStepsConfig],
 	);
+	// HEADER-ALIGN-PER-STEP: the authored global alignment (legacy `header`
+	// carrier, read ONLY here) seeds every step that never authored its own
+	// per-step Alignment. Unset → undefined → those steps render the
+	// historical inherited-left look; a step's own authored value always
+	// wins. Resolution itself happens per step at the render site.
+	const legacyHeaderAlignment: "left" | "center" | "right" | undefined =
+		header && isStepAlignment(header.alignment) ? header.alignment : undefined;
+	// Each step that never authored its own Alignment is seeded with that
+	// legacy carrier (fallback only). The Calendar stage is appended later
+	// with no alignment: it is a separate standalone stage and never
+	// inherits authored alignment.
 	const normalizedSteps = React.useMemo(
-		() => normalizeSteps(legacyCalendar.steps),
-		[legacyCalendar],
+		() =>
+			normalizeSteps(
+				legacyCalendar.steps.map((step) =>
+					isStepAlignment(step.alignment)
+						? step
+						: { ...step, alignment: legacyHeaderAlignment },
+				),
+			),
+		[legacyCalendar, legacyHeaderAlignment],
 	);
 
 	// Pipeline: only enabled steps participate, in fixed-slot order
@@ -13207,16 +13260,6 @@ function useBookingEngineState(
 			: navGrouped || isFirst
 				? "flex-end"
 				: "space-between";
-	// HEADER-ALIGN: step title + subtitle alignment (Left/Center/Right).
-	// Scoped to the step header only — success/error terminal states keep
-	// their designed alignment. Unset (older canvases) renders exactly the
-	// historical inherited-left look.
-	const headerAlignment: "left" | "center" | "right" =
-		header?.alignment === "center"
-			? "center"
-			: header?.alignment === "right"
-				? "right"
-				: "left";
 	// T9-M11 fix: the animate target was an inline object literal - a new
 	// reference every render forced framer-motion to re-evaluate the
 	// animation target on each keystroke. Memoized on the only thing
@@ -13333,10 +13376,6 @@ function useBookingEngineState(
 		submitButtonRef,
 		stepTransition,
 		resolvedTransitionVariant,
-		// HEADER-ALIGN (rule 123): the raw Header group + resolved alignment
-		// for the step title/subtitle inline styles.
-		header,
-		headerAlignment,
 		// NAV-GROUPED-ALIGN: the resolved footer-row justification.
 		navJustify,
 		style,
@@ -13441,11 +13480,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 		primaryLabel,
 		isFinalPrimary,
 		navGrouped,
-		// HEADER-ALIGN (rule 123): the raw Header group + resolved alignment
-		// (gates the inline styles so untouched canvases stay inherit), and
-		// NAV-GROUPED-ALIGN's resolved footer justification.
-		header,
-		headerAlignment,
+		// NAV-GROUPED-ALIGN: the resolved footer justification.
 		navJustify,
 		progressAnimate,
 		progressBarStyle,
@@ -14200,11 +14235,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 								className="be-focus-target"
 								style={{
 									color: theme.textPrimaryColor,
-									// HEADER-ALIGN: applied only when the
-									// author sets it — untouched renders
-									// exactly the historical inherit look.
-									...(header?.alignment
-										? { textAlign: headerAlignment }
+									// HEADER-ALIGN-PER-STEP: this Step's own
+									// alignment (legacy global carrier only
+									// seeds steps that never authored one).
+									// Untouched renders exactly the
+									// historical inherit look.
+									...(isStepAlignment(step.alignment)
+										? { textAlign: step.alignment }
 										: {}),
 									// Per-surface Heading Font (Body control
 									// stays the base). Unset = previous look.
@@ -14242,11 +14279,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 										fontSize: 14,
 										marginBottom: 16,
 										lineHeight: 1.5,
-										// HEADER-ALIGN: follows the title;
-										// omitted unless explicitly set.
-										...(header?.alignment
-											? { textAlign: headerAlignment }
-											: {}),
+									// HEADER-ALIGN-PER-STEP: follows this
+									// Step's title; omitted unless the
+									// Step authored an alignment.
+									...(isStepAlignment(step.alignment)
+										? { textAlign: step.alignment }
+										: {}),
 									}}
 								>
 									{step.subtitle}
@@ -18096,6 +18134,18 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 				defaultValue: defaults.subtitle || "",
 				displayTextArea: true,
 			},
+			// HEADER-ALIGN-PER-STEP: this Step's own header (Title +
+			// Subtitle) alignment. Each Step resolves independently —
+			// changing one Step never affects another. Unset canvases
+			// keep the historical left look via the "left" default.
+			alignment: {
+				type: ControlType.Enum,
+				title: "Alignment",
+				options: ["left", "center", "right"],
+				optionTitles: ["Left", "Center", "Right"],
+				defaultValue: defaults.alignment || "left",
+				displaySegmentedControl: true,
+			},
 			layout: {
 				type: ControlType.Enum,
 				title: "Layout",
@@ -18195,27 +18245,10 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
-	// ----- Header (step title + subtitle alignment) -----
-	header: {
-		type: ControlType.Object,
-		title: "Header",
-		icon: "object",
-		buttonTitle: "Header",
-		controls: {
-			// One expressive Alignment control (not three booleans).
-			// Scoped to the Form/Calendar step header; success/error
-			// terminal states keep their designed alignment. Unset
-			// renders exactly the historical inherited look.
-			alignment: {
-				type: ControlType.Enum,
-				title: "Alignment",
-				options: ["left", "center", "right"],
-				optionTitles: ["Left", "Center", "Right"],
-				defaultValue: "left",
-				displaySegmentedControl: true,
-			},
-		},
-	},
+	// HEADER-ALIGN-PER-STEP: the former top-level `header` group is gone —
+	// header alignment is a per-authored-Step setting (Alignment row inside
+	// each Step's submenu, see makeStepControl). The system Calendar is a
+	// separate standalone stage and deliberately has no alignment control.
 
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
