@@ -1326,7 +1326,9 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 				const active = opt.value === value;
 				return (
 					<button
-						key={opt.value}
+						// CHOICE-OPTIONS-INTEGRITY: index-suffixed keys - duplicate
+						// labels or explicit empty-string values must not collide.
+						key={`${opt.value}-${idx}`}
 						ref={(node) => {
 							buttonRefs.current[idx] = node;
 						}}
@@ -1419,10 +1421,12 @@ interface ChoiceOption {
 
 // W1-08-F-08-06 fix: resolves an option's round-trip value — its explicit
 // `value` when authored, else the label.
+// CHOICE-OPTIONS-INTEGRITY: nullish semantics only. An explicitly authored
+// `""` is a meaningful value and must survive verbatim (it means "no"
+// answer" to selection/validation, but it must never silently become the
+// label). Only undefined/null fall back.
 function optionValue(option: ChoiceOption): string {
-	return option.value !== undefined && option.value.length > 0
-		? option.value
-		: option.label;
+	return option.value ?? option.label;
 }
 
 interface ChoiceGroupInlineProps {
@@ -6975,6 +6979,47 @@ interface NormalizedStep extends Omit<StepConfig, "fields"> {
 	fields: NormalizedField[];
 }
 
+// CHOICE-OPTIONS-INTEGRITY: drops options whose visible label is empty
+// after trimming, coherently across the label array and every
+// index-parallel array (values/images/descriptions stay aligned by
+// construction). Pure — the node harness asserts it via normalizeSteps.
+// Explicit "" VALUES are preserved verbatim (no || anywhere here); only
+// the label decides. Non-string entries are dropped with the empties
+// (the panel only authors strings).
+interface FilteredFieldOptions {
+	options: Array<string>;
+	optionValues?: Array<string>;
+	optionImages?: Array<string>;
+	optionDescriptions?: Array<string>;
+}
+
+function filterEmptyOptions(field: {
+	options?: Array<string>;
+	optionValues?: Array<string>;
+	optionImages?: Array<string>;
+	optionDescriptions?: Array<string>;
+}): FilteredFieldOptions {
+	const rawOptions = Array.isArray(field.options) ? field.options : [];
+	const keepIdx: Array<number> = [];
+	const options: Array<string> = [];
+	rawOptions.forEach((opt, i) => {
+		if (typeof opt === "string" && opt.trim().length > 0) {
+			keepIdx.push(i);
+			options.push(opt);
+		}
+	});
+	const pick = (
+		arr: Array<string> | undefined,
+	): Array<string> | undefined =>
+		Array.isArray(arr) ? keepIdx.map((i) => arr[i]) : arr;
+	return {
+		options,
+		optionValues: pick(field.optionValues),
+		optionImages: pick(field.optionImages),
+		optionDescriptions: pick(field.optionDescriptions),
+	};
+}
+
 function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 	return (
 		(steps || [])
@@ -6986,13 +7031,24 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 				title: step.title || `Step ${stepIdx + 1}`,
 				subtitle: step.subtitle || "",
 				layout: step.layout || "single-column",
-				fields: (step.fields || []).map((field, fieldIdx) => ({
-					...field,
-					id: `step-${stepIdx}-field-${fieldIdx}`,
-					required: field.required !== false,
-					fieldType: field.fieldType || "text",
-					width: field.width || "full",
-					options: field.options || [],
+			fields: (step.fields || []).map((field, fieldIdx) => ({
+				...field,
+				id: `step-${stepIdx}-field-${fieldIdx}`,
+				required: field.required !== false,
+				fieldType: field.fieldType || "text",
+				width: field.width || "full",
+				// CHOICE-OPTIONS-INTEGRITY: an option whose visible label
+				// is empty after trimming must never become a selectable
+				// or renderable option (no empty cards/buttons, no
+				// selection-clearing phantom picks). Filter here — the
+				// single normalization choke point — across the option
+				// label and every index-parallel array together, so
+				// optionValues/Images/Descriptions stay aligned. Labels
+				// are display: only the label decides. Explicit ""
+				// VALUES are preserved verbatim (nullish, never ||) —
+				// see optionValue. Non-string junk is dropped with the
+				// empties (the panel only authors strings).
+				...filterEmptyOptions(field),
 					// VALIDATION-REMOVED (rule 100): authored validation
 					// overrides are neutralized at this single choke point
 					// — stored `validationRule`/`minLength`/`maxLength`/
@@ -7333,6 +7389,34 @@ function touchAllFieldsIn(
 		for (const field of step.fields) next[field.id] = true;
 	}
 	if (step.stepType === "datetime") next[SELECTED_SLOT_KEY] = true;
+	return next;
+}
+
+// ERROR-LIFECYCLE: navigation lands clean. When Continue advances, Back
+// retreats, or a jump lands on a step, that destination step must not
+// display a previous visit's validation error before fresh validation —
+// Continue merges step errors into shared state but nothing reconciled
+// them on arrival. Clear ONLY the destination step's field entries (plus
+// the slot key on datetime), so other steps' errors never leak across
+// and the next Continue revalidates from current values. Returns prev
+// untouched when there is nothing to clear (no spurious re-render).
+// Pure — the node harness asserts it directly.
+function clearedStepErrors(
+	prev: Record<string, string | null>,
+	step: NormalizedStep,
+): Record<string, string | null> {
+	const ids: Array<string> = step.fields.map((field) => field.id);
+	if (step.stepType === "datetime") ids.push(SELECTED_SLOT_KEY);
+	let dirty = false;
+	for (const id of ids) {
+		if (prev[id] !== undefined && prev[id] !== null) {
+			dirty = true;
+			break;
+		}
+	}
+	if (!dirty) return prev;
+	const next = { ...prev };
+	for (const id of ids) next[id] = null;
 	return next;
 }
 
@@ -12282,6 +12366,11 @@ function useBookingEngineState(
 		});
 		// Direct set — startTransition deferred the destination step past
 		// AnimatePresence's enter, which could leave it at opacity 0.
+		// ERROR-LIFECYCLE: the destination step lands clean — a previous
+		// visit's errors must not greet the visitor before fresh
+		// validation. Other steps' errors are untouched.
+		const destStep = activeSteps[Math.min(safeCurrentIndex + 1, totalActive - 1)];
+		if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
 		setCurrentIndex((i) => Math.min(i + 1, totalActive - 1));
 	}, [
 		currentStep,
@@ -12319,8 +12408,13 @@ function useBookingEngineState(
 		// (W1-14-F9, ~L7063) resets it after the transition.
 		if (navigatingRef.current) return;
 		navigatingRef.current = true;
+		// ERROR-LIFECYCLE: same arrival-clean rule as Continue — the
+		// destination step never shows a previous visit's error before
+		// fresh validation.
+		const destStep = activeSteps[Math.max(0, safeCurrentIndex - 1)];
+		if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
 		setCurrentIndex((i) => Math.max(0, i - 1));
-	}, [isFirst]);
+	}, [isFirst, activeSteps, safeCurrentIndex]);
 
 	// T10-H1 fix: review-step Edit links jump straight to the owning step.
 	// Guards against a stale stepIndex (e.g. steps changed after submit),
@@ -12362,9 +12456,12 @@ function useBookingEngineState(
 			// bypassed the flow-status state machine (illegal-transition
 			// logging + guards). Route through it like every other handler.
 			transitionFlowStatus("in-progress");
+			// ERROR-LIFECYCLE: arrival-clean rule applies to jumps too.
+			const destStep = activeSteps[stepIndex];
+			if (destStep) setErrors((prev) => clearedStepErrors(prev, destStep));
 			setCurrentIndex(stepIndex);
 		},
-		[activeSteps.length, flowStatus, transitionFlowStatus, safeCurrentIndex],
+		[activeSteps, flowStatus, transitionFlowStatus, safeCurrentIndex],
 	);
 
 	const handleRetry = React.useCallback(() => {
@@ -14962,7 +15059,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				// W1-08-F-08-06 fix: thread the author-authored value through
 				// (parallel to optionImages/optionDescriptions). Empty entries
 				// fall back to the label as the value (optionValue handles that).
-				value: field.optionValues?.[idx] || undefined,
+				// CHOICE-OPTIONS-INTEGRITY: nullish read - an explicit ""
+				// value survives verbatim instead of collapsing to undefined.
+				// (Images/descriptions keep || : an empty URL/description is
+				// meaningless, so unset-equivalence is correct there.)
+				value: field.optionValues?.[idx] ?? undefined,
 				image: field.optionImages?.[idx] || undefined,
 				description: field.optionDescriptions?.[idx] || undefined,
 			})),
@@ -15228,10 +15329,15 @@ const FieldRenderer = React.memo(function FieldRenderer(
 							{/* T7-M1 fix: options are always strings (the property control is
                                 ControlType.String) - the object branch was dead, and
                                 (opt as any).label was the file's last "as any". */}
-							{(field.options || []).map((opt) => {
+							{/* CHOICE-OPTIONS-INTEGRITY: empty labels are already filtered
+								at normalization; values resolve nullishly (explicit empty string survives)
+								so native select matches the ChoiceGroup variants. Keys are
+								index-suffixed - duplicate labels must not collide. */}
+							{(field.options || []).map((opt, idx) => {
 								const label = opt;
+								const optValue = field.optionValues?.[idx] ?? label;
 								return (
-									<option key={label} value={label}>
+									<option key={`${label}-${idx}`} value={optValue}>
 										{label}
 									</option>
 								);
