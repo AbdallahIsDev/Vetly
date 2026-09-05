@@ -37,8 +37,6 @@ import * as React from "react";
 declare global {
 	interface Window {
 		__BE_STEP_DEBUG__?: boolean;
-		// BE-DIAG: set to false to silence the scoped booking diagnostics.
-		__BE_DIAG__?: boolean;
 	}
 }
 
@@ -5532,26 +5530,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		});
 	}, [clockReady, selectedDate, today, availableDates, slotsLoading, availabilitySettled, hasKnownAvailability, firstAvailableDateFromToday, onDateChange]);
 
-	// Diagnostics for initial-date logic (enable via window.__BE_DIAGNOSTICS__ = true or ?beDiagnostics=1)
-	React.useEffect(() => {
-		if (typeof window === "undefined") return;
-		const enabled = (window as unknown as Record<string, unknown>).__BE_DIAGNOSTICS__ === true || new URLSearchParams(window.location.search).has("beDiagnostics");
-		if (!enabled) return;
-		const todayKey = getDateKeyInTimeZone(today, timeZone || "");
-		const selectedKey = selectedDate ? getDateKeyInTimeZone(selectedDate, timeZone || "") : null;
-		const todayAvailable = hasKnownAvailability(today);
-		const firstAvailKey = firstAvailableDate ? getDateKeyInTimeZone(firstAvailableDate, timeZone || "") : null;
-		console.debug("[BE Diagnostic] date-initial", {
-			timeZone: timeZone || "(none)",
-			todayKey,
-			selectedKey,
-			todayAvailable,
-			firstAvailableKey: firstAvailKey,
-			clockReady,
-			hasKnownAvailability: !!availableDates,
-			availabilitySettled,
-		});
-	}, [timeZone, today, selectedDate, firstAvailableDate, hasKnownAvailability, availableDates, clockReady, availabilitySettled]);
 
 	const getPayload = React.useCallback(
 		(date: Date, time: string): BookingPayload => {
@@ -7405,42 +7383,6 @@ function monthCacheKey(
 // `useCalcomSlots` and `submitCalcomBooking` both default to it.
 const FETCH_TIMEOUT_MS = 18000;
 
-// =============================================================================
-// BE-DIAG (scoped booking diagnostics — removable)
-// =============================================================================
-// Concise, structured console diagnostics for the Cal.com request lifecycle
-// and the booking POST. Deliberately NOT a Property Control: it exists to
-// make the request/submit behavior observable in the browser console without
-// touching the author-facing panel. Disable with `window.__BE_DIAG__ = false`
-// (e.g. from a snippet or a console one-liner); the default is ON because an
-// unnoticed failure is what shipped here before. Every event is one
-// console.info line with a stable `[BookingEngine]` prefix and a JSON-ish
-// payload that NEVER contains the API key (not even a fingerprint) and never
-// contains visitor field values (only shapes/lengths/presence).
-const BE_DIAG_PREFIX = "[BookingEngine]";
-
-function beDiagEnabled(): boolean {
-	if (typeof window === "undefined") return false;
-	const w = window as unknown as { __BE_DIAG__?: boolean };
-	return w.__BE_DIAG__ !== false;
-}
-
-function beDiag(event: string, data: Record<string, unknown>): void {
-	if (!beDiagEnabled()) return;
-	try {
-		console.info(`${BE_DIAG_PREFIX} ${event}`, data);
-	} catch {
-		// Diagnostics must never break the flow (frozen console, weird
-		// embedders). Swallow silently — this is observability, not state.
-	}
-}
-
-// Edge-case guard: some embedding environments strip/nominalize
-// `console.info`. Route through whatever exists so the diag lines still land.
-if (typeof console !== "undefined" && typeof console.info !== "function") {
-	console.info = console.log.bind(console);
-}
-
 // Cross-request rate-limit memory. When ANY Cal.com call gets a 429, the
 // timestamp lands here; the booking POST's catch consults it so an opaque
 // network-layer failure (browser blocked a non-CORS 429 response →
@@ -7774,12 +7716,6 @@ function useCalcomSlots(
 		// W1-05-F-04 fix: honor the TTL — a fresh-enough entry short-circuits
 		// the fetch; a stale one falls through and is replaced below.
 		if (cached && Date.now() - cached.fetchedAt < cacheTtl) {
-			beDiag("cal:slots:cache-hit", {
-				trigger: "month-effect",
-				month: monthKey.slice(0, 7),
-				timeZone,
-				ageMs: Date.now() - cached.fetchedAt,
-			});
 			setSlots(cached.slots);
 			setLoading(false);
 			setError(null);
@@ -7793,11 +7729,6 @@ function useCalcomSlots(
 		// error copy for the failure path.
 		const inflight = calSlotsInflight.get(monthKey);
 		if (inflight) {
-			beDiag("cal:slots:dedup", {
-				trigger: "month-effect",
-				month: monthKey.slice(0, 7),
-				timeZone,
-			});
 			setLoading(true);
 			setError(null);
 			inflight.then((outcome) => {
@@ -7896,16 +7827,6 @@ function useCalcomSlots(
 		// new month.
 		setSlots([]);
 
-		// BE-DIAG: one line per availability GET — trigger, inputs,
-		// cache verdict. Never the API key.
-		beDiag("cal:slots:fetch", {
-			trigger: "month-effect",
-			endpoint: "GET /v2/slots",
-			eventTypeId,
-			month: monthKey.slice(0, 7),
-			timeZone,
-			cache: "miss",
-		});
 
 		// CC-15 fix: neither the fetch itself nor a cancelled request was
 		// ever actually aborted before — the `cancelled` flag only stopped
@@ -8136,7 +8057,7 @@ function useCalcomSlots(
 						// tell a temporary quota block from a real outage.
 						// W2-25-F6 fix: when the response carried a Retry-After
 						// hint, surface it instead of the vague "wait a moment".
-						// BE-DIAG + rate-limit memory: a readable 429 stamps the
+						// Rate-limit memory: a readable 429 stamps the
 						// cross-request memory so a later CORS-opaque failure can
 						// be classified honestly.
 						noteCalRateLimit();
@@ -8635,24 +8556,12 @@ function useCalcomEventMeta(params: {
 		}
 		const cached = calEventMetaCache.get(cacheKey);
 		if (cached && Date.now() - cached.fetchedAt < EVENT_META_CACHE_TTL_MS) {
-			beDiag("cal:meta:cache-hit", {
-				trigger: "enabled-effect",
-				eventTypeId,
-			});
 			setMeta(cached.meta);
 			setBookingFields(cached.bookingFields || []);
 			setStatus(cached.meta || cached.bookingFields.length ? "ready" : "failed");
 			return;
 		}
 		setStatus("loading");
-		// BE-DIAG: one line per metadata GET — trigger + inputs, never
-		// the API key.
-		beDiag("cal:meta:fetch", {
-			trigger: "enabled-effect",
-			endpoint: "GET /v2/event-types/{id}",
-			eventTypeId,
-			cache: "miss",
-		});
 		let cancelled = false;
 		fetchCalEventTypeMeta({ apiKey, eventTypeId, apiBaseUrl }).then((res) => {
 			if (cancelled) return;
@@ -8662,21 +8571,11 @@ function useCalcomEventMeta(params: {
 				setMeta(res.meta);
 				setBookingFields(res.bookingFields);
 				setStatus("ready");
-				beDiag("cal:meta:status", {
-					status: "ready",
-					eventTypeId,
-					hasMeta: res.meta !== null,
-					bookingFieldCount: res.bookingFields.length,
-				});
 			} else {
 				// No meta and no fields -> treat as failed, but keep empty fields
 				setMeta(null);
 				setBookingFields([]);
 				setStatus("failed");
-				beDiag("cal:meta:status", {
-					status: "failed",
-					eventTypeId,
-				});
 			}
 		})
 		// Defensive: fetchCalEventTypeMeta never rejects today (it
@@ -8852,15 +8751,13 @@ async function submitCalcomBooking(params: {
 	// W2-25-F10 fix: fail fast on a dead connection instead of firing a
 	// doomed POST and then surfacing the generic network error.
 	if (typeof navigator !== "undefined" && navigator.onLine === false) {
-		beDiag("booking:abort-offline", { endpoint: "POST /v2/bookings" });
+		console.warn("[BookingEngine] booking aborted: browser offline.");
 		return {
 			success: false,
 			error: copy.offlineError,
 			errorCode: "OFFLINE",
 		};
 	}
-	// BE-DIAG: attempt start — endpoint/type, non-sensitive inputs, and the
-	// payload SHAPE (key list only; never field values, never the API key).
 	const payloadPreview = {
 		eventTypeId: parsedEventTypeId,
 		start: slotStart,
@@ -8872,24 +8769,6 @@ async function submitCalcomBooking(params: {
 			? Object.keys(bookingFieldsResponses)
 			: [],
 	};
-	beDiag("booking:attempt", {
-		endpoint: "POST /v2/bookings",
-		eventTypeId: parsedEventTypeId,
-		slotStart,
-		slotEnd: payloadPreview.hasEnd ? slotEnd : null,
-		payloadKeys: Object.keys({
-			eventTypeId: 1,
-			start: 1,
-			lengthInMinutes: payloadPreview.hasEnd ? 1 : 0,
-			attendee: 1,
-			metadata: 1,
-			...(payloadPreview.bookingFieldsResponseKeys.length
-				? { bookingFieldsResponses: 1 }
-				: {}),
-		}),
-		bookingFieldsResponseKeys: payloadPreview.bookingFieldsResponseKeys,
-		idempotency: Boolean(idempotencyKey),
-	});
 	try {
 		const res = await fetch(`${apiBase}/v2/bookings`, {
 			method: "POST",
@@ -9032,11 +8911,11 @@ async function submitCalcomBooking(params: {
 					}
 				}
 				if (retryAfterSeconds && retryAfterSeconds > 0) {
-					// BE-DIAG + rate-limit memory: a readable 429 is the
+					// Rate-limit memory: a readable 429 is the
 					// anchor fact — later opaque failures get classified
 					// against it.
 					noteCalRateLimit();
-					beDiag("booking:failure", {
+					console.error("[BookingEngine] booking:failure", {
 						endpoint: "POST /v2/bookings",
 						httpStatus: res.status,
 						category: "rate-limit",
@@ -9060,7 +8939,7 @@ async function submitCalcomBooking(params: {
 			if (apiError) {
 				// BE-DIAG: preserve Cal.com's own structured error — this is
 				// the code/message the failure report must carry verbatim.
-				beDiag("booking:failure", {
+				console.error("[BookingEngine] booking:failure", {
 					endpoint: "POST /v2/bookings",
 					httpStatus: res.status,
 					category:
@@ -9093,7 +8972,7 @@ async function submitCalcomBooking(params: {
 			if (res.status === 429) {
 				noteCalRateLimit();
 			}
-			beDiag("booking:failure", {
+			console.error("[BookingEngine] booking:failure", {
 				endpoint: "POST /v2/bookings",
 				httpStatus: res.status,
 				category:
@@ -9178,11 +9057,6 @@ async function submitCalcomBooking(params: {
 			json?.data?.booking?.cancelUrl ||
 			json?.data?.cancelUrl ||
 			json?.cancelUrl;
-		// BE-DIAG: success carries the booking UID (never field values).
-		beDiag("booking:success", {
-			endpoint: "POST /v2/bookings",
-			bookingUid: uid,
-		});
 		return {
 			success: true,
 			error: null,
@@ -9232,7 +9106,7 @@ async function submitCalcomBooking(params: {
 					);
 		// BE-DIAG: the structured failure — category, machine code, and
 		// the raw Cal.com message when one exists.
-		beDiag("booking:failure", {
+		console.error("[BookingEngine] booking:failure", {
 			endpoint: "POST /v2/bookings",
 			category: timedOut
 				? "timeout"
@@ -10865,19 +10739,7 @@ function useBookingEngineState(
 		[instanceIdProp, persistenceFingerprint],
 	);
 	const persistenceKey = persistenceIdentity.key;
-	const persistenceVia = persistenceIdentity.via;
 	const instanceKeyRef = React.useRef<string>(persistenceKey);
-	// BE-DEBUG-PERSIST (temporary diagnostics for the isolation rollout):
-	// concise storage-identity trace. Never logs visitor values or secrets —
-	// only the derived key, the derivation path, the restored step, and
-	// collision/migration events, so a live test can see whether two
-	// instances share a key.
-	const bePersistDiag = React.useCallback(
-		(msg: string) => {
-			console.info(`[BE persist] ${msg}`);
-		},
-		[],
-	);
 	// Runs as the FIRST layout effect of the hook (declared before the
 	// snapshot write + restore effects): publish the render-computed
 	// identity to the ref mirror, register this mount for the collision
@@ -10888,13 +10750,6 @@ function useBookingEngineState(
 		instanceKeyRef.current = persistenceKey;
 		const claimed = (beMountedPersistenceKeys.get(persistenceKey) ?? 0) + 1;
 		beMountedPersistenceKeys.set(persistenceKey, claimed);
-		let rootCount = 0;
-		if (typeof document !== "undefined") {
-			rootCount = document.querySelectorAll("[data-be-engine-root]").length;
-		}
-		bePersistDiag(
-			`resolve key=${persistenceKey} via=${persistenceVia} instancesOnKey=${claimed} enginesOnPage=${rootCount}`,
-		);
 		if (claimed > 1 && !beCollisionWarnedKeys.has(persistenceKey)) {
 			beCollisionWarnedKeys.add(persistenceKey);
 			console.warn(
@@ -11032,7 +10887,7 @@ function useBookingEngineState(
 				// F-12-3 fix: stamp mismatch means an old/corrupt shape —
 				// purge it rather than guess.
 				if (parsed.v !== PERSIST_SCHEMA_VERSION) {
-					console.info(
+					console.warn(
 						"BookingEngine: purging saved progress with an unknown schema version.",
 					);
 					try {
@@ -11174,13 +11029,7 @@ function useBookingEngineState(
 					} catch {
 						// non-fatal
 					}
-					bePersistDiag(
-						`legacy-migrate ${LEGACY_SESSION_KEY} -> key=${instanceKeyRef.current} step=${restoredIndex}`,
-					);
 				}
-				bePersistDiag(
-					`restore key=${instanceKeyRef.current} step=${restoredIndex} hasValues=${restoredEntries.length > 0 ? "yes" : "no"}${migratedLegacy ? " (legacy)" : ""}`,
-				);
 				}
 			}
 		} catch (err: unknown) {
@@ -11202,9 +11051,6 @@ function useBookingEngineState(
 	// (JSON.stringify + sessionStorage.setItem per character). Debounce by
 	// 300ms so a typing burst serializes once, after the pause.
 	const persistTimerRef = React.useRef<number | null>(null);
-	// BE-DEBUG-PERSIST: last step a save was logged for (step-transition
-	// logging only — never per keystroke).
-	const lastLoggedPersistStep = React.useRef<number>(-1);
 	// T7-H6 fix: the 0ms focus timers are stored here so they can be cancelled
 	// on unmount - previously they were fire-and-forget and could run against
 	// a detached DOM node.
@@ -11293,14 +11139,6 @@ function useBookingEngineState(
 						fp: persistenceFingerprint,
 					}),
 				);
-				// BE-DEBUG-PERSIST: log saves only on step transitions, never
-				// per keystroke (no values, no secrets — key + step only).
-				if (lastLoggedPersistStep.current !== baseSafeCurrentIndex) {
-					lastLoggedPersistStep.current = baseSafeCurrentIndex;
-					bePersistDiag(
-						`save key=${instanceKeyRef.current} step=${baseSafeCurrentIndex}`,
-					);
-				}
 			} catch (err: unknown) {
 				// T6-L6 fix: a quota-exceeded write (5MB typical) used to be
 				// silently swallowed - the visitor believed progress was being
