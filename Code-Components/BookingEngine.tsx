@@ -6418,7 +6418,6 @@ interface BookingEngineCopyProps {
 		// Review-step removal) is gone — no key, no control, no constant.
 		// COPY-SIMPLIFICATION: the pick-a-date hint is fixed internal
 		// behavior (unreachable in the engine) — no control.
-		selectOptionLabel: string;
 		// COPY-SIMPLIFICATION: demo empty-state text is fixed internal
 		// behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL), never a control.
 		selectOptionLabel: string;
@@ -7400,98 +7399,71 @@ function beSetInteractive(): void {
 	}
 }
 
-function detectAutomationPrerender(): boolean {
-	if (typeof navigator === "undefined") return false;
-	try {
-		// 1. Puppeteer/Playwright default — the automation flag.
-		if (navigator.webdriver === true) return true;
-		// 2. HYDRATION-GATE-HARDENING: Framer's site prerenderer captures
-		//    the page in a headless Chrome. Most engine versions still put
-		//    the Headless marker in the UA even when the webdriver flag is
-		//    stripped (--disable-blink-features=AutomationControlled), and
-		//    a missed detection keeps the gate OPEN during capture — the
-		//    clock/width/selection effects then bake prerender-day values
-		//    into the served HTML, which no visitor's first render can
-		//    reproduce (the persistent #425/#418/#422 family). Treat the
-		//    headless UA as automation too.
-		const ua = (navigator as Navigator & { userAgent?: string }).userAgent;
-		if (typeof ua === "string" && ua.includes("HeadlessChrome")) return true;
-	} catch {
-		return false;
-	}
-	// 3. Framer's static-capture origin (the runtime's own ea() check —
-	//    `location.origin === "https://screenshot.framer.invalid"` flips
-	//    RenderTarget to EXPORT). Read defensively; never throw at module
-	//    eval.
-	try {
-		if (
-			typeof location !== "undefined" &&
-			location.origin === "https://screenshot.framer.invalid"
-		) {
-			return true;
-		}
-	} catch {
-		// ignore
-	}
-	return false;
-}
+// PRERENDER-SAFE GATE FLIP (the #425/#418/#422 root fix): Framer's site
+// prerenderer captures the page in a headless Chrome that presents as a
+// NORMAL browser — no webdriver flag, a stock UA, the real origin — so no
+// load-time signal can tell it apart from a real visitor (verified live:
+// the webdriver + HeadlessChrome + capture-origin checks shipped in the
+// previous build still let the capture run the clock/fetch effects and
+// bake prerender-day values into the served HTML). The ONE signal the
+// capture pipeline can never produce is REAL USER INPUT. The gate
+// therefore flips on the first genuine interaction — pointer movement,
+// press, key, touch, or wheel — for EVERY renderer. Two mount-time
+// exceptions remain (neither is ever prerendered):
+//   1. The Framer editor canvas (RenderTarget.canvas) — authors must see
+//      the live calendar without interacting.
+//   2. This instance's OWN sessionStorage payload (checked in the
+//      identity layout effect below) — a returning visitor restores and
+//      renders their saved step pre-paint, preserving rules 7/16/20/74.
+// Until the gate flips, every renderer shows the deterministic
+// date-neutral skeleton (see DateAndTimeInline's clockReady gate), so the
+// served HTML matches every visitor's first render byte-for-byte.
+const BE_INTERACTION_EVENTS: Array<
+	keyof WindowEventMap
+> = ["pointermove", "pointerdown", "keydown", "touchstart", "wheel"];
 
 if (typeof window !== "undefined") {
-	if (detectAutomationPrerender()) {
-		// Prerender/automation browser: only a genuine interaction (which
-		// crawlers never perform) may flip the gate. This keeps the gate OFF
-		// while the prerenderer captures its HTML.
-		window.addEventListener("pointerdown", beSetInteractive, {
-			once: true,
-			capture: true,
-		});
-		window.addEventListener("keydown", beSetInteractive, {
-			once: true,
-			capture: true,
-		});
+	if (RenderTarget.current() === RenderTarget.canvas) {
+		// Editor canvas: never prerendered, always interactive.
+		beSetInteractive();
 	} else {
-		// Real visitor: flip as soon as the module evaluates — a microtask so
-		// the hydration render itself still observes the initial (false) value
-		// and the gate is true by the time mount effects flush.
-		Promise.resolve().then(beSetInteractive);
-		// Belt-and-suspenders: extremely lazy bundles can hydrate after the
-		// microtask queue drained; the first interaction covers any residual.
-		window.addEventListener("pointerdown", beSetInteractive, {
-			once: true,
-			capture: true,
-		});
-		window.addEventListener("keydown", beSetInteractive, {
-			once: true,
-			capture: true,
-		});
+		for (const type of BE_INTERACTION_EVENTS) {
+			window.addEventListener(type, beSetInteractive, {
+				once: true,
+				capture: true,
+				passive: true,
+			});
+		}
 	}
 }
 
-/** PRERENDER-DEFER: subscribe to the interactive gate. Returns `false` during
- *  SSR, the headless prerender, and (pre-interaction) QA automation; `true`
- *  for real visitors from the first effect flush onward. Effects that update
- *  rendered state must no-op while this is `false` — their state then stays
- *  at the server-identical initial value, which is what the served HTML
- *  contains.
+/** PRERENDER-SAFE INTERACTIVE GATE: subscribe to the interactive gate.
+ *  Returns `false` during SSR, the headless prerender, and before the
+ *  visitor's first real interaction; `true` from then on. Effects that
+ *  update rendered state must no-op while this is `false` — their state
+ *  stays at the server-identical initial value, which is what the served
+ *  HTML contains.
  *
- *  HYDRATION-PARITY CONTRACT (the #425/#418/#422 family, hardened): the
- *  gate's value is ASYMMETRIC across the two renders that matter — the
- *  headless prerender captures `false`, while a real visitor's first render
- *  observes `true` (the module microtask flips the flag before React
- *  hydrates). Therefore:
+ *  HYDRATION-PARITY CONTRACT (the #425/#418/#422 root fix): the gate is now
+ *  INTERACTION-GATED, so it is `false` for the ENTIRE prerender capture —
+ *  the served HTML is the pure initial state, which every visitor's first
+ *  render reproduces byte-for-byte. Therefore:
  *  1. No INITIAL STATE may be derived from this value — initial state must
  *     be a pure function of config/props (see useCalcomEventMeta's status
  *     initializer).
- *  2. Every effect that commits state reachable by the first paint must
- *     check this value BEFORE its first commit and commit NOTHING while it
- *     is false (see useCalcomSlots' fetch effect, useTimeGrid's now ticker,
+ *  2. Every effect that commits state reachable by a paint must check this
+ *     value BEFORE its first commit and commit NOTHING while it is false
+ *     (useCalcomSlots' fetch effect, useTimeGrid's now ticker,
  *     useHydrationSafeId, the engine's availability ticker, and the
  *     sessionStorage restore/persist effects).
- *  3. `useState(BE_INTERACTIVE)` is intentional: for real visitors the flag
- *     is already true at mount, so gated effects run in the very first
- *     (pre-paint) pass — deferring that flip one frame would re-introduce
- *     visible placeholder flashes the PRERENDER-DEFER work exists to
- *     prevent. */
+ *  3. `useState(BE_INTERACTIVE)` is intentional: when the gate is already
+ *     flipped at mount (canvas, returning visitor via the storage check, or
+ *     input that landed before hydration), gated effects run in the very
+ *     first (pre-paint) pass — no placeholder flash.
+ *  4. While the gate is closed, DateAndTimeInline renders the deterministic
+ *     date-neutral skeleton (clockReady === false) — the prerendered HTML
+ *     and every visitor's first paint show the same neutral calendar until
+ *     the first interaction populates it pre-paint. */
 function useBeInteractive(): boolean {
 	const [interactive, setInteractive] = React.useState(BE_INTERACTIVE);
 	React.useEffect(() => {
