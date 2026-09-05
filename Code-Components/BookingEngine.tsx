@@ -2742,6 +2742,12 @@ interface CalendarGridProps {
 	visibleMonth: Date;
 	selectedDate: Date | null;
 	today: Date;
+	// PRERENDER-SAFE (HYDRATION-GATE-HARDENING): false while the interactive
+	// gate is closed — the deterministic date-neutral skeleton renders on
+	// BOTH the prerender and the visitor's first paint (byte-identical
+	// markup), then the real calendar appears pre-paint in the same pass
+	// the gate flips. No prerender-day values ever reach the served HTML.
+	clockReady: boolean;
 	hoveredDateKey: string | null;
 	isNarrow: boolean;
 	firstDayOfWeek: number;
@@ -2785,6 +2791,8 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	visibleMonth,
 	selectedDate,
 	today,
+	// PRERENDER-SAFE: date-neutral skeleton while the gate is closed.
+	clockReady,
 	hoveredDateKey,
 	isNarrow,
 	firstDayOfWeek,
@@ -2826,6 +2834,31 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// twice. One announcement source remains.
 	const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null);
 	const rows: React.ReactNode[] = [];
+	// PRERENDER-SAFE skeleton grid: while the interactive gate is closed,
+	// every renderer draws the same 6×7 neutral skeleton — no dates, no
+	// month-dependent states — so the served HTML matches the visitor's
+	// first paint byte-for-byte. The real grid appears pre-paint in the
+	// same pass the gate flips (clockReady → true).
+	if (!clockReady) {
+		for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
+			rows.push(
+				<div key={`skeleton-row-${r}`} style={{ display: "contents" }}>
+					{Array.from({ length: 7 }).map((_, c) => (
+						<div
+							aria-hidden="true"
+							key={`skeleton-${r}-${c}`}
+							style={{
+								minHeight: TOUCH_TARGET_MIN,
+								minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
+								borderRadius,
+								background: subtleFill,
+							}}
+						/>
+					))}
+				</div>,
+			);
+		}
+	} else {
 	for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
 		rows.push(
 			/* biome-ignore lint/a11y/useFocusableInteractive: row is a structural
@@ -2942,6 +2975,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 			</div>,
 		);
 	}
+	}
 	return (
 		<>
 			{/* CSS-NOTE: the .be-adj-tooltip hover/focus reveal rule is defined
@@ -2986,7 +3020,24 @@ const CalendarGrid = React.memo(function CalendarGrid({
                             month/year header announces the month change; an
                             <output> would change the element's semantics. */}
 						<span role="status" aria-live="polite" aria-atomic="true">
-							{monthName}
+							{clockReady ? (
+								monthName
+							) : (
+								// PRERENDER-SAFE skeleton: fixed-width neutral bar,
+								// identical markup on the prerender and every
+								// visitor's first paint. Never a real date.
+								<span
+									aria-hidden="true"
+									style={{
+										display: "inline-block",
+										width: 96,
+										height: 14,
+										borderRadius: 6,
+										background: subtleFill,
+										verticalAlign: "middle",
+									}}
+								/>
+							)}
 							<span
 								style={{
 									marginLeft: 6,
@@ -2995,7 +3046,21 @@ const CalendarGrid = React.memo(function CalendarGrid({
 									fontWeight: 500,
 								}}
 							>
-								{yearLabel}
+								{clockReady ? (
+									yearLabel
+								) : (
+									<span
+										aria-hidden="true"
+										style={{
+											display: "inline-block",
+											width: 52,
+											height: 12,
+											borderRadius: 6,
+											background: subtleFill,
+											verticalAlign: "middle",
+										}}
+									/>
+								)}
 							</span>
 						</span>
 					</h3>
@@ -3250,6 +3315,9 @@ interface TimeSlotListProps {
 	/** W2-51: the default/active date when nothing is selected yet (today) —
 	 *  keeps the time header populated on first entry. */
 	fallbackDate: Date;
+	// PRERENDER-SAFE: date-neutral skeleton while the interactive gate is
+	// closed (identical markup on the prerender and every first paint).
+	clockReady: boolean;
 	showTimesWithoutDate: boolean;
 	timeOptions: Array<{
 		value: string;
@@ -3460,6 +3528,7 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		slotsLoading,
 		selectedDate,
 		fallbackDate,
+		clockReady,
 		showTimesWithoutDate,
 		timeOptions,
 		availableTimes,
@@ -3616,58 +3685,76 @@ const TimeSlotList = React.memo(function TimeSlotList(
 						whiteSpace: "nowrap",
 					}}
 				>
-					{(() => {
-						// TZ-HEADER fix: weekday AND day number derive from
-						// the same visitor-tz date key the slots are bucketed
-						// under (getDateKeyInTimeZone) — the old browser-local
-						// getDate()/weekday named the wrong day near midnight
-						// whenever the zone offset pushed the date over.
-						const d = selectedDate ?? fallbackDate;
-						const tzOpt = isValidTimeZone(timeZone)
-							? { timeZone }
-							: undefined;
-						const w = getCachedDateTimeFormat(pageLocale(), {
-							weekday: "short",
-							...tzOpt,
-						}).format(d);
-						return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-					})()}
-					<span
-						style={{
-							marginLeft: 6,
-							fontSize: 16,
-							fontWeight: 500,
-							color: mutedText,
-						}}
-					>
-						{Number(
-						getDateKeyInTimeZone(
-							selectedDate ?? fallbackDate,
-							timeZone || "",
-						).slice(-2),
+					{!clockReady ? (
+						// PRERENDER-SAFE skeleton: neutral bars, byte-identical on
+						// the prerender and every visitor's first paint.
+						<span
+							aria-hidden="true"
+							style={{
+								display: "inline-block",
+								width: 84,
+								height: 14,
+								borderRadius: 6,
+								background: softerFill,
+								verticalAlign: "middle",
+							}}
+						/>
+					) : (
+						<>
+							{(() => {
+								// TZ-HEADER fix: weekday AND day number derive from
+								// the same visitor-tz date key the slots are bucketed
+								// under (getDateKeyInTimeZone) — the old browser-local
+								// getDate()/weekday named the wrong day near midnight
+								// whenever the zone offset pushed the date over.
+								const d = selectedDate ?? fallbackDate;
+								const tzOpt = isValidTimeZone(timeZone)
+									? { timeZone }
+									: undefined;
+								const w = getCachedDateTimeFormat(pageLocale(), {
+									weekday: "short",
+									...tzOpt,
+								}).format(d);
+								return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+							})()}
+							<span
+								style={{
+									marginLeft: 6,
+									fontSize: 16,
+									fontWeight: 500,
+									color: mutedText,
+								}}
+							>
+								{Number(
+									getDateKeyInTimeZone(
+										selectedDate ?? fallbackDate,
+										timeZone || "",
+									).slice(-2),
+								)}
+								{(() => {
+									// TZ-HEADER fix (ordinal): same visitor-tz day
+									// number as above — never browser-local getDate().
+									const d = Number(
+										getDateKeyInTimeZone(
+											selectedDate ?? fallbackDate,
+											timeZone || "",
+										).slice(-2),
+									);
+									if (d >= 11 && d <= 13) return "th";
+									switch (d % 10) {
+										case 1:
+											return "st";
+										case 2:
+											return "nd";
+										case 3:
+											return "rd";
+										default:
+											return "th";
+									}
+								})()}
+							</span>
+						</>
 					)}
-						{(() => {
-							// TZ-HEADER fix (ordinal): same visitor-tz day
-							// number as above — never browser-local getDate().
-							const d = Number(
-								getDateKeyInTimeZone(
-									selectedDate ?? fallbackDate,
-									timeZone || "",
-								).slice(-2),
-							);
-							if (d >= 11 && d <= 13) return "th";
-							switch (d % 10) {
-								case 1:
-									return "st";
-								case 2:
-									return "nd";
-								case 3:
-									return "rd";
-								default:
-									return "th";
-							}
-						})()}
-					</span>
 				</div>
 				<SegmentedControl
 					options={[
@@ -3965,6 +4052,8 @@ interface UseCalendarNavigationOptions {
 	// W1-07-N5 fix: the visitor's chosen zone — header month/year derive
 	// from the same visitor-tz date key the cells display.
 	timeZone?: string;
+	// PRERENDER-SAFE: month notifications to the parent wait for the clock.
+	clockReady: boolean;
 }
 
 function useCalendarNavigation(options: UseCalendarNavigationOptions): {
@@ -3997,6 +4086,7 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		// W1-07-N4/N5 fixes: visitor-tz seeding of the initial month and
 		// the visitor-tz-derived month/year header.
 		timeZone,
+		clockReady,
 	} = options;
 
 	// Fix #19: seed visibleMonth from the parent so navigation survives remounts.
@@ -4229,9 +4319,14 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// initial one, so the engine fetches slots for the starting month) from
 	// a single place, rather than duplicating the call inside both
 	// navigation functions above.
+	// PRERENDER-SAFE: the notification waits for clockReady — before the
+	// gate flips, the placeholder month (January 2024) must never reach
+	// the engine's slots fetch; the real month notification lands in the
+	// same pre-paint pass the clock applies.
 	React.useEffect(() => {
+		if (!clockReady) return;
 		onMonthChange?.(visibleMonth);
-	}, [visibleMonth, onMonthChange]);
+	}, [clockReady, visibleMonth, onMonthChange]);
 
 	// H5 fix (continued): once the new month has actually rendered, focus
 	// its "active" cell if a Page Up/Down (or W1-09-NEW-03 cross-month
@@ -4281,6 +4376,8 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 	// permanently-misconfigured event type doesn't page forever.
 	const autoAdvancedMonthsRef = React.useRef(0);
 	React.useEffect(() => {
+		// PRERENDER-SAFE: the placeholder month must never drive navigation.
+		if (!clockReady) return;
 		if (!availableDates) return; // demo/fallback mode — nothing to check
 		if (slotsLoading) return; // don't judge an in-flight fetch as "empty"
 		if (availableDates.size > 0) return;
@@ -4292,7 +4389,7 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		if (visibleMonth.getTime() === currentMonthStart.getTime()) return;
 		autoAdvancedMonthsRef.current += 1;
 		goToNextMonth();
-	}, [availableDates, slotsLoading, goToNextMonth, visibleMonth, currentMonthStart]);
+	}, [clockReady, availableDates, slotsLoading, goToNextMonth, visibleMonth, currentMonthStart]);
 
 	const canGoPrev = visibleMonth.getTime() > currentMonthStart.getTime();
 	const canGoNext = visibleMonth.getTime() < maxMonthStart.getTime();
@@ -5072,6 +5169,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		slotsLoading,
 		// W1-07-N4/N5 fixes: visitor-tz month seeding + header derivation.
 		timeZone,
+		clockReady,
 	});
 	// HYDRATION-CLOCK fix: when the calendar self-seeded from the placeholder
 	// day (fresh visit — no saved/restored month), advance to the REAL
@@ -5904,6 +6002,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						visibleMonth={visibleMonth}
 						selectedDate={selectedDate}
 						today={today}
+						clockReady={clockReady}
 						hoveredDateKey={hoveredDateKey}
 						isNarrow={isNarrow}
 						firstDayOfWeek={firstDayOfWeek}
@@ -5959,6 +6058,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 					slotsLoading={slotsLoading}
 					selectedDate={selectedDate}
 					fallbackDate={today}
+					clockReady={clockReady}
 					showTimesWithoutDate={showTimesWithoutDate}
 					pickDateToSeeTimesLabel={pickDateToSeeTimesLabel}
 					noTimesFallbackLabel={noTimesFallbackLabel}
@@ -7372,18 +7472,11 @@ function recentCalRateLimit(): boolean {
 //
 // The fix is a single "interactive client" gate: every environment-dependent
 // effect consults it and stays at its initial (server-identical) value until
-// the page is a REAL, interactive client. The prerendering automation browser
-// (navigator.webdriver === true — Puppeteer/Playwright set it) NEVER flips it
-// on its own, so the served HTML is a pure function of initial state, which
-// is byte-identical to every visitor's first render. Real visitors flip it
-// in a microtask right after module evaluation — i.e. before the first
-// effects flush, still after the hydration comparison, which only inspects
-// render output (the gate never appears in markup). QA automation that never
-// qualifies gets the same deterministic first paint and flips the gate on
-// its first real interaction.
-//
-// The renderToString variant (curl / no-store fetches) already matches: its
-// effects never run at all.
+// the page is a REAL, interactive client. See the PRERENDER-SAFE GATE FLIP
+// note below for how the gate flips — and the date-neutral skeleton in
+// DateAndTimeInline/CalendarGrid/TimeSlotList for what renders while it is
+// closed. The renderToString variant (curl / no-store fetches) already
+// matches: its effects never run at all.
 let BE_INTERACTIVE = false;
 const BE_INTERACTIVE_LISTENERS = new Set<() => void>();
 
@@ -7667,14 +7760,8 @@ function useCalcomSlots(
 			setLoading(false);
 			return;
 		}
-		// PRERENDER-DEFER: no availability GET before the client is
-		// real. The gate flips post-hydration on real visitors, so the
-		// first eligible fetch happens in the same effect pass as
-		// before — just never during SSR/prerender/automation.
-		if (!beInteractive) {
-			setLoading(false);
-			return;
-		}
+		// (The interactive gate is checked FIRST above — this effect must
+		// commit nothing at all before the client is real.)
 
 		const monthKey = monthCacheKey(
 			monthStart,
