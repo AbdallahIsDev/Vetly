@@ -6921,12 +6921,10 @@ interface BookingEngineConfigProps {
 		// mark). Unset keeps each screen's historical size (64 / 40).
 		iconSize?: number;
 	};
-	// Layout — content-width preset for the visitor-facing column
-	// (Full = today's fluid behavior, no cap; Compact = 640px centered
-	// column, fluid below the cap). Structural rhythm stays internal.
-	layout?: {
-		contentWidth?: "full" | "compact";
-	};
+	// LAYOUT-REMOVED (see AGENTS.md): the Content Width control and its
+	// `layout` prop are gone — the component is fluid and Framer layout
+	// owns sizing. No interface key, no control, no runtime branch. A
+	// saved `contentWidth` value is inert (never read).
 	// Cal.com
 	//
 	// CC-4 (KNOWN SECURITY LIMITATION - not fixed in this file, documented
@@ -10717,8 +10715,6 @@ function useBookingEngineState(
 		// per-step alignment carrier (`header.alignment`) still seeds
 		// steps — see the legacy seeding below.
 		header,
-		// LAYOUT: content-width preset group.
-		layout,
 	} = props;
 
 	// TRANSITION-GROUP: read the nested Transition-submenu path first; fall
@@ -13261,6 +13257,14 @@ function useBookingEngineState(
 		}),
 		[font],
 	);
+	// BODY-ROLE: the two subtitle metrics Body Font owns. Size and
+	// line-height are the only Body keys any surface hardcodes over —
+	// family/weight/spacing already flow via root inheritance, so mapping
+	// them again would double-apply. Scalars (not the whole font object)
+	// so screens cannot mis-read other roles. Defaults equal the
+	// historical hardcoded subtitle look (14px / 1.5).
+	const bodySubtitleSize = fontPixelSize(font?.fontSize) ?? 14;
+	const bodySubtitleLineHeight = font?.lineHeight ?? 1.5;
 
 	// Setup guard: no Cal.com credentials configured. Rendered as an inline
 	// banner above the working flow (NOT a replacement) so the editor can still
@@ -13383,11 +13387,9 @@ function useBookingEngineState(
 	// backstop against long-label overflow); Hug is the historical auto
 	// width. Split/Grouped positioning semantics are untouched.
 	const navFill = buttonWidthValue === "fill";
-	// LAYOUT-CONTENT-WIDTH: Compact caps the visitor column at 640px
-	// centered, fluid below the cap; Full is today's uncapped behavior.
-	// Calendar placement (final stage) and responsive stacking are
-	// unaffected — only the column width is capped.
-	const contentCompact = layout?.contentWidth === "compact";
+	// LAYOUT-REMOVED (see AGENTS.md): no content-width cap exists — the
+	// component is fluid and Framer layout owns sizing. No const, no
+	// return/destructure entries, no interface key, no control.
 	// T9-M11 fix: the animate target was an inline object literal - a new
 	// reference every render forced framer-motion to re-evaluate the
 	// animation target on each keystroke. Memoized on the only thing
@@ -13432,6 +13434,9 @@ function useBookingEngineState(
 		font,
 		headingFont,
 		fontStack,
+		// BODY-ROLE: subtitle metrics owned by Body Font.
+		bodySubtitleSize,
+		bodySubtitleLineHeight,
 		handleBack,
 		handleCancelSubmit,
 		handleContinue,
@@ -13514,7 +13519,6 @@ function useBookingEngineState(
 		terminalIconSize,
 		primaryFirst,
 		navFill,
-		contentCompact,
 		style,
 		styles,
 		submitError,
@@ -13598,6 +13602,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 		flowStatus,
 		fontStack,
 		headingFont,
+		// BODY-ROLE: subtitle metrics owned by Body Font.
+		bodySubtitleSize,
+		bodySubtitleLineHeight,
 		handleBack,
 		handleCancelSubmit,
 		handleContinue,
@@ -13627,7 +13634,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		terminalIconSize,
 		primaryFirst,
 		navFill,
-		contentCompact,
 		progressAnimate,
 		progressBarStyle,
 		progressPct,
@@ -13978,6 +13984,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 					// TERMINAL-ALIGN: content alignment (actions unaffected).
 					terminalAlignment={terminalAlignment}
 					iconSize={terminalIconSize}
+					bodySubtitleSize={bodySubtitleSize}
+					bodySubtitleLineHeight={bodySubtitleLineHeight}
 					// CONFIRM-ACTIONS: confirmation button labels come from
 					// the Buttons group now.
 					addToCalendarLabel={addToCalendarButtonLabel}
@@ -14041,6 +14049,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 				// TERMINAL-ALIGN: content alignment (action row unaffected).
 				terminalAlignment={terminalAlignment}
 				iconSize={terminalIconSize}
+				bodySubtitleSize={bodySubtitleSize}
+				bodySubtitleLineHeight={bodySubtitleLineHeight}
 				retryLabel={retryLabel}
 				retryStyle={retryButtonStyle}
 				retryHover={blGroups.retryButton?.hover}
@@ -14327,25 +14337,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* VALIDATION-REMOVED (rule 100): canvas regex verdicts lived
                 here — deleted with the custom-regex machinery. */}
 
-			{/* LAYOUT-CONTENT-WIDTH: Compact caps this visitor column
-			(progress + steps + footer) at 640px centered, fluid below the
-			cap; Full applies no styling (historical behavior). DOM order,
-			sticky footer, Calendar placement, and responsive stacking are
-			untouched — only the column width. Progress follows the column,
-			so no separate progress-width control exists. */}
-			<div
-				style={
-					contentCompact
-						? {
-								maxWidth: 640,
-								marginLeft: "auto",
-								marginRight: "auto",
-								width: "100%",
-								boxSizing: "border-box",
-							}
-						: undefined
-				}
-			>
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
 				<div style={{ marginBottom: 16 }}>
 					{progressShowTextContent && stepCountPosition === "top" ? (
@@ -14618,9 +14609,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 								<div
 								style={{
 									color: theme.textSecondaryColor,
-									fontSize: 14,
+									// BODY-ROLE: step body copy follows Body
+									// Font size + line-height (family/weight/
+									// spacing already inherit from root).
+									// Defaults equal the historical look.
+									fontSize: bodySubtitleSize,
 									marginBottom: 16,
-									lineHeight: 1.5,
+									lineHeight: bodySubtitleLineHeight,
 								// CONTENT-ALIGN: follows the title — global
 								// unless this Step authored its own.
 								...(isStepAlignment(step.alignment)
@@ -14751,7 +14746,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 						{primaryGroupEl}
 					</>
 				)}
-			</div>
 			</div>
 
 			{/* FINAL-37 fix: skip-link landing target (programmatic focus). */}
@@ -15889,9 +15883,12 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		...(fs?.labelFont?.letterSpacing != null
 			? { letterSpacing: fs.labelFont.letterSpacing }
 			: {}),
-		...(fs?.labelFont?.lineHeight != null
-			? { lineHeight: fs.labelFont.lineHeight }
-			: {}),
+		// BODY-ROLE: labels own their line-height (1.6 designed default,
+		// rule 98) — they must never inherit the root Body line-height,
+		// which Framer resolves to px and which would otherwise move with
+		// Body Font size. Untouched renders 20.8px vs the historical
+		// inherited 21px (invisible); opened-Styles labels already 20.8.
+		lineHeight: fs?.labelFont?.lineHeight ?? 1.6,
 		color: fs?.labelColor ?? theme.textPrimaryColor,
 	};
 	const labelEl = isChoiceFieldType ? (
@@ -16425,6 +16422,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	// subtitle). Engine-resolved global Content Alignment. Action
 	// rows keep their own alignment and never read this.
 	terminalAlignment: "left" | "center" | "right";
+	// BODY-ROLE: Body Font subtitle metrics (size + line-height only —
+	// family/weight/spacing inherit from root). Engine-resolved.
+	bodySubtitleSize: number;
+	bodySubtitleLineHeight: number | string;
 	// TERMINAL-ICON: author mark size (unset = 64 historical).
 	iconSize?: number;
 	// CONFIRM-ACTIONS: labels come from the Buttons group now.
@@ -16495,6 +16496,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		headingFont,
 		terminalAlignment,
 		iconSize,
+		bodySubtitleSize,
+		bodySubtitleLineHeight,
 		addToCalendarLabel,
 		bookAnotherLabel,
 		doneLabel,
@@ -16879,11 +16882,13 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			{/* Subtitle — smaller, under the title (alignment follows) */}
 			<div
 				style={{
-					fontSize: 14,
+					// BODY-ROLE: terminal body copy follows Body Font
+					// (defaults equal the historical look).
+					fontSize: bodySubtitleSize,
 					color: textSecondaryColor,
 					textAlign: terminalAlignment,
 					marginBottom: 24,
-					lineHeight: 1.5,
+					lineHeight: bodySubtitleLineHeight,
 				}}
 			>
 				{replaceCopyTokens(successSubtitle, steps, values, timeZone)}
@@ -17156,6 +17161,9 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	// message). Engine-resolved global Content Alignment. The
 	// Retry/support action row keeps its own alignment.
 	terminalAlignment: "left" | "center" | "right";
+	// BODY-ROLE: Body Font subtitle metrics (size + line-height only).
+	bodySubtitleSize: number;
+	bodySubtitleLineHeight: number | string;
 	// TERMINAL-ICON: author mark size (unset = 40 historical).
 	iconSize?: number;
 	retryLabel: string;
@@ -17185,6 +17193,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		headingFont,
 		terminalAlignment,
 		iconSize,
+		bodySubtitleSize,
+		bodySubtitleLineHeight,
 		retryLabel,
 		retryStyle,
 		retryHover,
@@ -17300,10 +17310,12 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					</h2>
 					<div
 						style={{
-							fontSize: 14,
+							// BODY-ROLE: terminal body copy follows Body
+							// Font (defaults equal the historical look).
+							fontSize: bodySubtitleSize,
 							color: textSecondaryColor,
 							marginTop: 6,
-							lineHeight: 1.5,
+							lineHeight: bodySubtitleLineHeight,
 						}}
 					>
 						{errorSubtitle}
@@ -17688,23 +17700,23 @@ function makeInputFieldStylesControls() {
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		placeholderColor: fieldStylesColorControl("Placeholder Color"),
+		// STYLES-ORDER (canonical): Fill → Radius → Border → Shadow →
+		// BG Blur, consecutive. Field-specific rows (Padding, Focus
+		// Border, Gap) follow the five; see AGENTS.md.
 		backgroundColor: fieldStylesColorControl("Background"),
-		border: fieldStylesBorderControl(),
-		// STYLES-ORDER: Focus Border sits directly after Border (it
-		// modifies the border on focus), never after Padding.
-		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		radius: fieldStylesRadiusControl(),
+		border: fieldStylesBorderControl(),
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		padding: fieldStylesPaddingControl(),
+		// Focus Border modifies the border on focus — kept adjacent to
+		// the box rows (after Padding), never among the five.
+		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		// HEIGHT-REMOVED: no Height row — field height is hardcoded to
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
-		// SHADOW-LAST (global rule): Shadow is always the final row in
-		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Styles, buttons, and interaction states.
-		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -17733,23 +17745,22 @@ function makeVariantChoiceStylesControls(
 		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
+		// STYLES-ORDER (canonical): Fill → Radius → Border → Shadow →
+		// BG Blur, consecutive (see makeInputFieldStylesControls).
 		backgroundColor: fieldStylesColorControl("Background"),
-		border: fieldStylesBorderControl(),
 		radius: fieldStylesRadiusControl(eff.radius),
+		border: fieldStylesBorderControl(),
+		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		padding: fieldStylesPaddingControl(eff.padding),
 		// HEIGHT-REMOVED: no Height row — field height is hardcoded to
 		// 23px at the consumption sites and grown via Padding only.
 		// (A stored `minHeight` from an older canvas is still honored
 		// as legacy; new instances can no longer set one.)
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
 		selectedTextColor: fieldStylesColorControl("Selected Text"),
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
-		// SHADOW-LAST (global rule): Shadow is always the final row in
-		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Styles, buttons, and interaction states.
-		shadow: fieldStylesShadowControl(),
 	};
 }
 
@@ -17763,13 +17774,14 @@ function makeCheckboxFieldStylesControls() {
 		}),
 		labelColor: fieldStylesColorControl("Label Color"),
 		accentColor: fieldStylesColorControl("Accent"),
-		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
-		// SHADOW-LAST (global rule): Shadow is always the final row in
-		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Styles, buttons, and interaction states.
+		// STYLES-ORDER (canonical): the checkbox has no Fill/Radius/
+		// Border rows (native box — inapplicable, never added); the
+		// applicable Shadow → BG Blur pair stays consecutive, with
+		// set-specific rows (Size, Gap) after it.
 		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
+		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
+		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
 }
 
@@ -17788,11 +17800,14 @@ function makeCalendarStylesStylesControls() {
 			fontSize: "14px",
 			variant: "Regular",
 		}),
-		backgroundColor: fieldStylesColorControl("Background"),
 		// Styles-TEXT: tile text color — drives the surface container color
 		// (every inheriting tile label follows) plus the derived muted
 		// tones. Default-free so untouched Styles track the Text token.
 		textColor: fieldStylesColorControl("Text Color"),
+		// STYLES-ORDER (canonical): Fill → Radius → Border → Shadow →
+		// BG Blur, consecutive; set-specific Padding follows the five.
+		backgroundColor: fieldStylesColorControl("Background"),
+		radius: fieldStylesRadiusControl(eff.radius),
 		// Styles-BORDER: the surface container natively renders `1px solid`
 		// in the Border token, so the effective default mirrors exactly
 		// that — opening Border materializes the inherit look. An explicit
@@ -17803,13 +17818,9 @@ function makeCalendarStylesStylesControls() {
 			borderStyle: "solid",
 			borderColor: FIELD_STYLES_BORDER_COLOR,
 		}),
-		radius: fieldStylesRadiusControl(eff.radius),
-		padding: fieldStylesPaddingControl(eff.padding),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		// SHADOW-LAST (global rule): Shadow is always the final row in
-		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Styles, buttons, and interaction states.
 		shadow: fieldStylesShadowControl(),
+		backgroundBlur: fieldStylesBackgroundBlurControl(),
+		padding: fieldStylesPaddingControl(eff.padding),
 	};
 }
 
@@ -17891,20 +17902,27 @@ function makeButtonGroupControls(defaults: {
 			title: "Text",
 			defaultValue: defaults.text,
 		},
+		// STYLES-ORDER (canonical): content Text stays first (rule 99),
+		// then Typography (Font + Text Color), then the consecutive base
+		// five Fill → Radius → Border → Shadow → BG Blur, then Padding,
+		// then Interaction States. Shadow is no longer panel-last here —
+		// states follow base (see AGENTS.md); runtime layering is
+		// unaffected (shadow composes under state rings).
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Semibold",
+		}),
 		textColor: fieldStylesColorControl("Text Color"),
 		backgroundColor: fieldStylesColorControl("Background"),
+		radius: fieldStylesRadiusControl("12px"),
 		border: fieldStylesBorderControl({
 			borderWidth: defaults.borderWidth,
 			borderStyle: "solid",
 			borderColor: defaults.borderColor,
 		}),
-		radius: fieldStylesRadiusControl("12px"),
-		padding: fieldStylesPaddingControl(defaults.padding),
-		font: fieldStylesFontControl("Font", {
-			fontSize: "14px",
-			variant: "Semibold",
-		}),
+		shadow: fieldStylesShadowControl(),
 		backgroundBlur: fieldStylesBackgroundBlurControl(),
+		padding: fieldStylesPaddingControl(defaults.padding),
 		hover: {
 			type: ControlType.Object,
 			title: "Hover",
@@ -17921,10 +17939,9 @@ function makeButtonGroupControls(defaults: {
 			optional: true,
 			controls: makeButtonInteractionControls(defaults.borderColor),
 		},
-		// SHADOW-LAST (global rule): Shadow is always the final row in
-		// every Styles submenu — field sets, choice sets, checkbox,
-		// calendar Styles, buttons, and interaction states.
-		shadow: fieldStylesShadowControl(),
+		// STYLES-ORDER: base shadow lives with the base five above;
+		// Hover/Pressed close the group (states follow base). Runtime
+		// layering is unchanged (shadow composes under state rings).
 	};
 }
 
@@ -18541,28 +18558,10 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
-	// ----- Layout (content-width preset) -----
-	// LAYOUT-CONTENT-WIDTH: Full (default, today's fluid behavior, no cap)
-	// or Compact (640px centered column, fluid below the cap). Covers the
-	// visitor column coherently (progress/steps/footer); Calendar
-	// placement and responsive stacking are unaffected. Structural rhythm
-	// (gaps, sticky, grid math) stays internal — no raw spacing rows.
-	layout: {
-		type: ControlType.Object,
-		title: "Layout",
-		icon: "object",
-		buttonTitle: "Layout",
-		controls: {
-			contentWidth: {
-				type: ControlType.Enum,
-				title: "Content Width",
-				options: ["full", "compact"],
-				optionTitles: ["Full", "Compact"],
-				defaultValue: "full",
-				displaySegmentedControl: true,
-			},
-		},
-	},
+	// LAYOUT-REMOVED (see AGENTS.md): no Layout group exists — the
+	// component is fluid and Framer layout owns sizing. Structural
+	// rhythm (gaps, sticky, grid math) stays internal — no raw
+	// spacing rows and no width-cap rows.
 
 	// CONTENT-ALIGN: one global content/header alignment — authored
 	// Form Step title+subtitle headers + success/error terminal headers.
@@ -18935,16 +18934,23 @@ addPropertyControls(BookingEngine, {
 					textAlign: "left",
 				},
 			},
+			// BODY-ROLE: the Body default equals what body copy actually
+			// renders (14px subtitles, 1.5 line-height) — Body Font drives
+			// step/terminal subtitle size + line-height (see
+			// bodySubtitleSize), so its default must BE the historical
+			// look, not a second look. Root computed output is unchanged
+			// (nothing renders at the old 15px root size;
+			// 14×1.5 = 15×1.4 = 21px line box).
 			font: {
 				type: ControlType.Font,
 				title: "Body Font",
 				controls: "extended",
 				defaultFontType: "sans-serif",
 				defaultValue: {
-					fontSize: "15px",
+					fontSize: "14px",
 					variant: "Regular",
 					letterSpacing: "0em",
-					lineHeight: "1.4em",
+					lineHeight: "1.5em",
 					textAlign: "left",
 				},
 			},
