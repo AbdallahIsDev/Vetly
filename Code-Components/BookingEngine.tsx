@@ -6581,21 +6581,28 @@ interface BookingEngineStyleProps {
 		// `typography` group, then top-level props, then engine defaults.
 		font?: FramerFont;
 		headingFont?: FramerFont;
+		// FIELD-STYLES-GLOBAL: shared default styling for authored Form
+		// fields across all authored Steps — nested here, under Body
+		// Font (not a top-level group). Same FieldStyleOverrides model
+		// and input-set vocabulary as a field's own Styles submenu —
+		// one mechanism, not a second implementation. Resolution per
+		// field: explicit field value wins, else this global, else the
+		// engine default (per-type natives where they exist).
+		// Unset/undefined at every level inherits; explicit values
+		// (including 0) always win — never falsy checks. Unopened
+		// (undefined) changes nothing, so existing canvases render
+		// byte-identically. Calendar, Buttons, and terminal UI never
+		// read this — they own independent style systems.
+		fieldStyles?: FieldStyleOverrides;
 	};
 	font: FramerFont;
 	// Per-surface heading typography (step + success + error titles).
 	// The base `font` above stays the body control.
 	headingFont?: FramerFont;
-	// FIELD-STYLES-GLOBAL: shared default styling for authored Form
-	// fields across all authored Steps. Same FieldStyleOverrides model
-	// and input-set vocabulary as a field's own Styles submenu — one
-	// mechanism, not a second implementation. Resolution per field:
-	// explicit field value wins, else this global, else the engine
-	// default (per-type natives where they exist). Unset/undefined at
-	// every level inherits; explicit values (including 0) always win —
-	// never falsy checks. Unopened (undefined) changes nothing, so
-	// existing canvases render byte-identically. Calendar, Buttons, and
-	// terminal UI never read this — they own independent style systems.
+	// FIELD-STYLES-GLOBAL (legacy carrier): shared field defaults saved
+	// while the group lived at top level. No control writes it anymore —
+	// `styles.fieldStyles` wins when set. Read only at the single
+	// resolution site in useBookingEngineState.
 	fieldStyles?: FieldStyleOverrides;
 	// TYPOGRAPHY-FIRST: `font` + `headingFont` top the Styles submenu
 	// (`styles.font` / `styles.headingFont`). The retired top-level
@@ -6699,7 +6706,7 @@ interface BookingEngineCopyProps {
 		groupNavButtons?: boolean;
 		groupedNavAlignment?: "left" | "center" | "right";
 		buttonOrder?: "backFirst" | "primaryFirst";
-		buttonWidth?: "hug" | "fill";
+		buttonWidth?: "fit" | "fill";
 	};
 	// NAV-GROUP-TOGGLE: legacy carrier (see buttonsLayout above).
 		groupNavButtons?: boolean;
@@ -6717,10 +6724,10 @@ interface BookingEngineCopyProps {
 		// row-reverse — so visual, tab, and screen-reader order stay
 		// coherent by construction.
 		buttonOrder?: "backFirst" | "primaryFirst";
-		// NAV-WIDTH: Hug (default, historical auto width) or Fill (equal
+		// NAV-WIDTH: Fit (default, historical auto width) or Fill (equal
 		// flex share of the footer row, wrapping as a backstop against
 		// overflow with long labels). No pixel math, no breakpoints.
-		buttonWidth?: "hug" | "fill";
+		buttonWidth?: "fit" | "fill";
 		// CONFIRM-ACTIONS: confirmation-state labels live in the Buttons
 		// group because they configure confirmation buttons. Defaults keep
 		// the pre-existing copy ("Done" / "Book another" / "Add to calendar").
@@ -13405,11 +13412,13 @@ function useBookingEngineState(
 	const terminalIconSize = terminal?.iconSize ?? header?.iconSize;
 	// FIELD-STYLES-GLOBAL: normalized once here (same empty-color strip
 	// as per-field values), then merged UNDER each field's own overrides
-	// at the FieldRenderer site. Unopened group is undefined — zero
-	// behavior change. Memoized so downstream memos keep holding.
+	// at the FieldRenderer site. Nested `styles.fieldStyles` wins; the
+	// legacy top-level key stays readable for values saved while the
+	// group lived there. Unopened group is undefined — zero behavior
+	// change. Memoized so downstream memos keep holding.
 	const globalFieldStyles = React.useMemo(
-		() => normalizeStyleOverrides(fieldStyles),
-		[fieldStyles],
+		() => normalizeStyleOverrides(styles.fieldStyles ?? fieldStyles),
+		[styles.fieldStyles, fieldStyles],
 	);
 	// NAV-ORDER: true DOM order — the primary group renders before Back
 	// when configured. Visual, tab, SR, and activation order stay coherent
@@ -13418,7 +13427,7 @@ function useBookingEngineState(
 	// jumps mid-flow.
 	const primaryFirst = buttonOrderValue === "primaryFirst";
 	// NAV-WIDTH: Fill gives footer buttons an equal flex share (+ wrap
-	// backstop against long-label overflow); Hug is the historical auto
+	// backstop against long-label overflow); Fit is the historical auto
 	// width. Split/Grouped positioning semantics are untouched.
 	const navFill = buttonWidthValue === "fill";
 	// LAYOUT-REMOVED (see AGENTS.md): no content-width cap exists — the
@@ -14209,7 +14218,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 					alignItems: "center",
 					gap: 8,
 					// NAV-WIDTH: Fill takes the group's share (the group
-					// div already flexes; Cancel keeps its hug width).
+					// div already flexes; Cancel keeps its fit width).
 					...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
 				}}
 			>
@@ -17543,7 +17552,7 @@ type ProgressBarControlProps = Pick<
 >;
 type ButtonsLayoutControlProps = {
 	groupNavButtons?: boolean;
-	buttonWidth?: "hug" | "fill";
+	buttonWidth?: "fit" | "fill";
 };
 
 // =============================================================================
@@ -18718,7 +18727,7 @@ addPropertyControls(BookingEngine, {
 					// Hidden while Width = Fill: filling buttons make the
 					// Grouped/Split choice meaningless (both buttons take
 					// equal shares either way). The saved value is
-					// preserved, so returning to Hug restores the choice;
+					// preserved, so returning to Fit restores the choice;
 					// while Fill the runtime is deterministic (fill shares,
 					// Split/Grouped positioning has no visual effect).
 					groupNavButtons: {
@@ -18763,16 +18772,16 @@ addPropertyControls(BookingEngine, {
 						defaultValue: "backFirst",
 						displaySegmentedControl: true,
 					},
-					// NAV-WIDTH: Hug (default, historical auto width) or
+					// NAV-WIDTH: Fit (default, historical auto width) or
 					// Fill (equal flex share of the footer row, wrapping as
 					// a backstop). Split/Grouped positioning semantics are
 					// untouched.
 					buttonWidth: {
 						type: ControlType.Enum,
 						title: "Width",
-						options: ["hug", "fill"],
-						optionTitles: ["Hug", "Fill"],
-						defaultValue: "hug",
+						options: ["fit", "fill"],
+						optionTitles: ["Fit", "Fill"],
+						defaultValue: "fit",
 						displaySegmentedControl: true,
 					},
 				},
@@ -19042,6 +19051,20 @@ addPropertyControls(BookingEngine, {
 					textAlign: "left",
 				},
 			},
+			// FIELD-STYLES-GLOBAL: shared default look for authored Form
+			// fields across all Steps — lives here, under Body Font, not
+			// as a top-level group. Same input-set vocabulary and
+			// effective defaults as a field's own Styles submenu (one
+			// mechanism, not a second implementation). Per-field Styles
+			// merge above this per row; unopened changes nothing.
+			fieldStyles: {
+				type: ControlType.Object,
+				title: "Field Styles",
+				buttonTitle: "Field Styles",
+				icon: "effect",
+				optional: true,
+				controls: makeInputFieldStylesControls(),
+			},
 			accentColor: {
 				type: ControlType.Color,
 				title: "Accent",
@@ -19119,31 +19142,10 @@ addPropertyControls(BookingEngine, {
 	// "Font" panel submenu; they now live at the top of the Styles
 	// submenu. The `typography` prop stays readable as a legacy fallback
 	// (same pattern as SYN-01 `validation`). Never re-add the group.
-
-	// ----- Field Styles (shared field defaults) -----
-	// FIELD-STYLES-GLOBAL: one optional group holding the shared default
-	// look for authored Form fields across all Steps. SAME input-set
-	// vocabulary and effective defaults as a field's own Styles submenu
-	// (one mechanism — `makeInputFieldStylesControls`, not a second
-	// implementation), so opening it materializes the same inherit look
-	// an input field shows. Per-field Styles merge ABOVE this per row:
-	// explicit field values (including 0) always win; unset inherits
-	// this global, then the engine default. Unopened (undefined) changes
-	// nothing — existing canvases render byte-identically. Calendar,
-	// Buttons, and terminal UI never read this group. Choice/checkbox
-	// fields consume the rows meaningful to them (same conditional
-	// behavior as their own submenus); choice-selected and checkbox
-	// accent/size rows stay per-field-only.
-	fieldStyles: {
-		type: ControlType.Object,
-		title: "Field Styles",
-		icon: "effect",
-		buttonTitle: "Field Styles",
-		optional: true,
-		description:
-			"Shared default look for all form fields. A field's own Styles override this per row; fields without their own Styles always follow it.",
-		controls: makeInputFieldStylesControls(),
-	},
+	// FIELD-STYLES-GLOBAL (moved): the shared field-defaults group now
+	// lives nested inside Styles under Body Font — no top-level group.
+	// A top-level `fieldStyles` key stays readable as fallback for values
+	// saved while the group lived there (same pattern as SYN-01).
 
 	// ----- Animation (grouped: style + behavior in one Transition submenu) -----
 	transitionSettings: {
