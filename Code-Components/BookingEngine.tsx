@@ -6365,6 +6365,11 @@ interface FieldStyleOverrides {
 	/** Control typography (input text / option labels). Weight is ignored
 	 *  on segmented options, which stay 600 per the shared-thumb rule. */
 	font?: FramerFont;
+	/** Input-text alignment (text/email/phone/textarea only — choice
+	 *  options, checkbox labels, and the calendar surface never read it).
+	 *  Unset inherits (historical look); an explicit value applies verbatim.
+	 */
+	textAlign?: "left" | "center" | "right";
 	/** The field label's typography. */
 	labelFont?: FramerFont;
 	labelColor?: string;
@@ -6507,15 +6512,15 @@ interface StepConfig {
 	subtitle?: string;
 	fields: FieldConfig[];
 	layout: "single-column" | "two-column";
-	// HEADER-ALIGN-PER-STEP: header alignment is a per-authored-Step
-	// design decision (Left/Center/Right), configured inside each Step's
-	// own submenu — never a global component-wide setting. Unset
-	// (undefined) renders exactly the historical inherited-left look, so
-	// older canvases and untouched steps are byte-identical. The system
-	// Calendar stage deliberately carries no alignment: it is a separate
-	// standalone stage with its own configuration and keeps its historical
-	// alignment unless a dedicated Calendar-specific control is ever
-	// introduced.
+	// CONTENT-ALIGN (legacy carrier): previously configured inside each
+	// Step's own submenu; no control writes it anymore. An explicitly
+	// authored value still wins over the global Content Alignment at the
+	// render site; unset (undefined) follows the global. Never normalize
+	// or coerce it — the render site must keep distinguishing "never
+	// authored" from explicit Left. The system Calendar stage deliberately
+	// carries no alignment: it is a separate standalone stage with its own
+	// configuration and keeps its historical alignment unless a dedicated
+	// Calendar-specific control is ever introduced.
 	alignment?: "left" | "center" | "right";
 }
 
@@ -6674,9 +6679,18 @@ interface BookingEngineCopyProps {
 		backLabel?: string;
 		finalActionLabel?: string;
 		cancelSubmitLabel?: string;
-		// NAV-GROUP-TOGGLE: lives inside the Buttons group. Default (false /
-		// undefined) keeps the Split layout — Back far left, primary action
-		// far right (see AGENTS.md hard rules).
+	// BUTTONS-LAYOUT: nav-layout decisions live in one `buttonsLayout`
+	// subgroup (Layout / Buttons Alignment / Order / Width). The four
+	// flat keys below stay readable as legacy carriers so pre-subgroup
+	// canvases keep their values — no control writes them anymore and
+	// they are never read except at the single resolution site.
+	buttonsLayout?: {
+		groupNavButtons?: boolean;
+		groupedNavAlignment?: "left" | "center" | "right";
+		buttonOrder?: "backFirst" | "primaryFirst";
+		buttonWidth?: "hug" | "fill";
+	};
+	// NAV-GROUP-TOGGLE: legacy carrier (see buttonsLayout above).
 		groupNavButtons?: boolean;
 		// NAV-GROUPED-ALIGN: where the buttons sit when grouped (Split mode
 		// is space-between by definition; a single-button Split row sits at
@@ -6687,12 +6701,26 @@ interface BookingEngineCopyProps {
 		// keyboard tab order, and visual-vs-DOM order mismatch is an
 		// accessibility violation.
 		groupedNavAlignment?: "left" | "center" | "right";
+		// NAV-ORDER: Back-first (default, historical) or primary-first.
+		// Implemented as true DOM/render order — never CSS order or
+		// row-reverse — so visual, tab, and screen-reader order stay
+		// coherent by construction.
+		buttonOrder?: "backFirst" | "primaryFirst";
+		// NAV-WIDTH: Hug (default, historical auto width) or Fill (equal
+		// flex share of the footer row, wrapping as a backstop against
+		// overflow with long labels). No pixel math, no breakpoints.
+		buttonWidth?: "hug" | "fill";
 		// CONFIRM-ACTIONS: confirmation-state labels live in the Buttons
 		// group because they configure confirmation buttons. Defaults keep
 		// the pre-existing copy ("Done" / "Book another" / "Add to calendar").
 		doneButton?: ButtonStyleGroup;
 		bookAnotherButton?: ButtonStyleGroup;
 		addToCalendarButton?: ButtonStyleGroup;
+		// CALENDAR-DEEP-LINKS: Google/Outlook success actions wear the
+		// same accent-outline role as Add to Calendar. Text falls back
+		// to the pre-move Copy labels so customized canvases keep copy.
+		googleCalendarButton?: ButtonStyleGroup;
+		outlookCalendarButton?: ButtonStyleGroup;
 		doneLabel?: string;
 		bookAnotherLabel?: string;
 		addToCalendarLabel?: string;
@@ -6733,9 +6761,11 @@ interface BookingEngineCopyProps {
 		// W1-10-N3 fix: group label for the 12h/24h time-format toggle.
 		timeFormatLabel: string;
 		// T10-H5 fix: extra calendar-provider deep links on the success
-		// screen, alongside the .ics download.
-		googleCalendarLabel: string;
-		outlookCalendarLabel: string;
+		// screen, alongside the .ics download. Labels moved to the
+		// Buttons group (google/outlook groups); these keys stay
+		// readable as fallback so customized canvases keep copy.
+		googleCalendarLabel?: string;
+		outlookCalendarLabel?: string;
 		// W1-02-F9–F23 fix (bundle 14): confirmation/manage-link labels,
 		// notes section headers, error fallbacks and the demo-grid times.
 		confirmationNumberLabel: string;
@@ -6868,17 +6898,34 @@ interface BookingEngineConfigProps {
 		progressText?: "top" | "bottom";
 		stepCountPosition?: "top" | "bottom";
 	};
-	// Header — LEGACY CARRIER ONLY (HEADER-ALIGN-PER-STEP): the global
-	// `Header` Property Control group was removed — header alignment is a
-	// per-authored-Step setting now (`StepConfig.alignment`, Alignment row
-	// inside each Step's submenu). This interface key stays readable solely
-	// so canvases saved before the move keep their authored alignment: the
-	// stored global value becomes the fallback default for steps that never
-	// authored their own. No control writes it anymore; never re-add the
-	// group, and never read it outside the single resolution site in
-	// useBookingEngineState.
+	// Header — CONTENT group (Content Alignment + Icon Size) plus two
+	// LEGACY CARRIERS: `alignment` (pre-move global step alignment, seeds
+	// steps below) and `terminalAlignment` (pre-global terminal alignment,
+	// fallback in the global resolution). Neither has a control anymore;
+	// never re-add them, and never read them outside their single
+	// resolution sites in useBookingEngineState.
 	header?: {
 		alignment?: "left" | "center" | "right";
+		// CONTENT-ALIGN: one global content/header alignment (step
+		// title+subtitle headers + success/error terminal headers).
+		// "left" preserves the historical step look; the legacy
+		// `terminalAlignment` key below stays readable so canvases that
+		// explicitly configured it keep their choice. See AGENTS.md.
+		contentAlignment?: "left" | "center" | "right";
+		// TERMINAL-ALIGN (legacy carrier): success + error content
+		// alignment from the previous model. No control writes it
+		// anymore — `contentAlignment` above wins when set. Read only
+		// at the single resolution site in useBookingEngineState.
+		terminalAlignment?: "left" | "center" | "right";
+		// TERMINAL-ICON: terminal mark size (success circle + error
+		// mark). Unset keeps each screen's historical size (64 / 40).
+		iconSize?: number;
+	};
+	// Layout — content-width preset for the visitor-facing column
+	// (Full = today's fluid behavior, no cap; Compact = 640px centered
+	// column, fluid below the cap). Structural rhythm stays internal.
+	layout?: {
+		contentWidth?: "full" | "compact";
 	};
 	// Cal.com
 	//
@@ -7082,7 +7129,6 @@ function makeDefaultFormStep(): StepConfig {
 		subtitle:
 			"Tell us a bit about yourself so we can prepare for your booking.",
 		layout: "single-column",
-		alignment: "left",
 		fields: [
 			{
 				label: "Full Name",
@@ -7122,7 +7168,6 @@ function makeDefaultNotesFormStep(n: number): StepConfig {
 		title: `Step ${n}`,
 		subtitle: "",
 		layout: "single-column",
-		alignment: "left",
 		// T8-M4 fix: seed one starter field so a freshly-added form step never
 		// renders empty (the canvas-only emptyStepWarnings guard used to trip
 		// on every step beyond step 1). Still its own fresh array, never a
@@ -7153,7 +7198,6 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
 		title: `Step ${n}`,
 		subtitle: "",
 		layout: "single-column",
-		alignment: "left",
 		fields: [
 			{
 				label: "Field Label",
@@ -7327,10 +7371,10 @@ function filterEmptyOptions(field: {
 	};
 }
 
-// HEADER-ALIGN-PER-STEP: type guard for an authored per-step header
-// alignment. Anything the control never authored (undefined, junk from
-// older stored values) fails the guard, so the runtime never receives a
-// non-CSS text-align value. Pure.
+// CONTENT-ALIGN: type guard for a content-alignment value (global
+// control or legacy per-step carrier). Anything never authored
+// (undefined, junk from older stored values) fails the guard, so the
+// runtime never receives a non-CSS text-align value. Pure.
 function isStepAlignment(
 	value: unknown,
 ): value is "left" | "center" | "right" {
@@ -7348,7 +7392,7 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 				title: step.title || `Step ${stepIdx + 1}`,
 				subtitle: step.subtitle || "",
 				layout: step.layout || "single-column",
-				// HEADER-ALIGN-PER-STEP: `alignment` is NOT normalized here —
+				// CONTENT-ALIGN: `alignment` is NOT normalized here —
 				// the `...step` spread above carries each step's authored
 				// value verbatim (undefined stays undefined), so the render
 				// site can distinguish "never authored" (historical inherit
@@ -10669,8 +10713,12 @@ function useBookingEngineState(
 		onAnalytics,
 		advanced,
 		calendar,
-		// HEADER-ALIGN-PER-STEP: legacy carrier only (see interface comment).
+		// CONTENT group (Content Alignment + Icon Size). The retired
+		// per-step alignment carrier (`header.alignment`) still seeds
+		// steps — see the legacy seeding below.
 		header,
+		// LAYOUT: content-width preset group.
+		layout,
 	} = props;
 
 	// TRANSITION-GROUP: read the nested Transition-submenu path first; fall
@@ -10798,12 +10846,22 @@ function useBookingEngineState(
 		progressBar?.barStyle === "solid" ? "solid" : "dashed";
 
 	// Destructure copy from the grouped Buttons object (Requirement 5).
-	// NAV-GROUP-TOGGLE: `groupNavButtons` is read from the Buttons group
-	// (moved out of the top-level props). `=== true` keeps the default
-	// Split layout for old instances that never set it.
+	// BUTTONS-LAYOUT: nav-layout decisions resolve from the `buttonsLayout`
+	// subgroup first, then the pre-subgroup flat carriers (same grouping-
+	// migration contract as SYN-01: controls keep type/title/defaults,
+	// old path stays readable, one `??` resolution site). `=== true`
+	// keeps the default Split layout for old instances that never set it.
+	const layoutSrc = buttonLabels.buttonsLayout ?? {};
+	const groupNavButtons =
+		layoutSrc.groupNavButtons ?? buttonLabels.groupNavButtons;
+	const groupedNavAlignment =
+		layoutSrc.groupedNavAlignment ?? buttonLabels.groupedNavAlignment;
+	const buttonOrderValue =
+		layoutSrc.buttonOrder ?? buttonLabels.buttonOrder;
+	const buttonWidthValue =
+		layoutSrc.buttonWidth ?? buttonLabels.buttonWidth;
 	// BUTTON-GROUPS: per-button Text wins; the legacy flat label keeps
 	// pre-grouping canvases' custom copy; then the shipped default.
-	const { groupNavButtons, groupedNavAlignment } = buttonLabels;
 	const bl = buttonLabels ?? {};
 	const continueLabel = resolveButtonText(bl.continueButton?.text, bl.continueLabel, "Continue");
 	const backLabel = resolveButtonText(bl.backButton?.text, bl.backLabel, "Back");
@@ -10822,6 +10880,19 @@ function useBookingEngineState(
 		bl.addToCalendarButton?.text,
 		bl.addToCalendarLabel,
 		DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+	);
+	// CALENDAR-DEEP-LINKS: Google/Outlook labels live in their Buttons
+	// groups now; the pre-move Copy labels stay readable as fallback so
+	// customized canvases keep copy (same pattern as Retry).
+	const googleCalendarButtonLabel = resolveButtonText(
+		bl.googleCalendarButton?.text,
+		copy?.googleCalendarLabel,
+		"Add to Google Calendar",
+	);
+	const outlookCalendarButtonLabel = resolveButtonText(
+		bl.outlookCalendarButton?.text,
+		copy?.outlookCalendarLabel,
+		"Add to Outlook",
 	);
 	// ERROR-RETRY-BUTTON: Retry Text lives in the Buttons group; a
 	// pre-move Copy customization still wins over the shipped default.
@@ -11050,11 +11121,12 @@ function useBookingEngineState(
 		() => migrateLegacyCalendar(effectiveStepsConfig),
 		[effectiveStepsConfig],
 	);
-	// HEADER-ALIGN-PER-STEP: the authored global alignment (legacy `header`
-	// carrier, read ONLY here) seeds every step that never authored its own
-	// per-step Alignment. Unset → undefined → those steps render the
-	// historical inherited-left look; a step's own authored value always
-	// wins. Resolution itself happens per step at the render site.
+	// CONTENT-ALIGN legacy seeding: the authored global alignment
+	// (legacy `header` carrier, read ONLY here) seeds every step that
+	// never authored its own per-step Alignment. Unset → undefined →
+	// those steps follow the global Content Alignment at the render
+	// site; a step's own authored value always wins. Resolution itself
+	// happens per step at the render site.
 	const legacyHeaderAlignment: "left" | "center" | "right" | undefined =
 		header && isStepAlignment(header.alignment) ? header.alignment : undefined;
 	// Each step that never authored its own Alignment is seeded with that
@@ -13268,6 +13340,54 @@ function useBookingEngineState(
 			: isFirst
 				? "flex-end"
 				: "space-between";
+	// CONTENT-ALIGN: one global content/header alignment — authored
+	// Form Step title+subtitle headers + success/error terminal headers.
+	// Resolution: explicit `contentAlignment` wins, then the legacy
+	// `terminalAlignment` key (pre-global canvases that configured it keep
+	// their choice), then "left".
+	//
+	// DEFAULT TRADEOFF (documented, not silent): steps historically render
+	// left while terminals rendered centered — one global default cannot
+	// preserve both. "left" wins because it preserves the out-of-box Step 1
+	// look (the first thing every author sees) and agrees with the
+	// materialized per-step "left" values most saved steps carry; only
+	// never-configured terminals shift center → left, fixable in one place.
+	// Per-step `alignment` stays readable as a legacy carrier: a step that
+	// explicitly authored one keeps it, unset steps follow this global.
+	// Action rows (footer nav, confirmation/error actions) keep their own
+	// alignment behavior and never read this.
+	const contentAlignmentRaw =
+		header?.contentAlignment ?? header?.terminalAlignment;
+	const terminalAlignment: "left" | "center" | "right" = isStepAlignment(
+		contentAlignmentRaw,
+	)
+		? contentAlignmentRaw
+		: "left";
+	const terminalJustify: "flex-start" | "center" | "flex-end" =
+		terminalAlignment === "left"
+			? "flex-start"
+			: terminalAlignment === "right"
+				? "flex-end"
+				: "center";
+	// TERMINAL-ICON: author size for the success circle + error mark.
+	// Unset keeps each screen's historical size (64 / 40) — the screens
+	// apply their own fallback, so this stays a pure pass-through.
+	const terminalIconSize = header?.iconSize;
+	// NAV-ORDER: true DOM order — the primary group renders before Back
+	// when configured. Visual, tab, SR, and activation order stay coherent
+	// by construction (no CSS order/row-reverse anywhere in the footer).
+	// Component-level choice, identical on every step, so flow order never
+	// jumps mid-flow.
+	const primaryFirst = buttonOrderValue === "primaryFirst";
+	// NAV-WIDTH: Fill gives footer buttons an equal flex share (+ wrap
+	// backstop against long-label overflow); Hug is the historical auto
+	// width. Split/Grouped positioning semantics are untouched.
+	const navFill = buttonWidthValue === "fill";
+	// LAYOUT-CONTENT-WIDTH: Compact caps the visitor column at 640px
+	// centered, fluid below the cap; Full is today's uncapped behavior.
+	// Calendar placement (final stage) and responsive stacking are
+	// unaffected — only the column width is capped.
+	const contentCompact = layout?.contentWidth === "compact";
 	// T9-M11 fix: the animate target was an inline object literal - a new
 	// reference every render forced framer-motion to re-evaluate the
 	// animation target on each keystroke. Memoized on the only thing
@@ -13386,6 +13506,15 @@ function useBookingEngineState(
 		resolvedTransitionVariant,
 		// NAV-GROUPED-ALIGN: the resolved footer-row justification.
 		navJustify,
+		// TERMINAL-ALIGN + CUSTOM-PASS-2: success/error content alignment,
+		// footer DOM order, fill sizing, and content-width cap — resolved
+		// here, consumed in the component body below.
+		terminalAlignment,
+		terminalJustify,
+		terminalIconSize,
+		primaryFirst,
+		navFill,
+		contentCompact,
 		style,
 		styles,
 		submitError,
@@ -13409,6 +13538,8 @@ function useBookingEngineState(
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		googleCalendarButtonLabel,
+		outlookCalendarButtonLabel,
 		// ERROR-RETRY-BUTTON: resolved Retry label (Buttons group, legacy
 		// Copy fallback).
 		retryLabel,
@@ -13490,6 +13621,13 @@ export default function BookingEngine(props: BookingEngineProps) {
 		navGrouped,
 		// NAV-GROUPED-ALIGN: the resolved footer justification.
 		navJustify,
+		// TERMINAL-ALIGN + CUSTOM-PASS-2: resolved in the state hook.
+		terminalAlignment,
+		terminalJustify,
+		terminalIconSize,
+		primaryFirst,
+		navFill,
+		contentCompact,
 		progressAnimate,
 		progressBarStyle,
 		progressPct,
@@ -13520,6 +13658,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
+		googleCalendarButtonLabel,
+		outlookCalendarButtonLabel,
 		retryLabel,
 		errorCopy,
 		// W2-23-N1 fix: resolved author-tunable fallback duration, threaded
@@ -13608,6 +13748,26 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const retryButtonStyle = resolveButtonStyle(
 		blGroups.retryButton,
 		primaryButtonRole,
+		borderRadius,
+	);
+	// CALENDAR-DEEP-LINKS: Google/Outlook wear the same accent-outline
+	// role as the .ics link they sit beside — unopened groups reproduce
+	// the previous hardcoded surfaces exactly.
+	const accentOutlineRole: ButtonRoleDefaults = {
+		background: "transparent",
+		color: theme.accentColor,
+		borderWidth: 1,
+		borderColor: theme.accentColor,
+		padding: "10px 18px 10px 18px",
+	};
+	const googleCalendarButtonStyle = resolveButtonStyle(
+		blGroups.googleCalendarButton,
+		accentOutlineRole,
+		borderRadius,
+	);
+	const outlookCalendarButtonStyle = resolveButtonStyle(
+		blGroups.outlookCalendarButton,
+		accentOutlineRole,
 		borderRadius,
 	);
 	// BUTTON-INTERACTION: one hover/pressed state per footer button.
@@ -13815,6 +13975,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 					successTitle={copy.successTitle}
 					successSubtitle={copy.successSubtitle}
 					headingFont={headingFont}
+					// TERMINAL-ALIGN: content alignment (actions unaffected).
+					terminalAlignment={terminalAlignment}
+					iconSize={terminalIconSize}
 					// CONFIRM-ACTIONS: confirmation button labels come from
 					// the Buttons group now.
 					addToCalendarLabel={addToCalendarButtonLabel}
@@ -13823,8 +13986,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 					addToCalendarStyle={addToCalendarButtonStyle}
 					bookAnotherStyle={bookAnotherButtonStyle}
 					doneStyle={doneButtonStyle}
+					googleCalendarStyle={googleCalendarButtonStyle}
+					outlookCalendarStyle={outlookCalendarButtonStyle}
 					addToCalendarHover={blGroups.addToCalendarButton?.hover}
 					addToCalendarPressed={blGroups.addToCalendarButton?.pressed}
+					googleCalendarHover={blGroups.googleCalendarButton?.hover}
+					googleCalendarPressed={blGroups.googleCalendarButton?.pressed}
+					outlookCalendarHover={blGroups.outlookCalendarButton?.hover}
+					outlookCalendarPressed={blGroups.outlookCalendarButton?.pressed}
 					doneHover={blGroups.doneButton?.hover}
 					donePressed={blGroups.doneButton?.pressed}
 					bookAnotherHover={blGroups.bookAnotherButton?.hover}
@@ -13832,8 +14001,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 					animateInteractions={animateIx}
 					timeZone={timeZone}
 					icsSummaryLabel={copy.icsSummaryLabel}
-					googleCalendarLabel={copy.googleCalendarLabel}
-					outlookCalendarLabel={copy.outlookCalendarLabel}
+					googleCalendarLabel={googleCalendarButtonLabel}
+					outlookCalendarLabel={outlookCalendarButtonLabel}
 					// W1-02-F9–F16 fix: confirmation reference + manage link
 					// labels and the .ics/notes copy are author-localisable.
 					confirmationNumberLabel={copy.confirmationNumberLabel}
@@ -13869,6 +14038,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 				errorTitle={copy.errorTitle}
 				errorSubtitle={copy.errorSubtitle}
 				headingFont={headingFont}
+				// TERMINAL-ALIGN: content alignment (action row unaffected).
+				terminalAlignment={terminalAlignment}
+				iconSize={terminalIconSize}
 				retryLabel={retryLabel}
 				retryStyle={retryButtonStyle}
 				retryHover={blGroups.retryButton?.hover}
@@ -13879,6 +14051,151 @@ export default function BookingEngine(props: BookingEngineProps) {
 			</RootShell>
 		);
 	}
+	// NAV-ORDER + NAV-WIDTH: the footer row's two children as elements so
+	// render order follows the Order control (true DOM order — visual, tab,
+	// SR, and activation order stay coherent) and Fill sizing applies per
+	// element. Single definitions — never duplicated — so styling/behavior
+	// can't drift between orders. Everything referenced is body scope.
+	const backButtonEl = !isFirst ? (
+		<button
+			type="button"
+			onClick={handleBack}
+			disabled={isSubmitting}
+			{...backIx.bind}
+			style={{
+				minHeight: TOUCH_TARGET_MIN,
+				// BUTTON-GROUPS: Back group's resolved surface
+				// + Hover/Pressed deltas.
+				...applyButtonInteraction(
+					backButtonStyle,
+					blGroups.backButton?.hover,
+					blGroups.backButton?.pressed,
+					backIx,
+					animateIx,
+				),
+				cursor: isSubmitting ? "not-allowed" : "pointer",
+				opacity: isSubmitting ? 0.5 : 1,
+				// NAV-WIDTH: Fill shares the row equally.
+				...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
+			}}
+		>
+			{backLabel}
+		</button>
+	) : null;
+	const primaryGroupEl = (
+		<div
+			style={{
+				display: "flex",
+				gap: 8,
+				alignItems: "center",
+				justifyContent: "flex-end",
+				// NAV-WIDTH: Fill shares the row equally.
+				...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
+			}}
+		>
+			{/* W2-25-F11 fix: Cancel during an in-flight submission —
+                    aborts the POST (abortControllerRef) and returns to the
+                    review form instead of forcing the visitor to wait out
+                    the full FETCH_TIMEOUT_MS spinner or navigate away. */}
+			{isSubmitting ? (
+				<button
+					type="button"
+					onClick={handleCancelSubmit}
+					{...cancelIx.bind}
+					style={{
+						minHeight: TOUCH_TARGET_MIN,
+						// BUTTON-GROUPS: Cancel group's surface + states.
+						...applyButtonInteraction(
+							cancelButtonStyle,
+							blGroups.cancelButton?.hover,
+							blGroups.cancelButton?.pressed,
+							cancelIx,
+							animateIx,
+						),
+						cursor: "pointer",
+					}}
+				>
+					{cancelSubmitLabel}
+				</button>
+			) : null}
+			<button
+				// T5-L7 fix: this was type="button", so pressing Enter
+				// inside a text field never submitted the form - the
+				// onSubmit handler was dead code for every multi-field
+				// step. It's the form's submit button now.
+				// W1-04-F-7 cleanup: onClick={handleContinue} was
+				// redundant (the form's onSubmit already fires for a
+				// submit click AND Enter) — one code path now.
+				//
+				// ADVANCE-FIX: this button lives in the sticky footer
+				// nav, OUTSIDE the <form> element. A type="submit"
+				// button with no form owner does nothing when clicked,
+				// so handleContinue() (fired only via the form's
+				// onSubmit) never ran and the step never advanced. The
+				// INSTANCE-ISOLATION: must match the form's per-instance id above.
+				form={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
+				type="submit"
+				disabled={isSubmitting}
+				ref={submitButtonRef}
+				{...primaryIx.bind}
+				// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
+				// visual spinner told screen reader users nothing in
+				// progress — the button now exposes aria-busy while
+				// the POST is in flight so the update is announced.
+				aria-busy={isSubmitting ? true : undefined}
+				style={{
+					minHeight: TOUCH_TARGET_MIN,
+					// BUTTON-GROUPS: Continue/Final-Action groups'
+					// resolved surface (branch mirrors primaryLabel)
+					// + Hover/Pressed deltas.
+					...applyButtonInteraction(
+						primaryButtonStyle,
+						primaryGroup?.hover,
+						primaryGroup?.pressed,
+						primaryIx,
+						animateIx,
+					),
+					cursor: isSubmitting ? "not-allowed" : "pointer",
+					opacity: isSubmitting ? 0.7 : 1,
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 8,
+					// NAV-WIDTH: Fill takes the group's share (the group
+					// div already flexes; Cancel keeps its hug width).
+					...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
+				}}
+			>
+				{isSubmitting ? (
+					<>
+						<span
+							// W1-10-N9 fix: the spinner span is
+							// decorative; the button's aria-busy already
+							// announces progress. aria-hidden stops SRs
+							// from reading the bare rotating disc as
+							// something namable.
+							aria-hidden="true"
+							style={{
+								width: 14,
+								height: 14,
+								borderRadius: "50%",
+								// BUTTON-GROUPS: spinner ring follows
+								// the primary button's text color.
+								border: `2px solid ${primaryButtonStyle.color}`,
+								borderTopColor: "transparent",
+								display: "inline-block",
+								animation: prefersReducedMotion
+									? "none"
+									: "be-spin 0.8s linear infinite",
+							}}
+						/>
+						{DEFAULT_COPY_SUBMITTING_LABEL}
+					</>
+				) : (
+					primaryLabel
+				)}
+			</button>
+		</div>
+	);
 	return (
 		<RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
 			{/* FINAL-37 fix: WCAG 2.4.1 bypass-blocks skip link — keyboard
@@ -14010,6 +14327,25 @@ export default function BookingEngine(props: BookingEngineProps) {
 			{/* VALIDATION-REMOVED (rule 100): canvas regex verdicts lived
                 here — deleted with the custom-regex machinery. */}
 
+			{/* LAYOUT-CONTENT-WIDTH: Compact caps this visitor column
+			(progress + steps + footer) at 640px centered, fluid below the
+			cap; Full applies no styling (historical behavior). DOM order,
+			sticky footer, Calendar placement, and responsive stacking are
+			untouched — only the column width. Progress follows the column,
+			so no separate progress-width control exists. */}
+			<div
+				style={
+					contentCompact
+						? {
+								maxWidth: 640,
+								marginLeft: "auto",
+								marginRight: "auto",
+								width: "100%",
+								boxSizing: "border-box",
+							}
+						: undefined
+				}
+			>
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
 				<div style={{ marginBottom: 16 }}>
 					{progressShowTextContent && stepCountPosition === "top" ? (
@@ -14241,16 +14577,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 								ref={isActive ? stepTitleRef : null}
 								tabIndex={-1}
 								className="be-focus-target"
-								style={{
-									color: theme.textPrimaryColor,
-									// HEADER-ALIGN-PER-STEP: this Step's own
-									// alignment (legacy global carrier only
-									// seeds steps that never authored one).
-									// Untouched renders exactly the
-									// historical inherit look.
-									...(isStepAlignment(step.alignment)
-										? { textAlign: step.alignment }
-										: {}),
+							style={{
+								color: theme.textPrimaryColor,
+								// CONTENT-ALIGN: the global Content Alignment,
+								// unless this Step explicitly authored its own
+								// (legacy carrier — unset follows global).
+								...(isStepAlignment(step.alignment)
+									? { textAlign: step.alignment }
+									: { textAlign: terminalAlignment }),
 									// Per-surface Heading Font (Body control
 									// stays the base). Unset = previous look.
 									fontFamily: headingFont?.fontFamily ?? "inherit",
@@ -14282,18 +14616,17 @@ export default function BookingEngine(props: BookingEngineProps) {
 							</h2>
 							{step.subtitle ? (
 								<div
-									style={{
-										color: theme.textSecondaryColor,
-										fontSize: 14,
-										marginBottom: 16,
-										lineHeight: 1.5,
-									// HEADER-ALIGN-PER-STEP: follows this
-									// Step's title; omitted unless the
-									// Step authored an alignment.
-									...(isStepAlignment(step.alignment)
-										? { textAlign: step.alignment }
-										: {}),
-									}}
+								style={{
+									color: theme.textSecondaryColor,
+									fontSize: 14,
+									marginBottom: 16,
+									lineHeight: 1.5,
+								// CONTENT-ALIGN: follows the title — global
+								// unless this Step authored its own.
+								...(isStepAlignment(step.alignment)
+									? { textAlign: step.alignment }
+									: { textAlign: terminalAlignment }),
+								}}
 								>
 									{step.subtitle}
 								</div>
@@ -14376,8 +14709,8 @@ export default function BookingEngine(props: BookingEngineProps) {
                 `navJustify` (Buttons Alignment: Left/Center/Right) — which
                 governs the row whether one or both buttons are visible
                 (rule 126); split rows keep their definitional justification.
-                DOM order is never changed — visual order always matches
-                keyboard tab order. */}
+                Render order follows the Order control (true DOM order), so
+                visual order always matches keyboard tab order. */}
 			<div
 				style={{
 					display: "flex",
@@ -14385,6 +14718,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 					marginTop: 24,
 					alignItems: "center",
 					justifyContent: navJustify,
+					// NAV-WIDTH: wrap as a backstop so long labels or Fill
+					// sizing can never force horizontal overflow — a no-op
+					// when everything fits on one row.
+					flexWrap: "wrap",
 					position: "sticky",
 					bottom: 0,
 					zIndex: 10,
@@ -14399,143 +14736,22 @@ export default function BookingEngine(props: BookingEngineProps) {
 					paddingBottom: "env(safe-area-inset-bottom, 0px)",
 				}}
 			>
-				{!isFirst ? (
-					<button
-						type="button"
-						onClick={handleBack}
-						disabled={isSubmitting}
-						{...backIx.bind}
-						style={{
-							minHeight: TOUCH_TARGET_MIN,
-							// BUTTON-GROUPS: Back group's resolved surface
-							// + Hover/Pressed deltas.
-							...applyButtonInteraction(
-								backButtonStyle,
-								blGroups.backButton?.hover,
-								blGroups.backButton?.pressed,
-								backIx,
-								animateIx,
-							),
-							cursor: isSubmitting ? "not-allowed" : "pointer",
-							opacity: isSubmitting ? 0.5 : 1,
-						}}
-					>
-						{backLabel}
-					</button>
-				) : null}
-				{/* NAV-GROUP-TOGGLE: the primary action (plus the in-flight
-                    Cancel) live in a right-aligned group. In the default
-                    split layout the outer `space-between` pushes this group
-                    to the far right while Back stays far left; when the
-                    author opts into `groupNavButtons`, the whole row becomes
-                    `flex-end` so Back and this group sit side-by-side. */}
-				<div
-					style={{
-						display: "flex",
-						gap: 8,
-						alignItems: "center",
-						justifyContent: "flex-end",
-					}}
-				>
-					{/* W2-25-F11 fix: Cancel during an in-flight submission —
-                    aborts the POST (abortControllerRef) and returns to the
-                    review form instead of forcing the visitor to wait out
-                    the full FETCH_TIMEOUT_MS spinner or navigate away. */}
-					{isSubmitting ? (
-						<button
-							type="button"
-							onClick={handleCancelSubmit}
-							{...cancelIx.bind}
-							style={{
-								minHeight: TOUCH_TARGET_MIN,
-								// BUTTON-GROUPS: Cancel group's surface + states.
-								...applyButtonInteraction(
-									cancelButtonStyle,
-									blGroups.cancelButton?.hover,
-									blGroups.cancelButton?.pressed,
-									cancelIx,
-									animateIx,
-								),
-								cursor: "pointer",
-							}}
-						>
-							{cancelSubmitLabel}
-						</button>
-					) : null}
-					<button
-						// T5-L7 fix: this was type="button", so pressing Enter
-						// inside a text field never submitted the form - the
-						// onSubmit handler was dead code for every multi-field
-						// step. It's the form's submit button now.
-						// W1-04-F-7 cleanup: onClick={handleContinue} was
-						// redundant (the form's onSubmit already fires for a
-						// submit click AND Enter) — one code path now.
-						//
-						// ADVANCE-FIX: this button lives in the sticky footer
-						// nav, OUTSIDE the <form> element. A type="submit"
-						// button with no form owner does nothing when clicked,
-						// so handleContinue() (fired only via the form's
-						// onSubmit) never ran and the step never advanced. The
-						// INSTANCE-ISOLATION: must match the form's per-instance id above.
-						form={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
-						type="submit"
-						disabled={isSubmitting}
-						ref={submitButtonRef}
-						{...primaryIx.bind}
-						// W1-10-A10 / W2-28-F6 fix: reading "Continue" + a
-						// visual spinner told screen reader users nothing in
-						// progress — the button now exposes aria-busy while
-						// the POST is in flight so the update is announced.
-						aria-busy={isSubmitting ? true : undefined}
-						style={{
-							minHeight: TOUCH_TARGET_MIN,
-							// BUTTON-GROUPS: Continue/Final-Action groups'
-							// resolved surface (branch mirrors primaryLabel)
-							// + Hover/Pressed deltas.
-							...applyButtonInteraction(
-								primaryButtonStyle,
-								primaryGroup?.hover,
-								primaryGroup?.pressed,
-								primaryIx,
-								animateIx,
-							),
-							cursor: isSubmitting ? "not-allowed" : "pointer",
-							opacity: isSubmitting ? 0.7 : 1,
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 8,
-						}}
-					>
-						{isSubmitting ? (
-							<>
-								<span
-									// W1-10-N9 fix: the spinner span is
-									// decorative; the button's aria-busy already
-									// announces progress. aria-hidden stops SRs
-									// from reading the bare rotating disc as
-									// something namable.
-									aria-hidden="true"
-									style={{
-										width: 14,
-										height: 14,
-										borderRadius: "50%",
-										// BUTTON-GROUPS: spinner ring follows
-										// the primary button's text color.
-										border: `2px solid ${primaryButtonStyle.color}`,
-										borderTopColor: "transparent",
-										display: "inline-block",
-										animation: prefersReducedMotion
-											? "none"
-											: "be-spin 0.8s linear infinite",
-									}}
-								/>
-								{DEFAULT_COPY_SUBMITTING_LABEL}
-							</>
-						) : (
-							primaryLabel
-						)}
-					</button>
-				</div>
+				{/* NAV-ORDER: render order follows the Order control — true
+				DOM order, so visual/tab/SR/activation order stay coherent.
+				Back-first is the historical default. Grouping/justification
+				(navJustify) and sizing (Fill) apply the same either way. */}
+				{primaryFirst ? (
+					<>
+						{primaryGroupEl}
+						{backButtonEl}
+					</>
+				) : (
+					<>
+						{backButtonEl}
+						{primaryGroupEl}
+					</>
+				)}
+			</div>
 			</div>
 
 			{/* FINAL-37 fix: skip-link landing target (programmatic focus). */}
@@ -15750,6 +15966,10 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		background: fs?.backgroundColor ?? theme.surfaceColor,
 		color: fs?.textColor ?? theme.textPrimaryColor,
 		fontFamily: fs?.font?.fontFamily ?? "inherit",
+		// INPUT-TEXT-ALIGN: applied only when the author sets it — unset
+		// inherits exactly the historical look (never force "left", which
+		// would override RTL/page inheritance).
+		...(fs?.textAlign ? { textAlign: fs.textAlign } : {}),
 		// W1-19-F-02 fix: was a flat 14 (see inputFontSize above).
 		fontSize: fsInputFontSize,
 		...(fs?.font?.fontWeight != null ? { fontWeight: fs.font.fontWeight } : {}),
@@ -16201,17 +16421,30 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	successSubtitle: string;
 	// Per-surface Heading Font (shared with step + error titles).
 	headingFont?: FramerFont;
+	// TERMINAL-ALIGN: success content alignment (icon row, title,
+	// subtitle). Engine-resolved global Content Alignment. Action
+	// rows keep their own alignment and never read this.
+	terminalAlignment: "left" | "center" | "right";
+	// TERMINAL-ICON: author mark size (unset = 64 historical).
+	iconSize?: number;
 	// CONFIRM-ACTIONS: labels come from the Buttons group now.
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
 	doneLabel: string;
-	// BUTTON-GROUPS: resolved visual surfaces for the three styled
-	// confirmation actions (Google/Outlook/manage links stay theme-driven).
+	// BUTTON-GROUPS: resolved visual surfaces for the confirmation
+	// actions (manage link stays theme-driven — it is a link, not a
+	// button). Google/Outlook share the accent-outline role.
 	addToCalendarStyle: React.CSSProperties;
 	bookAnotherStyle: React.CSSProperties;
 	doneStyle: React.CSSProperties;
+	googleCalendarStyle: React.CSSProperties;
+	outlookCalendarStyle: React.CSSProperties;
 	addToCalendarHover?: ButtonInteractionState;
 	addToCalendarPressed?: ButtonInteractionState;
+	googleCalendarHover?: ButtonInteractionState;
+	googleCalendarPressed?: ButtonInteractionState;
+	outlookCalendarHover?: ButtonInteractionState;
+	outlookCalendarPressed?: ButtonInteractionState;
 	doneHover?: ButtonInteractionState;
 	donePressed?: ButtonInteractionState;
 	bookAnotherHover?: ButtonInteractionState;
@@ -16260,16 +16493,24 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		successTitle,
 		successSubtitle,
 		headingFont,
+		terminalAlignment,
+		iconSize,
 		addToCalendarLabel,
 		bookAnotherLabel,
 		doneLabel,
 		addToCalendarStyle,
 		bookAnotherStyle,
 		doneStyle,
+		googleCalendarStyle,
+		outlookCalendarStyle,
 		// BUTTON-INTERACTION: per-button hover/pressed configs + whether
 		// transitions may animate (engine's reduced-motion verdict).
 		addToCalendarHover,
 		addToCalendarPressed,
+		googleCalendarHover,
+		googleCalendarPressed,
+		outlookCalendarHover,
+		outlookCalendarPressed,
 		doneHover,
 		donePressed,
 		bookAnotherHover,
@@ -16300,6 +16541,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	}, []);
 	// BUTTON-INTERACTION: one hover/pressed state per confirmation action.
 	const icsIx = useButtonInteraction();
+	const googleIx = useButtonInteraction();
+	const outlookIx = useButtonInteraction();
 	const doneIx = useButtonInteraction();
 	const bookAnotherIx = useButtonInteraction();
 
@@ -16526,7 +16769,13 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			<div
 				style={{
 					display: "flex",
-					justifyContent: "center",
+					// TERMINAL-ALIGN: icon row follows content alignment.
+					justifyContent:
+						terminalAlignment === "left"
+							? "flex-start"
+							: terminalAlignment === "right"
+								? "flex-end"
+								: "center",
 					marginBottom: 16,
 				}}
 			>
@@ -16545,8 +16794,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				>
 					<div
 						style={{
-							width: CHECKMARK_ICON_SIZE,
-							height: CHECKMARK_ICON_SIZE,
+							// TERMINAL-ICON: author size, 64 historical.
+							// The glyph scales at half the mark size.
+							width: iconSize ?? CHECKMARK_ICON_SIZE,
+							height: iconSize ?? CHECKMARK_ICON_SIZE,
 							borderRadius: "50%",
 							background: successColor,
 							// Fixed foreground for the checkmark stroke. A
@@ -16561,8 +16812,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						aria-hidden="true"
 					>
 						<svg
-							width="32"
-							height="32"
+							width={Math.round((iconSize ?? CHECKMARK_ICON_SIZE) / 2)}
+							height={Math.round((iconSize ?? CHECKMARK_ICON_SIZE) / 2)}
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
@@ -16613,23 +16864,24 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					...(headingFont?.letterSpacing != null
 						? { letterSpacing: headingFont.letterSpacing }
 						: {}),
-					lineHeight: headingFont?.lineHeight ?? 1.2,
-					color: textPrimaryColor,
-					textAlign: "center",
-					marginBottom: 4,
-					marginTop: 0,
+				lineHeight: headingFont?.lineHeight ?? 1.2,
+				color: textPrimaryColor,
+				// TERMINAL-ALIGN: Center = historical design.
+				textAlign: terminalAlignment,
+				marginBottom: 4,
+				marginTop: 0,
 					// FINAL-43 fix: outline:none removed (see .be-focus-target).
 				}}
 			>
 				{replaceCopyTokens(successTitle, steps, values, timeZone)}
 			</h2>
 
-			{/* Subtitle — smaller, centered, under the title */}
+			{/* Subtitle — smaller, under the title (alignment follows) */}
 			<div
 				style={{
 					fontSize: 14,
 					color: textSecondaryColor,
-					textAlign: "center",
+					textAlign: terminalAlignment,
 					marginBottom: 24,
 					lineHeight: 1.5,
 				}}
@@ -16731,18 +16983,22 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						href={googleCalUri}
 						target="_blank"
 						rel="noopener noreferrer"
+						{...googleIx.bind}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${accentColor}`,
-							background: "transparent",
-							color: accentColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
+							// BUTTON-GROUPS: Google group surface +
+							// Hover/Pressed deltas (accent-outline role
+							// default reproduces the previous hardcoded
+							// surface exactly).
+							...applyButtonInteraction(
+								googleCalendarStyle,
+								googleCalendarHover,
+								googleCalendarPressed,
+								googleIx,
+								animateInteractions,
+							),
 							textDecoration: "none",
 							cursor: "pointer",
 						}}
@@ -16755,18 +17011,20 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						href={outlookCalUri}
 						target="_blank"
 						rel="noopener noreferrer"
+						{...outlookIx.bind}
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 18px",
-							borderRadius: borderRadius,
-							border: `1px solid ${accentColor}`,
-							background: "transparent",
-							color: accentColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
+							// BUTTON-GROUPS: Outlook group surface +
+							// Hover/Pressed deltas (same role default).
+							...applyButtonInteraction(
+								outlookCalendarStyle,
+								outlookCalendarHover,
+								outlookCalendarPressed,
+								outlookIx,
+								animateInteractions,
+							),
 							textDecoration: "none",
 							cursor: "pointer",
 						}}
@@ -16894,6 +17152,12 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	errorSubtitle: string;
 	// Per-surface Heading Font (shared with step + success titles).
 	headingFont?: FramerFont;
+	// TERMINAL-ALIGN: error content alignment (icon, title, subtitle,
+	// message). Engine-resolved global Content Alignment. The
+	// Retry/support action row keeps its own alignment.
+	terminalAlignment: "left" | "center" | "right";
+	// TERMINAL-ICON: author mark size (unset = 40 historical).
+	iconSize?: number;
 	retryLabel: string;
 	// ERROR-RETRY-BUTTON: resolved surface + Hover/Pressed configs from
 	// the Buttons Retry group (plus the engine's reduced-motion verdict).
@@ -16919,6 +17183,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		errorTitle,
 		errorSubtitle,
 		headingFont,
+		terminalAlignment,
+		iconSize,
 		retryLabel,
 		retryStyle,
 		retryHover,
@@ -16953,9 +17219,17 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 				style={{
 					display: "flex",
 					flexDirection: "column",
-					alignItems: "center",
+					// TERMINAL-ALIGN: column follows content alignment
+					// (Center = historical design). Action row below keeps
+					// its own alignment.
+					alignItems:
+						terminalAlignment === "left"
+							? "flex-start"
+							: terminalAlignment === "right"
+								? "flex-end"
+								: "center",
 					justifyContent: "center",
-					textAlign: "center",
+					textAlign: terminalAlignment,
 					minHeight: 320,
 					padding: "24px 16px",
 					boxSizing: "border-box",
@@ -16965,7 +17239,12 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 				style={{
 					display: "flex",
 					flexDirection: "column",
-					alignItems: "center",
+					alignItems:
+						terminalAlignment === "left"
+							? "flex-start"
+							: terminalAlignment === "right"
+								? "flex-end"
+								: "center",
 					gap: 6,
 					marginBottom: 16,
 					maxWidth: 520,
@@ -16973,8 +17252,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 			>
 				<div
 					style={{
-						width: ERROR_ICON_SIZE,
-						height: ERROR_ICON_SIZE,
+						// TERMINAL-ICON: author size, 40 historical. The
+						// glyph scales at 60% of the mark size.
+						width: iconSize ?? ERROR_ICON_SIZE,
+						height: iconSize ?? ERROR_ICON_SIZE,
 						borderRadius: "50%",
 						background: withAlpha(errorColor, 0.12),
 						// Soft halo ring for a composed, premium mark.
@@ -16983,7 +17264,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
-						fontSize: 24,
+						fontSize: Math.round((iconSize ?? ERROR_ICON_SIZE) * 0.6),
 						fontWeight: 700,
 						flexShrink: 0,
 						marginBottom: 10,
@@ -17180,10 +17461,10 @@ type ProgressBarControlProps = Pick<
 	BookingEngineProps["progressBar"],
 	"showText" | "showTextContent" | "barVisible" | "visible"
 >;
-type ButtonLabelsControlProps = Pick<
-	BookingEngineProps["buttonLabels"],
-	"groupNavButtons"
->;
+type ButtonsLayoutControlProps = {
+	groupNavButtons?: boolean;
+	buttonWidth?: "hug" | "fill";
+};
 
 // =============================================================================
 // FIELD-STYLES control factories (AGENTS.md rule 83)
@@ -17391,6 +17672,19 @@ function makeInputFieldStylesControls() {
 			fontSize: "14px",
 			variant: "Regular",
 		}),
+		// INPUT-TEXT-ALIGN (rule 128): input text alignment — Left /
+		// Center / Right, input set only (text/email/phone/textarea share
+		// inputBaseStyle; select's trigger spreads it too). Deliberately
+		// NO defaultValue: unset stays undefined so untouched fields
+		// inherit byte-identically (RTL/page inheritance preserved);
+		// the runtime spreads only when set.
+		textAlign: {
+			type: ControlType.Enum,
+			title: "Text Align",
+			options: ["left", "center", "right"],
+			optionTitles: ["Left", "Center", "Right"],
+			displaySegmentedControl: true,
+		},
 		labelColor: fieldStylesColorControl("Label Color"),
 		textColor: fieldStylesColorControl("Text Color"),
 		placeholderColor: fieldStylesColorControl("Placeholder Color"),
@@ -18143,18 +18437,11 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
 				defaultValue: defaults.subtitle || "",
 				displayTextArea: true,
 			},
-			// HEADER-ALIGN-PER-STEP: this Step's own header (Title +
-			// Subtitle) alignment. Each Step resolves independently —
-			// changing one Step never affects another. Unset canvases
-			// keep the historical left look via the "left" default.
-			alignment: {
-				type: ControlType.Enum,
-				title: "Alignment",
-				options: ["left", "center", "right"],
-				optionTitles: ["Left", "Center", "Right"],
-				defaultValue: defaults.alignment || "left",
-				displaySegmentedControl: true,
-			},
+			// CONTENT-ALIGN: no per-step Alignment row — one global
+			// Content Alignment covers step headers (see Content group).
+			// `StepConfig.alignment` stays readable as a legacy carrier:
+			// steps that explicitly authored one keep it, unset steps
+			// follow the global. Never re-add this row.
 			layout: {
 				type: ControlType.Enum,
 				title: "Layout",
@@ -18254,10 +18541,70 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
-	// HEADER-ALIGN-PER-STEP: the former top-level `header` group is gone —
-	// header alignment is a per-authored-Step setting (Alignment row inside
-	// each Step's submenu, see makeStepControl). The system Calendar is a
-	// separate standalone stage and deliberately has no alignment control.
+	// ----- Layout (content-width preset) -----
+	// LAYOUT-CONTENT-WIDTH: Full (default, today's fluid behavior, no cap)
+	// or Compact (640px centered column, fluid below the cap). Covers the
+	// visitor column coherently (progress/steps/footer); Calendar
+	// placement and responsive stacking are unaffected. Structural rhythm
+	// (gaps, sticky, grid math) stays internal — no raw spacing rows.
+	layout: {
+		type: ControlType.Object,
+		title: "Layout",
+		icon: "object",
+		buttonTitle: "Layout",
+		controls: {
+			contentWidth: {
+				type: ControlType.Enum,
+				title: "Content Width",
+				options: ["full", "compact"],
+				optionTitles: ["Full", "Compact"],
+				defaultValue: "full",
+				displaySegmentedControl: true,
+			},
+		},
+	},
+
+	// CONTENT-ALIGN: one global content/header alignment — authored
+	// Form Step title+subtitle headers + success/error terminal headers.
+	// The system Calendar is a separate standalone stage and deliberately
+	// has no alignment control. Per-step `alignment` survives only as a
+	// legacy carrier (explicit values win; unset follows this global).
+
+	// ----- Content (global content alignment + terminal mark size) -----
+	// CONTENT-ALIGN (rule 125): this group holds the single global
+	// Content Alignment — step headers and terminal headers share it, so
+	// authors configure alignment once, not per screen. Confirmation/error
+	// action rows are out of scope and unaffected. The `header` prop path
+	// is unchanged (saved values keep working); only the titles/scope are
+	// new. Legacy `terminalAlignment` values stay readable as fallback.
+	header: {
+		type: ControlType.Object,
+		title: "Content",
+		icon: "object",
+		buttonTitle: "Content",
+		controls: {
+			contentAlignment: {
+				type: ControlType.Enum,
+				title: "Content Alignment",
+				options: ["left", "center", "right"],
+				optionTitles: ["Left", "Center", "Right"],
+				defaultValue: "left",
+				displaySegmentedControl: true,
+			},
+			// TERMINAL-ICON: success-circle + error-mark size. No
+			// defaultValue — unset keeps each screen's historical size
+			// (64 success / 40 error), so untouched canvases are
+			// byte-identical.
+			iconSize: {
+				type: ControlType.Number,
+				title: "Icon Size",
+				min: 24,
+				max: 96,
+				step: 1,
+				unit: "px",
+			},
+		},
+	},
 
 	// ----- Flow copy (Requirement 5: grouped, like Styles/Font/Copy) -----
 	buttonLabels: {
@@ -18266,11 +18613,90 @@ addPropertyControls(BookingEngine, {
 		icon: "object",
 		buttonTitle: "Buttons",
 		controls: {
+			// BUTTONS-LAYOUT: nav-layout decisions grouped together at the
+			// top, ahead of the actionable buttons. Layout rows read this
+			// subgroup's value (hidden() receives the subgroup object).
+			// The pre-subgroup flat keys stay readable as legacy carriers
+			// (see the buttonLabels interface) — no control writes them.
+			buttonsLayout: {
+				type: ControlType.Object,
+				title: "Buttons Layout",
+				buttonTitle: "Buttons Layout",
+				icon: "object",
+				controls: {
+					// NAV-GROUP-TOGGLE: the grouping control belongs to the
+					// navigation buttons, so it lives inside the Buttons
+					// group. Default Split (Back far left, primary action
+					// far right); opt-in Grouped places them side-by-side.
+					// Hidden while Width = Fill: filling buttons make the
+					// Grouped/Split choice meaningless (both buttons take
+					// equal shares either way). The saved value is
+					// preserved, so returning to Hug restores the choice;
+					// while Fill the runtime is deterministic (fill shares,
+					// Split/Grouped positioning has no visual effect).
+					groupNavButtons: {
+						type: ControlType.Boolean,
+						title: "Layout",
+						defaultValue: false,
+						enabledTitle: "Grouped",
+						disabledTitle: "Split",
+						hidden: (p: ButtonsLayoutControlProps) =>
+							p?.buttonWidth === "fill",
+					},
+					// NAV-GROUPED-ALIGN: where the buttons sit when grouped.
+					// Only meaningful in Grouped mode, so it hides in Split
+					// mode (native `hidden`, same sibling pattern as the
+					// Progress group). Right preserves the historical
+					// grouped look; Left/Center are opt-in and apply to the
+					// row whether one or both buttons are visible (rule
+					// 126). Never reorders Back past the primary action —
+					// DOM order is the tab order. Titled "Buttons
+					// Alignment" — the row is the navigation buttons'
+					// alignment (label-only rename; behavior/defaults
+					// unchanged).
+					groupedNavAlignment: {
+						type: ControlType.Enum,
+						title: "Buttons Alignment",
+						options: ["left", "center", "right"],
+						optionTitles: ["Left", "Center", "Right"],
+						defaultValue: "right",
+						displaySegmentedControl: true,
+						hidden: (p: ButtonsLayoutControlProps) =>
+							p?.groupNavButtons !== true,
+					},
+					// NAV-ORDER: Back-first (default, historical) or
+					// primary-first. True DOM order — visual, tab, SR, and
+					// activation order stay coherent by construction. Never
+					// CSS order/row-reverse.
+					buttonOrder: {
+						type: ControlType.Enum,
+						title: "Order",
+						options: ["backFirst", "primaryFirst"],
+						optionTitles: ["Back First", "Primary First"],
+						defaultValue: "backFirst",
+						displaySegmentedControl: true,
+					},
+					// NAV-WIDTH: Hug (default, historical auto width) or
+					// Fill (equal flex share of the footer row, wrapping as
+					// a backstop). Split/Grouped positioning semantics are
+					// untouched.
+					buttonWidth: {
+						type: ControlType.Enum,
+						title: "Width",
+						options: ["hug", "fill"],
+						optionTitles: ["Hug", "Fill"],
+						defaultValue: "hug",
+						displaySegmentedControl: true,
+					},
+				},
+			},
 			// BUTTON-GROUPS: one group per button — Text first (this ends
 			// the old "Continue/Continue" confusion: the row is titled
 			// "Text" and holds "Continue"), then the full style set with
 			// the button's own effective defaults. Every group is
-			// optional: unopened renders exactly as before.
+			// optional: unopened renders exactly as before. Ordered by
+			// author importance/frequency (panel order only — visitor
+			// button order stays owned by the Order control).
 			continueButton: {
 				type: ControlType.Object,
 				title: "Continue",
@@ -18279,19 +18705,6 @@ addPropertyControls(BookingEngine, {
 				optional: true,
 				controls: makeButtonGroupControls({
 					text: "Continue",
-					padding: "10px 22px 10px 22px",
-					borderWidth: 0,
-					borderColor: FIELD_STYLES_BORDER_COLOR,
-				}),
-			},
-			finalActionButton: {
-				type: ControlType.Object,
-				title: "Final Action",
-				buttonTitle: "Final Action",
-				icon: "object",
-				optional: true,
-				controls: makeButtonGroupControls({
-					text: "Book Now",
 					padding: "10px 22px 10px 22px",
 					borderWidth: 0,
 					borderColor: FIELD_STYLES_BORDER_COLOR,
@@ -18307,6 +18720,19 @@ addPropertyControls(BookingEngine, {
 					text: "Back",
 					padding: "10px 18px 10px 18px",
 					borderWidth: 1,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
+			},
+			finalActionButton: {
+				type: ControlType.Object,
+				title: "Final Action",
+				buttonTitle: "Final Action",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: "Book Now",
+					padding: "10px 22px 10px 22px",
+					borderWidth: 0,
 					borderColor: FIELD_STYLES_BORDER_COLOR,
 				}),
 			},
@@ -18326,36 +18752,10 @@ addPropertyControls(BookingEngine, {
 					borderColor: FIELD_STYLES_BORDER_COLOR,
 				}),
 			},
-			// NAV-GROUP-TOGGLE: the grouping control belongs to the
-			// navigation buttons, so it lives inside the Buttons group.
-			// Default Split (Back far left, primary action far right);
-			// opt-in Grouped places them side-by-side (AGENTS.md hard rule).
-			groupNavButtons: {
-				type: ControlType.Boolean,
-				title: "Layout",
-				defaultValue: false,
-				enabledTitle: "Grouped",
-				disabledTitle: "Split",
-			},
-			// NAV-GROUPED-ALIGN: where the buttons sit when grouped. Only
-			// meaningful in Grouped mode, so it hides in Split mode (native
-			// `hidden`, same sibling pattern as the Progress group). Right
-			// preserves the historical grouped look; Left/Center are opt-in
-			// and apply to the row whether one or both buttons are visible
-			// (rule 126). Never reorders Back past the primary action — DOM
-			// order is the tab order. BUTTONS-ALIGNMENT-RENAME: titled
-			// "Buttons Alignment" — the row is the navigation buttons'
-			// alignment (label-only rename; behavior/defaults unchanged).
-			groupedNavAlignment: {
-				type: ControlType.Enum,
-				title: "Buttons Alignment",
-				options: ["left", "center", "right"],
-				optionTitles: ["Left", "Center", "Right"],
-				defaultValue: "right",
-				displaySegmentedControl: true,
-				hidden: (p: ButtonLabelsControlProps) =>
-					p?.groupNavButtons !== true,
-			},
+			// BUTTONS-LAYOUT: Layout / Buttons Alignment / Order / Width
+			// live in the Buttons Layout subgroup above. The pre-subgroup
+			// flat keys stay readable as legacy carriers (see the
+			// buttonLabels interface) — no controls here anymore.
 			// CONFIRM-ACTIONS: confirmation-state buttons. Same group
 			// as every other button — no standalone group.
 			doneButton: {
@@ -18397,6 +18797,35 @@ addPropertyControls(BookingEngine, {
 				// Baked Accent default (#0066BB, same as the Accent
 				// control default) — the live Accent token applies
 				// while untouched; see the factory comment.
+				borderColor: "#0066BB",
+			}),
+		},
+		// CALENDAR-DEEP-LINKS: Google/Outlook success actions wear the
+		// same accent-outline role as Add to Calendar. Text falls back
+		// to the pre-move Copy labels so customized canvases keep copy.
+		googleCalendarButton: {
+			type: ControlType.Object,
+			title: "Google Calendar",
+			buttonTitle: "Google Calendar",
+			icon: "object",
+			optional: true,
+			controls: makeButtonGroupControls({
+				text: "Add to Google Calendar",
+				padding: "10px 18px 10px 18px",
+				borderWidth: 1,
+				borderColor: "#0066BB",
+			}),
+		},
+		outlookCalendarButton: {
+			type: ControlType.Object,
+			title: "Outlook",
+			buttonTitle: "Outlook",
+			icon: "object",
+			optional: true,
+			controls: makeButtonGroupControls({
+				text: "Add to Outlook",
+				padding: "10px 18px 10px 18px",
+				borderWidth: 1,
 				borderColor: "#0066BB",
 			}),
 		},
@@ -18695,17 +19124,10 @@ addPropertyControls(BookingEngine, {
 		// internal strings (DEFAULT_COPY_*/slotsFallbackError) — the
 		// Availability Error control duplicated slotsFallbackError
 		// byte-for-byte, so it was removed, not merged.
-			// T10-H5 fix: deep-link button labels on the success screen.
-			googleCalendarLabel: {
-				type: ControlType.String,
-				title: "Google Calendar Button",
-				defaultValue: "Add to Google Calendar",
-			},
-			outlookCalendarLabel: {
-				type: ControlType.String,
-				title: "Outlook Button",
-				defaultValue: "Add to Outlook",
-			},
+			// T10-H5 fix: deep-link button labels moved to the Buttons
+			// group (Google Calendar / Outlook groups) — the Copy keys
+			// stay readable as fallback so customized canvases keep copy.
+			// No controls expose them anymore.
 			// DEAD CONTROL REMOVAL (rules 4/5/7): privacyNotice,
 			// requiredFieldsHint, savedAnswersLabel,
 			// clearSavedAnswersLabel, saveFailedMessage,
