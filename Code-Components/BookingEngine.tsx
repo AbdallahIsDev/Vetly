@@ -29,6 +29,11 @@ import {
 	type Variants,
 } from "framer-motion";
 import * as React from "react";
+// BE-003 (SELECT-MENU-STYLED): the select dropdown menu renders through a
+// document.body portal so it escapes the form's overflow:hidden step-clipping
+// container. react-dom is one of Framer's allowed code-component imports
+// (SKILL.md platform constraints); createPortal is the only API used.
+import * as ReactDOM from "react-dom";
 
 // FINAL-64 fix: one typed declaration replaces the repeated
 // `as unknown as { __BE_STEP_DEBUG__ ... }` casts at every diagnostic
@@ -474,7 +479,8 @@ const DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL = "Confirmation #";
 const DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL = "Reschedule or cancel";
 const DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL = "Pick a date to see times";
 const DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL = "No available times";
-const DEFAULT_COPY_SELECT_OPTION_LABEL = "Choose an option…";
+// BE-002: DEFAULT_COPY_SELECT_OPTION_LABEL removed with the placeholder
+// pseudo-option — a select with options always shows a real option now.
 const DEFAULT_COPY_STEP_PROGRESS_TEMPLATE = "{pct}% complete";
 const DEFAULT_COPY_UNKNOWN_ERROR_LABEL = "Unknown error";
 const DEFAULT_COPY_SUBMIT_ERROR_FALLBACK =
@@ -1452,6 +1458,24 @@ if (typeof window !== "undefined") {
 // data preservation. When omitted, behavior is identical to the original
 // (uncontrolled, seeded by `defaultValue`).
 
+// BE-005 (OPTION-IMAGES-NATIVE): the shape Framer's ResponsiveImage picker
+// stores per Option Images entry. Legacy canvases saved before the picker
+// stored plain URL strings — the runtime accepts BOTH (string | OptionImageSource),
+// so existing link values keep rendering without migration.
+interface OptionImageSource {
+	src?: string;
+	srcSet?: string;
+	alt?: string;
+}
+
+// Resolves any stored Option Images entry to a concrete <img> src. Objects
+// without a src (author opened the picker but picked nothing) and empty
+// strings render no image, exactly like an unset entry.
+function optionImageSrc(image: string | OptionImageSource | undefined): string | undefined {
+	if (typeof image === "string") return image || undefined;
+	return image?.src || undefined;
+}
+
 interface ChoiceOption {
 	label: string;
 	// W1-08-F-08-06 fix: a distinct value lets authors disambiguate
@@ -1463,7 +1487,9 @@ interface ChoiceOption {
 	// T10-L4 fix: cards/radio options can carry an image and a description
 	// (parallel per-field arrays in the panel, see optionImages/
 	// optionDescriptions on FieldConfig).
-	image?: string;
+	// BE-005: `image` is a string (legacy link) OR the native picker's
+	// { src, srcSet?, alt? } object — the render site resolves both.
+	image?: string | OptionImageSource;
 	description?: string;
 	// FINAL-50 fix: per-option disabled support (runtime + code-override
 	// surface; the fixed panel schema doesn't author it). Disabled options
@@ -2163,10 +2189,23 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 						) : null}
 					</span>
 				) : null}
-				{showMedia && option.image ? (
+				{showMedia && option.image && optionImageSrc(option.image) ? (
 					<img
-						src={option.image}
-						alt=""
+						src={optionImageSrc(option.image)}
+						// BE-005: native picker entries wire srcSet + alt
+						// through; legacy link strings render the URL as
+						// before. The img stays aria-hidden either way — the
+						// option's LABEL is the accessible name (one clear
+						// name per control), the alt rides along as the
+						// attribute.
+						srcSet={
+							typeof option.image === "object" ? option.image.srcSet : undefined
+						}
+						alt={
+							typeof option.image === "object" && option.image.alt
+								? option.image.alt
+								: ""
+						}
 						aria-hidden="true"
 						// FINAL-69 fix: browser-native off-thread loading.
 						loading="lazy"
@@ -2667,15 +2706,15 @@ const CalendarCell = React.memo(function CalendarCell({
 					// another date must never leave two highlighted cells.
 					background: isSelected ? accentColor : isUnavailable ? "transparent" : subtleFill,
 					color: isSelected ? selectedAccentText : isUnavailable ? mutedSoftText : textColor,
-				cursor: isUnavailable ? "default" : "pointer",
-				// TILE-FONT: family/size/line-height from the Calendar
-				// Styles set; unset renders exactly the native look
-				// (inherit family, 14px, inherit line-height). Weight is
-				// intentionally fixed at 500 in every state (rule 55).
-				fontFamily: tileFont?.fontFamily ?? "inherit",
-				fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
-				...(tileFont?.lineHeight != null ? { lineHeight: tileFont.lineHeight } : {}),
-				// W1-18-F1 fix: gated on prefers-reduced-motion.
+					cursor: isUnavailable ? "default" : "pointer",
+					// TILE-FONT: family/size/line-height from the Calendar
+					// Styles set; unset renders exactly the native look
+					// (inherit family, 14px, inherit line-height). Weight is
+					// intentionally fixed at 500 in every state (rule 55).
+					fontFamily: tileFont?.fontFamily ?? "inherit",
+					fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
+					...(tileFont?.lineHeight != null ? { lineHeight: tileFont.lineHeight } : {}),
+					// W1-18-F1 fix: gated on prefers-reduced-motion.
 					transition: reducedMotion
 						? "none"
 						: "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
@@ -2942,124 +2981,124 @@ const CalendarGrid = React.memo(function CalendarGrid({
 			);
 		}
 	} else {
-	for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
-		rows.push(
-			/* biome-ignore lint/a11y/useFocusableInteractive: row is a structural
-	       grouping only (display: contents) — focus lives on the cells
-	       via the roving-tabindex contract; making the row tabbable would
-	       add a dead stop. */
-			// biome-ignore lint/a11y/useSemanticElements: see CSS-grid calendar note above.
-			<div role="row" key={`row-${r}`} style={{ display: "contents" }}>
-				{cells.slice(r * 7, r * 7 + 7).map((date, cIdx) => {
-					const globalIdx = r * 7 + cIdx;
-					const dateKey = dateKeyOf(date);
-					const isInMonth = date.getMonth() === visibleMonth.getMonth();
-					const isPast = startOfDay(date).getTime() < today.getTime();
-					// W2-54 fix: adjacency is no longer a blanket
-					// unavailability. Next/previous-month days inside the
-					// visible grid behave like real dates — selectable when
-					// availability exists (the slots fetch already covers the
-					// month edges), disabled otherwise. `isInMonth` now only
-					// drives the month-abbreviation indicator.
-					// CAL-ADJ-SOURCE: `hasAvailability` is the SAME normalized
-					// availability source used by the in-month view (the
-					// parent's month-wide Cal.com slots, fetched with ±15-day
-					// edge widening) — a previewed adjacent date shows exactly
-					// the state it will have after navigating into its month.
-					// Unknown/not-yet-fetched dates are unavailable, never
-					// "available because rendered".
-					const isUnavailable = isPast || !hasAvailability(date);
-					const isSelected = isSameDay(selectedDate, date);
-					const isToday = isSameDay(today, date);
-					// W2-55 fix: LEADING cells from the previous month that
-					// are past or have no availability render as EMPTY
-					// gridcells — matching Cal.com, where irrelevant leading
-					// days are blank while trailing next-month days continue
-					// into the grid. Alignment (7 columns) is preserved by
-					// keeping each placeholder in its track.
-					const isEmptyLeadingCell =
-						!isInMonth && date.getTime() < visibleMonth.getTime() && (isPast || !hasAvailability(date));
-					if (isEmptyLeadingCell) {
-					return (
-						// A11Y: blank placeholders carry no state — the old
-						// aria-disabled="true" announced meaningless noise.
-						<div
-							key={`empty-${dateKey}`}
-							role="gridcell"
-							aria-hidden="true"
-							style={{
-								minHeight: TOUCH_TARGET_MIN,
-								minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
-							}}
-						/>
-					);
-					}
-					// CAL-ADJ-INDICATOR: one shared helper drives BOTH the
-					// previous-month and next-month abbreviations — only the
-					// first rendered date of each adjacent month carries one
-					// (empty leading placeholders are skipped over).
-					const adjacentMonthLabel = !isInMonth
-						? getAdjacentMonthAbbreviation(
-							cells,
-							globalIdx,
-							(candidate) =>
-								candidate.getTime() < visibleMonth.getTime() &&
-								(startOfDay(candidate).getTime() < today.getTime() ||
-									!hasAvailability(candidate)),
-						)
-						: null;
-					// ROVING-TABINDEX: exactly one selectable cell per grid
-					// is the tab stop; unavailable cells are never active.
-					const isActive =
-						activeDateKey !== null &&
-						dateKey === activeDateKey &&
-						!isUnavailable;
-					const isRingHover =
-						hoveredDateKey === dateKey &&
-						!isUnavailable &&
-						!isSelected;
-					return (
-						<CalendarCell
-							key={dateKey}
-							date={date}
-							dateKey={dateKey}
-							isUnavailable={isUnavailable}
-							isSelected={isSelected}
-							isInMonth={isInMonth}
-							adjacentMonthLabel={adjacentMonthLabel}
-							isToday={isToday}
-							isRingHover={isRingHover}
-							isActive={isActive}
-							firstDayOfWeek={firstDayOfWeek}
-							locale={locale}
-							// W1-19-N1 fix: pass the narrow flag through so
-							// the cell can drop its 44px minWidth on
-							// shrinkable tracks (no overlap on ≤329px).
-							isNarrow={isNarrow}
-							// W1-07-F4 fix: label cells in the visitor's tz.
-							timeZone={timeZone}
-							accentColor={accentColor}
-							borderColor={borderColor}
-							subtleFill={subtleFill}
-							textColor={textColor}
-						selectedAccentText={selectedAccentText}
-						mutedSoftText={mutedSoftText}
-						// TILE-FONT: date-number typography override.
-						tileFont={tileFont}
-						// F-17-3 fix: radius token.
-						borderRadius={borderRadius}
-							onSelect={onSelectDate}
-							onMoveFocus={onMoveFocus}
-							onGoToNextMonth={onNextMonth}
-							onGoToPreviousMonth={onPrevMonth}
-							onHoverChange={onHoverChange}
-							onFocusChange={onFocusChange}
-						/>
-					);
-				})}
-			</div>,
-		);
-	}
+		for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
+			rows.push(
+				/* biome-ignore lint/a11y/useFocusableInteractive: row is a structural
+		       grouping only (display: contents) — focus lives on the cells
+		       via the roving-tabindex contract; making the row tabbable would
+		       add a dead stop. */
+				// biome-ignore lint/a11y/useSemanticElements: see CSS-grid calendar note above.
+				<div role="row" key={`row-${r}`} style={{ display: "contents" }}>
+					{cells.slice(r * 7, r * 7 + 7).map((date, cIdx) => {
+						const globalIdx = r * 7 + cIdx;
+						const dateKey = dateKeyOf(date);
+						const isInMonth = date.getMonth() === visibleMonth.getMonth();
+						const isPast = startOfDay(date).getTime() < today.getTime();
+						// W2-54 fix: adjacency is no longer a blanket
+						// unavailability. Next/previous-month days inside the
+						// visible grid behave like real dates — selectable when
+						// availability exists (the slots fetch already covers the
+						// month edges), disabled otherwise. `isInMonth` now only
+						// drives the month-abbreviation indicator.
+						// CAL-ADJ-SOURCE: `hasAvailability` is the SAME normalized
+						// availability source used by the in-month view (the
+						// parent's month-wide Cal.com slots, fetched with ±15-day
+						// edge widening) — a previewed adjacent date shows exactly
+						// the state it will have after navigating into its month.
+						// Unknown/not-yet-fetched dates are unavailable, never
+						// "available because rendered".
+						const isUnavailable = isPast || !hasAvailability(date);
+						const isSelected = isSameDay(selectedDate, date);
+						const isToday = isSameDay(today, date);
+						// W2-55 fix: LEADING cells from the previous month that
+						// are past or have no availability render as EMPTY
+						// gridcells — matching Cal.com, where irrelevant leading
+						// days are blank while trailing next-month days continue
+						// into the grid. Alignment (7 columns) is preserved by
+						// keeping each placeholder in its track.
+						const isEmptyLeadingCell =
+							!isInMonth && date.getTime() < visibleMonth.getTime() && (isPast || !hasAvailability(date));
+						if (isEmptyLeadingCell) {
+							return (
+								// A11Y: blank placeholders carry no state — the old
+								// aria-disabled="true" announced meaningless noise.
+								<div
+									key={`empty-${dateKey}`}
+									role="gridcell"
+									aria-hidden="true"
+									style={{
+										minHeight: TOUCH_TARGET_MIN,
+										minWidth: isNarrow ? 0 : TOUCH_TARGET_MIN,
+									}}
+								/>
+							);
+						}
+						// CAL-ADJ-INDICATOR: one shared helper drives BOTH the
+						// previous-month and next-month abbreviations — only the
+						// first rendered date of each adjacent month carries one
+						// (empty leading placeholders are skipped over).
+						const adjacentMonthLabel = !isInMonth
+							? getAdjacentMonthAbbreviation(
+								cells,
+								globalIdx,
+								(candidate) =>
+									candidate.getTime() < visibleMonth.getTime() &&
+									(startOfDay(candidate).getTime() < today.getTime() ||
+										!hasAvailability(candidate)),
+							)
+							: null;
+						// ROVING-TABINDEX: exactly one selectable cell per grid
+						// is the tab stop; unavailable cells are never active.
+						const isActive =
+							activeDateKey !== null &&
+							dateKey === activeDateKey &&
+							!isUnavailable;
+						const isRingHover =
+							hoveredDateKey === dateKey &&
+							!isUnavailable &&
+							!isSelected;
+						return (
+							<CalendarCell
+								key={dateKey}
+								date={date}
+								dateKey={dateKey}
+								isUnavailable={isUnavailable}
+								isSelected={isSelected}
+								isInMonth={isInMonth}
+								adjacentMonthLabel={adjacentMonthLabel}
+								isToday={isToday}
+								isRingHover={isRingHover}
+								isActive={isActive}
+								firstDayOfWeek={firstDayOfWeek}
+								locale={locale}
+								// W1-19-N1 fix: pass the narrow flag through so
+								// the cell can drop its 44px minWidth on
+								// shrinkable tracks (no overlap on ≤329px).
+								isNarrow={isNarrow}
+								// W1-07-F4 fix: label cells in the visitor's tz.
+								timeZone={timeZone}
+								accentColor={accentColor}
+								borderColor={borderColor}
+								subtleFill={subtleFill}
+								textColor={textColor}
+								selectedAccentText={selectedAccentText}
+								mutedSoftText={mutedSoftText}
+								// TILE-FONT: date-number typography override.
+								tileFont={tileFont}
+								// F-17-3 fix: radius token.
+								borderRadius={borderRadius}
+								onSelect={onSelectDate}
+								onMoveFocus={onMoveFocus}
+								onGoToNextMonth={onNextMonth}
+								onGoToPreviousMonth={onPrevMonth}
+								onHoverChange={onHoverChange}
+								onFocusChange={onFocusChange}
+							/>
+						);
+					})}
+				</div>,
+			);
+		}
 	}
 	return (
 		<>
@@ -3705,13 +3744,13 @@ const TimeSlotList = React.memo(function TimeSlotList(
 		() =>
 			selectedDate
 				? // TZ-HEADER fix: SR date in the visitor zone too (was
-					// browser-local, drifting a day near midnight).
-					getCachedDateTimeFormat(pageLocale(), {
-						weekday: "short",
-						month: "short",
-						day: "numeric",
-						...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-					}).format(selectedDate)
+				// browser-local, drifting a day near midnight).
+				getCachedDateTimeFormat(pageLocale(), {
+					weekday: "short",
+					month: "short",
+					day: "numeric",
+					...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+				}).format(selectedDate)
 				: "",
 		[selectedDate, timeZone],
 	);
@@ -3878,9 +3917,15 @@ const TimeSlotList = React.memo(function TimeSlotList(
                     this wrapper takes its height from the row (the calendar
                     section drives it) and the list fills it absolutely,
                     scrolling internally when there are many slots — so the
-                    panel stays visually aligned with the calendar. Narrow:
-                    natural flow; the stacked page scrolls instead. No fixed
-                    pixel cap, no hidden action area. */}
+                    panel stays visually aligned with the calendar.
+                    BE-001 (STACKED-SCROLL): Narrow now scrolls INTERNALLY too
+                    — a viewport-relative cap (40vh, never a fixed pixel cap)
+                    with `overscroll-behavior: contain` keeps the gesture
+                    inside the list while it can still scroll, so the visitor
+                    reaches every slot without the page moving under them and
+                    the stacked component stops outgrowing its embed. No
+                    hidden action area; the hidden-scrollbar contract (rule 53)
+                    is unchanged via .be-dt-scroll. */}
 			<div
 				style={
 					isNarrow
@@ -3895,7 +3940,25 @@ const TimeSlotList = React.memo(function TimeSlotList(
 					aria-label={scrollerOverflows ? availableTimesAriaLabel : undefined}
 					style={
 						isNarrow
-							? { minWidth: 0 }
+							? {
+								minWidth: 0,
+								// BE-001: bounded internal scroll in the
+								// stacked layout. A 40vh cap adapts to the
+								// viewport (never a hard pixel cap); short
+								// lists never overflow and render exactly
+								// as before.
+								maxHeight: "40vh",
+								overflowY: "auto",
+								overscrollBehavior: "contain",
+								...(scrollerOverflows
+									? {
+										WebkitMaskImage:
+											"linear-gradient(to bottom, black 88%, transparent)",
+										maskImage:
+											"linear-gradient(to bottom, black 88%, transparent)",
+									}
+									: {}),
+							}
 							: {
 								position: "absolute",
 								inset: 0,
@@ -3929,11 +3992,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 							}}
 						>
 							{/* TimeSlotsSkeleton: slot-shaped bars (36px, shared
-				radius — rule 56 geometry) instead of loading text. The
-				loading copy survives sr-only so screen readers still hear
-				the status; the bars are decorative (aria-hidden). Driven
-				by the real fetch lifecycle (slotsLoading) plus the
-				initial-resolution gate — never timers. */}
+                                radius — rule 56 geometry) instead of loading text. The
+                                loading copy survives sr-only so screen readers still hear
+                                the status; the bars are decorative (aria-hidden). Driven
+                                by the real fetch lifecycle (slotsLoading) plus the
+                                initial-resolution gate — never timers. */}
 							<span
 								style={{
 									position: "absolute",
@@ -6101,7 +6164,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 							>
 								{calEventMetaUnavailableCopy}
 							</div>
-						) 						: (
+						) : (
 							/* Loading skeleton — EventInfoSkeleton geometry:
 				avatar circle + organizer/title/metadata bars mirroring the
 				resolved CalEventInfoPanel rows. Static markup on server
@@ -6201,15 +6264,15 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 						borderColor={borderColor}
 						subtleFill={subtleFill}
 						textColor={resolvedTextColor}
-					selectedAccentText={selectedAccentText}
-					mutedSoftText={mutedSoftText}
-					mutedText={mutedText}
-					// TILE-FONT: date-number typography from the Calendar
-					// Styles set (undefined = native look).
-					tileFont={normalizedCalendarStyles?.font}
-					// F-17-3 fix: radius token (the `radius` prop this
-					// inline component already receives).
-					borderRadius={String(radius)}
+						selectedAccentText={selectedAccentText}
+						mutedSoftText={mutedSoftText}
+						mutedText={mutedText}
+						// TILE-FONT: date-number typography from the Calendar
+						// Styles set (undefined = native look).
+						tileFont={normalizedCalendarStyles?.font}
+						// F-17-3 fix: radius token (the `radius` prop this
+						// inline component already receives).
+						borderRadius={String(radius)}
 						onPrevMonth={goToPreviousMonth}
 						onNextMonth={goToNextMonth}
 						onSelectDate={handleDateSelect}
@@ -6439,10 +6502,13 @@ interface FieldConfig {
 	optionValues?: Array<string>;
 	// T10-L4 fix: parallel per-option image URLs and descriptions, aligned
 	// by index with `options`. Empty arrays keep the plain text-only cards.
-	optionImages?: Array<string>;
+	// BE-005 (OPTION-IMAGES-NATIVE): entries are native ResponsiveImage
+	// objects ({ src, srcSet?, alt? }); legacy string links stay valid.
+	optionImages?: Array<string | OptionImageSource>;
 	optionDescriptions?: Array<string>;
 	// AUTHOR-DEFAULT-SELECTION: optional pre-selected option for the
-	// ChoiceGroup variants (segmented/pills/cards/radio). Empty/undefined
+	// ChoiceGroup variants (segmented/pills/cards/radio) AND the select
+	// field (BE-002). Empty/undefined
 	// keeps the historical behavior (first non-empty option). When set it
 	// must match an option label (or entry of `optionValues`); a value
 	// that matches nothing falls back to the first option — never empty.
@@ -6697,18 +6763,18 @@ interface BookingEngineCopyProps {
 		backLabel?: string;
 		finalActionLabel?: string;
 		cancelSubmitLabel?: string;
-	// BUTTONS-LAYOUT: nav-layout decisions live in one `buttonsLayout`
-	// subgroup (Layout / Buttons Alignment / Order / Width). The four
-	// flat keys below stay readable as legacy carriers so pre-subgroup
-	// canvases keep their values — no control writes them anymore and
-	// they are never read except at the single resolution site.
-	buttonsLayout?: {
-		groupNavButtons?: boolean;
-		groupedNavAlignment?: "left" | "center" | "right";
-		buttonOrder?: "backFirst" | "primaryFirst";
-		buttonWidth?: "fit" | "fill";
-	};
-	// NAV-GROUP-TOGGLE: legacy carrier (see buttonsLayout above).
+		// BUTTONS-LAYOUT: nav-layout decisions live in one `buttonsLayout`
+		// subgroup (Layout / Buttons Alignment / Order / Width). The four
+		// flat keys below stay readable as legacy carriers so pre-subgroup
+		// canvases keep their values — no control writes them anymore and
+		// they are never read except at the single resolution site.
+		buttonsLayout?: {
+			groupNavButtons?: boolean;
+			groupedNavAlignment?: "left" | "center" | "right";
+			buttonOrder?: "backFirst" | "primaryFirst";
+			buttonWidth?: "fit" | "fill";
+		};
+		// NAV-GROUP-TOGGLE: legacy carrier (see buttonsLayout above).
 		groupNavButtons?: boolean;
 		// NAV-GROUPED-ALIGN: where the buttons sit when grouped (Split mode
 		// is space-between by definition; a single-button Split row sits at
@@ -6794,7 +6860,9 @@ interface BookingEngineCopyProps {
 		// behavior (unreachable in the engine) — no control.
 		// COPY-SIMPLIFICATION: demo empty-state text is fixed internal
 		// behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL), never a control.
-		selectOptionLabel: string;
+		// BE-002 (SELECT-AUTO-SELECT): the "Select Placeholder" copy key is
+		// REMOVED — the placeholder pseudo-option no longer renders, so a
+		// stored `selectOptionLabel` value on old canvases is inert.
 		stepProgressLabel: string;
 		// W1-02-F4/F6/F7 fix: announcement template + counter format +
 		// required marker are now copy-driven (see constants).
@@ -7364,14 +7432,15 @@ interface NormalizedStep extends Omit<StepConfig, "fields"> {
 interface FilteredFieldOptions {
 	options: Array<string>;
 	optionValues?: Array<string>;
-	optionImages?: Array<string>;
+	optionImages?: Array<string | OptionImageSource>;
 	optionDescriptions?: Array<string>;
 }
 
 function filterEmptyOptions(field: {
 	options?: Array<string>;
 	optionValues?: Array<string>;
-	optionImages?: Array<string>;
+	// BE-005: images may be legacy strings or native picker objects.
+	optionImages?: Array<string | OptionImageSource>;
 	optionDescriptions?: Array<string>;
 }): FilteredFieldOptions {
 	const rawOptions = Array.isArray(field.options) ? field.options : [];
@@ -7383,10 +7452,12 @@ function filterEmptyOptions(field: {
 			options.push(opt);
 		}
 	});
-	const pick = (
-		arr: Array<string> | undefined,
-	): Array<string> | undefined =>
-		Array.isArray(arr) ? keepIdx.map((i) => arr[i]) : arr;
+	// BE-005: generic — works for the string arrays and the union image
+	// array alike; an entry past the parallel array's length reads as
+	// undefined at the render site, which already guards unset images.
+	function pick<T>(arr: Array<T> | undefined): Array<T> | undefined {
+		return Array.isArray(arr) ? keepIdx.map((i) => arr[i]) : arr;
+	}
 	return {
 		options,
 		optionValues: pick(field.optionValues),
@@ -7423,23 +7494,23 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 				// look) from an explicit Left. Resolution happens per step at
 				// the render site via isStepAlignment.
 				fields: (step.fields || []).map((field, fieldIdx) => ({
-				...field,
-				id: `step-${stepIdx}-field-${fieldIdx}`,
-				required: field.required !== false,
-				fieldType: field.fieldType || "text",
-				width: field.width || "full",
-				// CHOICE-OPTIONS-INTEGRITY: an option whose visible label
-				// is empty after trimming must never become a selectable
-				// or renderable option (no empty cards/buttons, no
-				// selection-clearing phantom picks). Filter here — the
-				// single normalization choke point — across the option
-				// label and every index-parallel array together, so
-				// optionValues/Images/Descriptions stay aligned. Labels
-				// are display: only the label decides. Explicit ""
-				// VALUES are preserved verbatim (nullish, never ||) —
-				// see optionValue. Non-string junk is dropped with the
-				// empties (the panel only authors strings).
-				...filterEmptyOptions(field),
+					...field,
+					id: `step-${stepIdx}-field-${fieldIdx}`,
+					required: field.required !== false,
+					fieldType: field.fieldType || "text",
+					width: field.width || "full",
+					// CHOICE-OPTIONS-INTEGRITY: an option whose visible label
+					// is empty after trimming must never become a selectable
+					// or renderable option (no empty cards/buttons, no
+					// selection-clearing phantom picks). Filter here — the
+					// single normalization choke point — across the option
+					// label and every index-parallel array together, so
+					// optionValues/Images/Descriptions stay aligned. Labels
+					// are display: only the label decides. Explicit ""
+					// VALUES are preserved verbatim (nullish, never ||) —
+					// see optionValue. Non-string junk is dropped with the
+					// empties (the panel only authors strings).
+					...filterEmptyOptions(field),
 					// VALIDATION-REMOVED (rule 100): authored validation
 					// overrides are neutralized at this single choke point
 					// — stored `validationRule`/`minLength`/`maxLength`/
@@ -9118,16 +9189,16 @@ function useCalcomEventMeta(params: {
 				setStatus("failed");
 			}
 		})
-		// Defensive: fetchCalEventTypeMeta never rejects today (it
-		// resolves nulls on every failure path), but a bare .then
-		// turns any future throw into an unhandled rejection that
-		// also leaves the panel stuck on "loading". Fail closed.
-		.catch(() => {
-			if (cancelled) return;
-			setMeta(null);
-			setBookingFields([]);
-			setStatus("failed");
-		});
+			// Defensive: fetchCalEventTypeMeta never rejects today (it
+			// resolves nulls on every failure path), but a bare .then
+			// turns any future throw into an unhandled rejection that
+			// also leaves the panel stuck on "loading". Fail closed.
+			.catch(() => {
+				if (cancelled) return;
+				setMeta(null);
+				setBookingFields([]);
+				setStatus("failed");
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -9346,7 +9417,7 @@ async function submitCalcomBooking(params: {
 					}
 					const mins = Math.round(
 						(new Date(slotEnd).getTime() - new Date(slotStart).getTime()) /
-							60000,
+						60000,
 					);
 					return Number.isFinite(mins) && mins >= 1
 						? { lengthInMinutes: mins }
@@ -9908,8 +9979,8 @@ function replaceCopyTokens(
 	const date = slot
 		? /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
 			? getCachedDateTimeFormat(pageLocale(), dateOpts).format(
-					new Date(slot.time24h),
-				)
+				new Date(slot.time24h),
+			)
 			: getCachedDateTimeFormat(pageLocale(), dateOpts).format(slot.date)
 		: "";
 	return text.replace(/\{name\}/g, name).replace(/\{date\}/g, date);
@@ -10065,8 +10136,8 @@ function buildNotesPayload(
 		};
 		const dateStr = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
 			? getCachedDateTimeFormat(pageLocale(), dateOpts).format(
-					new Date(slot.time24h),
-				)
+				new Date(slot.time24h),
+			)
 			: getCachedDateTimeFormat(pageLocale(), dateOpts).format(slot.date);
 		lines.push(selectedTimeLabel);
 		lines.push(`${datePrefix}${dateStr}`);
@@ -10475,6 +10546,24 @@ function StepVisibilityWrapper(props: {
 	// expected" whenever Framer flipped render targets mid-lifetime (canvas ↔
 	// preview ↔ published). Hooks must be unconditional: compute first,
 	// branch after.
+	// `inert` is absent from older @types/react HTMLAttributes (editor
+	// TS2322) but is a real HTML attribute React passes through to the
+	// DOM. Applied imperatively so the code compiles under both old and
+	// new React types with identical runtime behavior (attribute present
+	// exactly when inactive).
+	// BE-001 fix: this MUST be a stable ref object + per-commit layout
+	// effect, never a callback ref keyed on isActive. The callback
+	// version fired only on ref attach/detach, so any missed cycle
+	// (remount, animation restart, restore-before-paint) left a STUCK
+	// inert="" on the ACTIVE step — invisible symptoms exactly like the
+	// report: dead clicks, page-only scroll, DevTools picker skipping to
+	// the form. The effect below re-syncs from current props after every
+	// commit, so a stuck state cannot survive a render. Placed with the
+	// other hooks, before the early return below (FINAL-54).
+	const stepNodeRef = React.useRef<HTMLDivElement | null>(null);
+	useIsomorphicLayoutEffect(() => {
+		stepNodeRef.current?.toggleAttribute("inert", !props.isActive);
+	});
 	// Duration from the existing Step Transition control must affect every variant
 	const resolvedTransition = React.useMemo(() => {
 		if (reducedMotion) return INSTANT_TRANSITION;
@@ -10486,6 +10575,7 @@ function StepVisibilityWrapper(props: {
 	if (isStatic) {
 		return (
 			<div
+				ref={stepNodeRef}
 				style={{
 					position: props.isActive ? "relative" : "absolute",
 					top: props.isActive ? undefined : 0,
@@ -10495,7 +10585,6 @@ function StepVisibilityWrapper(props: {
 					opacity: props.isActive ? 1 : 0,
 				}}
 				aria-hidden={props.isActive ? undefined : true}
-				inert={props.isActive ? undefined : true}
 			>
 				{props.children}
 			</div>
@@ -10503,6 +10592,7 @@ function StepVisibilityWrapper(props: {
 	}
 	return (
 		<motion.div
+			ref={stepNodeRef}
 			variants={def.variants}
 			custom={def.useDirection ? props.direction : undefined}
 			initial={false}
@@ -10516,7 +10606,6 @@ function StepVisibilityWrapper(props: {
 				pointerEvents: props.isActive ? "auto" : "none",
 			}}
 			aria-hidden={props.isActive ? undefined : true}
-			inert={props.isActive ? undefined : true}
 			// Diagnostic: expose deterministic state as data attributes for
 			// Elements/Computed inspection and for runtime logging verification.
 			data-step-index={props.stepIndex}
@@ -11391,7 +11480,7 @@ function useBookingEngineState(
 			beCollisionWarnedKeys.add(persistenceKey);
 			console.warn(
 				`[BE persist] COLLISION key=${persistenceKey} is claimed by ${claimed} mounted engines — ` +
-					`they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`,
+				`they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`,
 			);
 		}
 		// Seeding is scoped to THIS instance's key, so Instance A's
@@ -11701,13 +11790,13 @@ function useBookingEngineState(
 						loadFocusSuppressedRef.current = true;
 					}
 					setCurrentIndex(restoredIndex);
-				if (migratedLegacy) {
-					try {
-						window.sessionStorage.removeItem(LEGACY_SESSION_KEY);
-					} catch {
-						// non-fatal
+					if (migratedLegacy) {
+						try {
+							window.sessionStorage.removeItem(LEGACY_SESSION_KEY);
+						} catch {
+							// non-fatal
+						}
 					}
-				}
 				}
 			}
 		} catch (err: unknown) {
@@ -12421,6 +12510,27 @@ function useBookingEngineState(
 	// every transition, but not on first mount (that would steal focus from
 	// the page on initial load, which is its own accessibility anti-pattern).
 	const stepTitleRef = React.useRef<HTMLHeadingElement | null>(null);
+	// BE-001 (STACKED-ENTRY-SCROLL): the ONE shared step-heading focus
+	// helper. focus() without preventScroll scrolls EVERY scrollable
+	// ancestor (including overflow:hidden embed frames) by arbitrary
+	// amounts — on the tall stacked Calendar view that landed the visitor
+	// mid-component with the header above and the nav below cut off, with
+	// no way to scroll back inside a clipped embed. preventScroll + a
+	// minimal block:"nearest" reveal (the FOCUS-SCROLL pattern
+	// focusFirstInvalidField already uses; scroll-margin still honored)
+	// keeps every step entry anchored at its top. The SR announcement is
+	// unchanged — focus itself still moves; only the scroll behavior is
+	// tamed.
+	const focusStepTitle = React.useCallback(() => {
+		const el = stepTitleRef.current;
+		if (!el) return;
+		try {
+			el.focus({ preventScroll: true });
+			el.scrollIntoView({ block: "nearest" });
+		} catch {
+			/* ignore — engines without scrollIntoView options */
+		}
+	}, []);
 	// FINAL-42 fix: programmatic focus target for the submitting state —
 	// focusing the aria-busy button announces the in-flight status to SRs.
 	const submitButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -12477,8 +12587,9 @@ function useBookingEngineState(
 		// remaps): focus-neutral, exactly like every normal first render
 		// of a step (the ring must never exist to remove).
 		if (loadFocusSuppressedRef.current) return;
-		stepTitleRef.current?.focus();
-	}, [safeCurrentIndex]);
+		// BE-001 (STACKED-ENTRY-SCROLL): see focusStepTitle above.
+		focusStepTitle();
+	}, [safeCurrentIndex, focusStepTitle]);
 
 	// SUBMIT-DRIVEN-VALIDATION (hard rule): field validation is triggered by
 	// the explicit Continue / final-action click (`handleContinue` →
@@ -12522,16 +12633,16 @@ function useBookingEngineState(
 			// mid-keystroke remount never loses the typed value (the
 			// per-identity write effect also runs, but a remount can land
 			// between keystroke and its debounce-free tick).
-		const liveKey = instanceKeyRef.current;
-		const liveSnap = inSessionFormSnapshots.get(liveKey);
-		inSessionFormSnapshots.set(liveKey, {
-			values: valuesRef.current,
-			currentIndex: liveSnap?.currentIndex ?? 0,
-			timeFormat: liveSnap?.timeFormat ?? "12h",
-			// RESTORE-RACE: a keystroke IS visitor input — this entry is
-			// live-session truth even if the gate somehow hasn't flipped.
-			live: true,
-		});
+			const liveKey = instanceKeyRef.current;
+			const liveSnap = inSessionFormSnapshots.get(liveKey);
+			inSessionFormSnapshots.set(liveKey, {
+				values: valuesRef.current,
+				currentIndex: liveSnap?.currentIndex ?? 0,
+				timeFormat: liveSnap?.timeFormat ?? "12h",
+				// RESTORE-RACE: a keystroke IS visitor input — this entry is
+				// live-session truth even if the gate somehow hasn't flipped.
+				live: true,
+			});
 			setValues((prev) => ({ ...prev, [fieldId]: nextValue }));
 			// SUBMIT-DRIVEN-VALIDATION: typing alone never validates and
 			// never INTRODUCES an error. Only a field that already shows
@@ -12585,15 +12696,15 @@ function useBookingEngineState(
 					valuesRef.current[field.id],
 					validationCopy,
 				);
-			if (err) {
-				// INSTANCE-ISOLATION (rule 91): query is scoped to THIS
-				// instance's own subtree. Field ids are shared across
-				// instances (hydration-safe constants), so a document-wide
-				// query used to focus the FIRST instance's input while the
-				// visitor was interacting with another one.
-				const wrapper = engineRootRef?.current?.querySelector<HTMLElement>(
-					`[data-field-id="${field.id}"]`,
-				);
+				if (err) {
+					// INSTANCE-ISOLATION (rule 91): query is scoped to THIS
+					// instance's own subtree. Field ids are shared across
+					// instances (hydration-safe constants), so a document-wide
+					// query used to focus the FIRST instance's input while the
+					// visitor was interacting with another one.
+					const wrapper = engineRootRef?.current?.querySelector<HTMLElement>(
+						`[data-field-id="${field.id}"]`,
+					);
 					// T4-M5 fix: the wrapper div isn't focusable, so calling
 					// `focus()` on it silently did nothing (visible for
 					// choice/radio groups) and keyboard focus never reached
@@ -12827,17 +12938,17 @@ function useBookingEngineState(
 					// FINAL-21 fix: last-resort status classification.
 					result.httpStatus,
 				);
-		setSubmitError(errorMessage);
-		// FINAL-20 fix: remember the machine code alongside the message.
-		// BARE-409 fix: with no machine code the retry path below could
-		// not see a bare 409 (its message heuristic needs the mapped
-		// "just taken" copy, which a customized Copy panel may reword).
-		// Stash an HTTP_### sentinel so Retry branches on status too.
-		submitErrorCodeRef.current =
-			result.errorCode ||
-			(typeof result.httpStatus === "number"
-				? `HTTP_${result.httpStatus}`
-				: null);
+			setSubmitError(errorMessage);
+			// FINAL-20 fix: remember the machine code alongside the message.
+			// BARE-409 fix: with no machine code the retry path below could
+			// not see a bare 409 (its message heuristic needs the mapped
+			// "just taken" copy, which a customized Copy panel may reword).
+			// Stash an HTTP_### sentinel so Retry branches on status too.
+			submitErrorCodeRef.current =
+				result.errorCode ||
+				(typeof result.httpStatus === "number"
+					? `HTTP_${result.httpStatus}`
+					: null);
 			transitionFlowStatus("error");
 			emitAnalytics("booking_error", {
 				reason: "submit-failed",
@@ -13111,9 +13222,12 @@ function useBookingEngineState(
 		// 2.4.3). Move it to the step heading once the re-render lands,
 		// reusing the existing debounced focus-timer helper (W1-14-F2).
 		scheduleFocusTimer(() => {
-			stepTitleRef.current?.focus();
+			// BE-001: shared preventScroll+nearest helper (see
+			// focusStepTitle) — retry lands on the step top, never
+			// a mid-component scroll jump.
+			focusStepTitle();
 		});
-	}, [submitError, activeSteps, slotsRefetch, scheduleFocusTimer, transitionFlowStatus]);
+	}, [submitError, activeSteps, slotsRefetch, scheduleFocusTimer, transitionFlowStatus, focusStepTitle]);
 
 	// W2-25-F11 fix: while the POST is in flight (up to FETCH_TIMEOUT_MS)
 	// the visitor previously had no escape except page navigation — the
@@ -13138,9 +13252,11 @@ function useBookingEngineState(
 		// spinner leaves — focus dropped to <body> (WCAG 2.4.3). Mirror
 		// handleRetry's focus hand-off to the step heading.
 		scheduleFocusTimer(() => {
-			stepTitleRef.current?.focus();
+			// BE-001: shared preventScroll+nearest helper (see
+			// focusStepTitle) — cancel lands on the step top too.
+			focusStepTitle();
 		});
-	}, [flowStatus, scheduleFocusTimer, transitionFlowStatus]);
+	}, [flowStatus, scheduleFocusTimer, transitionFlowStatus, focusStepTitle]);
 
 	// FINAL-42 fix: Escape is a keyboard route out of the submitting state
 	// (previously only reachable by Tabbing to the Cancel button). The
@@ -14087,23 +14203,23 @@ export default function BookingEngine(props: BookingEngineProps) {
 					textPrimaryColor={theme.textPrimaryColor}
 					textSecondaryColor={theme.textSecondaryColor}
 					surfaceColor={theme.surfaceColor}
-				borderColor={theme.borderColor}
-				borderRadius={borderRadius}
-				onRetry={handleRetry}
-				errorTitle={copy.errorTitle}
-				errorSubtitle={copy.errorSubtitle}
-				headingFont={headingFont}
-				// TERMINAL-ALIGN: content alignment (action row unaffected).
-				terminalAlignment={terminalAlignment}
-				iconSize={terminalIconSize}
-				bodySubtitleSize={bodySubtitleSize}
-				bodySubtitleLineHeight={bodySubtitleLineHeight}
-				retryLabel={retryLabel}
-				retryStyle={retryButtonStyle}
-				retryHover={blGroups.retryButton?.hover}
-				retryPressed={blGroups.retryButton?.pressed}
-				retryAnimate={animateIx}
-				supportContactValue={copy.supportContactValue}
+					borderColor={theme.borderColor}
+					borderRadius={borderRadius}
+					onRetry={handleRetry}
+					errorTitle={copy.errorTitle}
+					errorSubtitle={copy.errorSubtitle}
+					headingFont={headingFont}
+					// TERMINAL-ALIGN: content alignment (action row unaffected).
+					terminalAlignment={terminalAlignment}
+					iconSize={terminalIconSize}
+					bodySubtitleSize={bodySubtitleSize}
+					bodySubtitleLineHeight={bodySubtitleLineHeight}
+					retryLabel={retryLabel}
+					retryStyle={retryButtonStyle}
+					retryHover={blGroups.retryButton?.hover}
+					retryPressed={blGroups.retryButton?.pressed}
+					retryAnimate={animateIx}
+					supportContactValue={copy.supportContactValue}
 				/>
 			</RootShell>
 		);
@@ -14608,129 +14724,129 @@ export default function BookingEngine(props: BookingEngineProps) {
 							direction={navDirection}
 						>
 							{/* ERROR-BOUNDARY: a throw in this step's UI must
-								not unmount the shell (or sibling instances) —
-								keyed by step so navigating resets it. */}
+                                                                not unmount the shell (or sibling instances) —
+                                                                keyed by step so navigating resets it. */}
 							<BeErrorBoundary stepKey={step.id}>
-							<h2
-								ref={isActive ? stepTitleRef : null}
-								tabIndex={-1}
-								className="be-focus-target"
-							style={{
-								color: theme.textPrimaryColor,
-								// CONTENT-ALIGN: the global Content Alignment,
-								// unless this Step explicitly authored its own
-								// (legacy carrier — unset follows global).
-								...(isStepAlignment(step.alignment)
-									? { textAlign: step.alignment }
-									: { textAlign: terminalAlignment }),
-									// Per-surface Heading Font (Body control
-									// stays the base). Unset = previous look.
-									fontFamily: headingFont?.fontFamily ?? "inherit",
-									fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
-									fontWeight: headingFont?.fontWeight ?? 700,
-									...(headingFont?.fontStyle
-										? { fontStyle: headingFont.fontStyle }
-										: {}),
-									...(headingFont?.letterSpacing != null
-										? { letterSpacing: headingFont.letterSpacing }
-										: {}),
-									...(headingFont?.lineHeight != null
-										? { lineHeight: headingFont.lineHeight }
-										: { lineHeight: 1.2 }),
-									marginBottom: 4,
-									marginTop: 0,
-									// FINAL-43 fix: inline `outline:"none"` removed —
-									// it killed every indicator when JS moved focus
-									// here; .be-focus-target:focus-visible supplies
-									// a keyboard-visible ring (pointer flows clean).
-									// W1-19-F-09 fix: when the browser scrolls this
-									// focus target into view (native focus scroll /
-									// page restore), keep it clear of any sticky
-									// headers or the sticky footer nav.
-									scrollMarginTop: 72,
-								}}
-							>
-								{step.title}
-							</h2>
-							{step.subtitle ? (
-								<div
-								style={{
-									color: theme.textSecondaryColor,
-									// BODY-ROLE: step body copy follows Body
-									// Font size + line-height (family/weight/
-									// spacing already inherit from root).
-									// Defaults equal the historical look.
-									fontSize: bodySubtitleSize,
-									marginBottom: 16,
-									lineHeight: bodySubtitleLineHeight,
-								// CONTENT-ALIGN: follows the title — global
-								// unless this Step authored its own.
-								...(isStepAlignment(step.alignment)
-									? { textAlign: step.alignment }
-									: { textAlign: terminalAlignment }),
-								}}
+								<h2
+									ref={isActive ? stepTitleRef : null}
+									tabIndex={-1}
+									className="be-focus-target"
+									style={{
+										color: theme.textPrimaryColor,
+										// CONTENT-ALIGN: the global Content Alignment,
+										// unless this Step explicitly authored its own
+										// (legacy carrier — unset follows global).
+										...(isStepAlignment(step.alignment)
+											? { textAlign: step.alignment }
+											: { textAlign: terminalAlignment }),
+										// Per-surface Heading Font (Body control
+										// stays the base). Unset = previous look.
+										fontFamily: headingFont?.fontFamily ?? "inherit",
+										fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+										fontWeight: headingFont?.fontWeight ?? 700,
+										...(headingFont?.fontStyle
+											? { fontStyle: headingFont.fontStyle }
+											: {}),
+										...(headingFont?.letterSpacing != null
+											? { letterSpacing: headingFont.letterSpacing }
+											: {}),
+										...(headingFont?.lineHeight != null
+											? { lineHeight: headingFont.lineHeight }
+											: { lineHeight: 1.2 }),
+										marginBottom: 4,
+										marginTop: 0,
+										// FINAL-43 fix: inline `outline:"none"` removed —
+										// it killed every indicator when JS moved focus
+										// here; .be-focus-target:focus-visible supplies
+										// a keyboard-visible ring (pointer flows clean).
+										// W1-19-F-09 fix: when the browser scrolls this
+										// focus target into view (native focus scroll /
+										// page restore), keep it clear of any sticky
+										// headers or the sticky footer nav.
+										scrollMarginTop: 72,
+									}}
 								>
-									{step.subtitle}
-								</div>
-							) : null}
-							<StepBody
-								step={step}
-								steps={activeSteps}
-								values={values}
-								errors={errors}
-								touched={touched}
-								theme={theme}
-								borderRadius={sanitizedRadius}
-								fieldGap={fieldGap}
-								// FIELD-STYLES-GLOBAL: shared defaults flow
-								// into every authored field (overrides win).
-								globalFieldStyles={globalFieldStyles}
-								hasCalConfig={hasCalConfig}
-								slotsLoading={slotsLoading}
-								availabilitySettled={availabilitySettled}
-								slotsError={slotsError}
-								slotsForSelectedDate={slotsForSelectedDate}
-								availableDates={availableDates}
-								selectedDate={selectedDate}
-								visibleMonth={visibleMonth}
-								timeZone={timeZone}
-								timeFormat={timeFormat}
-								// SYSTEM-CALENDAR: stage surface from the
-								// Calendar panel group (legacy marker Styles
-								// feed it on migrated canvases).
-								calendarSurface={calendarStageConfig.surface}
-								copy={copy}
-								ariaLabels={ariaLabels}
-								errorCopy={errorCopy}
-								// INSTANCE-ISOLATION (rule 91): per-engine id prefix
-								// for the slot-error banner + every field id.
-								instanceId={reactInstanceId}
-								onFieldChange={handleFieldChange}
-								onSlotReady={handleSlotReady}
-								onDateChange={handleInlineDateChange}
-								onMonthChange={handleInlineMonthChange}
-								// TZ-TIME-HARD-RULE: no `onTimeZoneChange` — the zone
-								// is auto-detected and cannot be changed by visitors.
-								// W1-14-F3 fix: was an inline arrow — now the
-								// stable handleTimeFormatChange so StepBody's
-								// React.memo holds between unrelated re-renders.
-								onTimeFormatChange={handleTimeFormatChange}
-								onJumpToStep={handleJumpToStep}
-								onRetrySlots={slotsRefetch}
-								retryLabel={retryLabel}
-								hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
-								engineWidth={engineWidth}
-								// W1-20-N1 fix: freeze all authored fields during
-								// the POST (see StepBodyProps.isSubmitting).
-								isSubmitting={isSubmitting}
-								// CAL-EVENT-META: datetime-step info panel data;
-								// status drives the loading/fallback states.
-								eventMeta={calEventMeta}
-								eventMetaStatus={calEventMetaStatus}
-								eventMetaFallbackDurationMinutes={Math.round(
-									meetingDurationMs / 60000,
-								)}
-							/>
+									{step.title}
+								</h2>
+								{step.subtitle ? (
+									<div
+										style={{
+											color: theme.textSecondaryColor,
+											// BODY-ROLE: step body copy follows Body
+											// Font size + line-height (family/weight/
+											// spacing already inherit from root).
+											// Defaults equal the historical look.
+											fontSize: bodySubtitleSize,
+											marginBottom: 16,
+											lineHeight: bodySubtitleLineHeight,
+											// CONTENT-ALIGN: follows the title — global
+											// unless this Step authored its own.
+											...(isStepAlignment(step.alignment)
+												? { textAlign: step.alignment }
+												: { textAlign: terminalAlignment }),
+										}}
+									>
+										{step.subtitle}
+									</div>
+								) : null}
+								<StepBody
+									step={step}
+									steps={activeSteps}
+									values={values}
+									errors={errors}
+									touched={touched}
+									theme={theme}
+									borderRadius={sanitizedRadius}
+									fieldGap={fieldGap}
+									// FIELD-STYLES-GLOBAL: shared defaults flow
+									// into every authored field (overrides win).
+									globalFieldStyles={globalFieldStyles}
+									hasCalConfig={hasCalConfig}
+									slotsLoading={slotsLoading}
+									availabilitySettled={availabilitySettled}
+									slotsError={slotsError}
+									slotsForSelectedDate={slotsForSelectedDate}
+									availableDates={availableDates}
+									selectedDate={selectedDate}
+									visibleMonth={visibleMonth}
+									timeZone={timeZone}
+									timeFormat={timeFormat}
+									// SYSTEM-CALENDAR: stage surface from the
+									// Calendar panel group (legacy marker Styles
+									// feed it on migrated canvases).
+									calendarSurface={calendarStageConfig.surface}
+									copy={copy}
+									ariaLabels={ariaLabels}
+									errorCopy={errorCopy}
+									// INSTANCE-ISOLATION (rule 91): per-engine id prefix
+									// for the slot-error banner + every field id.
+									instanceId={reactInstanceId}
+									onFieldChange={handleFieldChange}
+									onSlotReady={handleSlotReady}
+									onDateChange={handleInlineDateChange}
+									onMonthChange={handleInlineMonthChange}
+									// TZ-TIME-HARD-RULE: no `onTimeZoneChange` — the zone
+									// is auto-detected and cannot be changed by visitors.
+									// W1-14-F3 fix: was an inline arrow — now the
+									// stable handleTimeFormatChange so StepBody's
+									// React.memo holds between unrelated re-renders.
+									onTimeFormatChange={handleTimeFormatChange}
+									onJumpToStep={handleJumpToStep}
+									onRetrySlots={slotsRefetch}
+									retryLabel={retryLabel}
+									hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
+									engineWidth={engineWidth}
+									// W1-20-N1 fix: freeze all authored fields during
+									// the POST (see StepBodyProps.isSubmitting).
+									isSubmitting={isSubmitting}
+									// CAL-EVENT-META: datetime-step info panel data;
+									// status drives the loading/fallback states.
+									eventMeta={calEventMeta}
+									eventMetaStatus={calEventMetaStatus}
+									eventMetaFallbackDurationMinutes={Math.round(
+										meetingDurationMs / 60000,
+									)}
+								/>
 							</BeErrorBoundary>
 						</StepVisibilityWrapper>
 					);
@@ -14739,14 +14855,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 
 			{/* Footer nav */}
 			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
-		steps instead of scrolling out of view. */}
+                steps instead of scrolling out of view. */}
 			{/* FOOTER-TRANSPARENT (hard rule): the nav/action wrapper must
-		NOT consume the exposed Background color — that token belongs to
-		the main surface only (RootShell's root container). The wrapper
-		is transparent so the author's page design shows through behind
-		the sticky actions, exactly like every other non-surface chrome
-		in this component. No replacement footer background property
-		exists by design. */}
+                NOT consume the exposed Background color — that token belongs to
+                the main surface only (RootShell's root container). The wrapper
+                is transparent so the author's page design shows through behind
+                the sticky actions, exactly like every other non-surface chrome
+                in this component. No replacement footer background property
+                exists by design. */}
 			{/* NAV-GROUP-TOGGLE: default = split layout. Back sits far left and
                 the primary action far right (`justifyContent: space-between`
                 with a right-aligned action group). Only when the author opts
@@ -14782,9 +14898,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 				}}
 			>
 				{/* NAV-ORDER: render order follows the Order control — true
-				DOM order, so visual/tab/SR/activation order stay coherent.
-				Back-first is the historical default. Grouping/justification
-				(navJustify) and sizing (Fill) apply the same either way. */}
+                                DOM order, so visual/tab/SR/activation order stay coherent.
+                                Back-first is the historical default. Grouping/justification
+                                (navJustify) and sizing (Fill) apply the same either way. */}
 				{primaryFirst ? (
 					<>
 						{primaryGroupEl}
@@ -14962,6 +15078,12 @@ export default function BookingEngine(props: BookingEngineProps) {
 .be-motion-root button:focus-visible .be-adj-tooltip { opacity: 1 !important; }
 .be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* BE-003 (SELECT-MENU-STYLED): the select dropdown menu's hidden scrollbar —
+   same invisible-scrollbar contract as the time list (rule 53), defined ONCE
+   here at RootShell scope (rule 65). The menu is a document.body portal, but
+   <style> rules are document-global once rendered, so the class applies. */
+.be-select-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.be-select-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .be-skeleton { animation: be-skeleton-pulse 1.6s ease-in-out infinite; }
 @keyframes be-skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .be-skeleton { animation: none; } }
@@ -15080,7 +15202,12 @@ const RootShell = React.memo(function RootShell(props: {
 			if (typeof props.rootRef === "function") {
 				props.rootRef(node);
 			} else if (props.rootRef) {
-				props.rootRef.current = node;
+				// RefObject.current is readonly in newer @types/react
+				// (editor TS2540) but mutable at runtime under both old and
+				// new types — the structural cast keeps the write working
+				// everywhere with no behavior change.
+				(props.rootRef as { current: HTMLDivElement | null }).current =
+					node;
 			}
 		},
 		[props.rootRef],
@@ -15422,7 +15549,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						isTwoCol={isTwoCol}
 						onFieldChange={onFieldChange}
 						choiceGroupAriaLabel={ariaLabels.choiceGroup}
-						selectOptionLabel={copy.selectOptionLabel}
 						// W1-20-N1 fix: freeze authored fields during the POST.
 						isSubmitting={isSubmitting}
 						instanceId={instanceId}
@@ -15700,10 +15826,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 				className={`be-form-grid`}
 			>
 				{/* SYSTEM-CALENDAR: exactly one calendar render per engine —
-					the system stage carries no authored fields, so this is
-					the only DateAndTimeInline mount. Any residual
-					calendar-widget markers (unreachable post-migration)
-					render nothing via the FieldRenderer null-case below. */}
+                                        the system stage carries no authored fields, so this is
+                                        the only DateAndTimeInline mount. Any residual
+                                        calendar-widget markers (unreachable post-migration)
+                                        render nothing via the FieldRenderer null-case below. */}
 				{calendarBlock}
 				{step.fields
 					.filter((field) => field.fieldType !== "calendar-widget")
@@ -15718,7 +15844,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							isTwoCol={isTwoCol}
 							onFieldChange={onFieldChange}
 							choiceGroupAriaLabel={ariaLabels.choiceGroup}
-							selectOptionLabel={copy.selectOptionLabel}
 							// W1-20-N1 fix: freeze authored fields during the POST.
 							isSubmitting={isSubmitting}
 							instanceId={instanceId}
@@ -15747,10 +15872,10 @@ interface FieldRendererProps {
 	borderRadius: string | number;
 	isTwoCol: boolean;
 	onFieldChange: (fieldId: string, value: string | boolean | undefined) => void;
-	// W1-02-F9 fix: the choice-group fallback name and the select
-	// placeholder are copy-driven.
+	// W1-02-F9 fix: the choice-group fallback name is copy-driven.
+	// (BE-002: the select placeholder copy key is REMOVED — the
+	// placeholder pseudo-option no longer renders anywhere.)
 	choiceGroupAriaLabel: string;
-	selectOptionLabel: string;
 	// W1-20-N1 fix: freezes every input/choice/checkbox during the POST
 	// (threaded from StepBodyProps.isSubmitting).
 	isSubmitting?: boolean;
@@ -15803,6 +15928,552 @@ function FieldErrorMessage({
 	);
 }
 
+// =============================================================================
+// BE-002 + BE-003 — SelectFieldControl (select auto-select + styled menu)
+//
+// BE-002 (SELECT-AUTO-SELECT): the placeholder pseudo-option is gone. A
+// select with configured options always shows a REAL option: the stored
+// value when it matches one, else the author's Default Selected (via
+// getInitialSelection, which falls back to the first non-empty option).
+// The closed box is deterministic from props, so the prerender, the first
+// client render and the post-seed render all paint the same option. The
+// pre-selection counts as answered: a gate-deferred one-shot seed (below)
+// writes it into engine state exactly like ChoiceGroupInline's seed, so
+// required-field validation and the payload both see the real value. The
+// "Select Placeholder" Copy control and its constant are REMOVED with this
+// change (dead carriers — the prompt no longer renders anywhere).
+//
+// BE-003 (SELECT-MENU-STYLED): the open dropdown is a custom listbox menu,
+// not the browser-native popup (which cannot carry background/border/
+// shadow/blur/padding styling). The trigger keeps the exact closed-field
+// look (.be-input class + inputBaseStyle + chevron); the menu reuses the
+// SAME field-styles resolvers (fsBorder/fsRadius/fsPadding/fs tokens) —
+// there is no second styling system. The menu renders through a
+// document.body portal (react-dom is an allowed import) so it escapes the
+// form's overflow:hidden step-clipping container, positions fixed under
+// (or flipped above) the trigger, flips/repositions on viewport scroll and
+// resize, closes on outside pointerdown/Escape/blur, and scrolls its rows
+// with an invisible scrollbar (.be-select-scroll, rule-65 one-time CSS in
+// RootShell). Keyboard contract = the ARIA combobox/listbox pattern:
+// Enter/Space/ArrowDown/ArrowUp open, arrows/Home/End move the active
+// option (aria-activedescendant — focus never leaves the trigger), Enter
+// commits, Escape/Tab closes. Selection options commit on pointerdown so
+// the menu cannot unmount before the click lands (the classic focus-shift
+// race). SSR/hydration: open=false is the only initial state — the portal
+// exists exclusively post-interaction, so the closed markup is
+// byte-identical everywhere.
+// =============================================================================
+
+// SELECT-MENU sizing constants: viewport-relative height cap (never a fixed
+// pixel-only cap), a sane absolute ceiling, and a high (but not MAX_INT)
+// layer so the portal menu stacks over site headers/footers.
+const SELECT_MENU_MAX_PX = 320;
+const SELECT_MENU_VIEWPORT_RATIO = 0.4;
+const SELECT_MENU_Z_INDEX = 999999;
+
+interface SelectMenuPlacement {
+	left: number;
+	top: number;
+	width: number;
+	maxHeight: number;
+}
+
+interface SelectMenuFont {
+	fontFamily: string;
+	fontSize: string;
+	fontWeight: string;
+	fontStyle: string;
+	letterSpacing: string;
+	lineHeight: string;
+}
+
+interface SelectFieldControlProps {
+	field: NormalizedField;
+	opts: ChoiceOption[];
+	value: string | boolean | undefined;
+	hasError: boolean;
+	isSubmitting: boolean;
+	onFieldChange: (fieldId: string, value: string | boolean | undefined) => void;
+	// FIELD-STYLES: the RESOLVED override object (global merged under the
+	// field's own) plus the shared resolvers' outputs — the same values the
+	// closed field consumes, so the menu is a styled extension of it.
+	fs: FieldStyleOverrides | undefined;
+	inputBaseStyle: React.CSSProperties;
+	fsInputFontSize: number;
+	fsPadding: string;
+	fsRadius: string;
+	fsBorder: { width: number; style: string; color: string | undefined };
+	theme: Theme;
+	fieldDomId: string;
+	errorDomId: string;
+	reducedMotion: boolean;
+}
+
+const SelectFieldControl = React.memo(function SelectFieldControl(
+	props: SelectFieldControlProps,
+) {
+	const {
+		field,
+		opts,
+		value,
+		hasError,
+		isSubmitting,
+		onFieldChange,
+		fs,
+		inputBaseStyle,
+		fsInputFontSize,
+		fsPadding,
+		fsRadius,
+		fsBorder,
+		theme,
+		fieldDomId,
+		errorDomId,
+		reducedMotion,
+	} = props;
+
+	const beInteractive = useBeInteractive();
+	const triggerRef = React.useRef<HTMLDivElement | null>(null);
+	const menuRef = React.useRef<HTMLUListElement | null>(null);
+	const [open, setOpen] = React.useState(false);
+	const [activeIndex, setActiveIndex] = React.useState(0);
+	const [menuRect, setMenuRect] = React.useState<SelectMenuPlacement | null>(null);
+	const [menuFont, setMenuFont] = React.useState<SelectMenuFont | null>(null);
+
+	const listboxDomId = `${fieldDomId}-listbox`;
+
+	// ---- BE-002: presentation value -------------------------------------
+	// The stored value when it matches an option; otherwise the initial
+	// selection (Default Selected, else first non-empty option). Derived
+	// purely from props — deterministic for prerender/hydration.
+	const storedValue = typeof value === "string" ? value : "";
+	const matchedOption = opts.find((o) => optionValue(o) === storedValue);
+	const displayValue = matchedOption
+		? storedValue
+		: opts.length > 0
+			? getInitialSelection(opts, field.defaultOption || "")
+			: storedValue;
+	const selectedOption = opts.find((o) => optionValue(o) === displayValue);
+
+	// ---- BE-002: gate-deferred one-shot seed ----------------------------
+	// Mirrors ChoiceGroupInline's mount seed (PRERENDER-DEFER per rule 109):
+	// once interactive, an EMPTY stored value is seeded with the initial
+	// selection so required-field validation and the payload both treat
+	// the pre-selected real option as answered. A NON-empty value — real
+	// or stale (author removed the option mid-session) — is never stomped:
+	// presentation falls back above; state keeps the visitor's answer.
+	React.useEffect(() => {
+		if (!beInteractive) return;
+		if (opts.length === 0) return;
+		if (storedValue !== "") return;
+		const seed = getInitialSelection(opts, field.defaultOption || "");
+		if (!seed) return;
+		onFieldChange(field.id, seed);
+	}, [beInteractive, opts, storedValue, field.id, field.defaultOption, onFieldChange]);
+
+	// ---- placement ------------------------------------------------------
+	const padAxes = paddingAxesFrom(fsPadding) ?? { y: 14, x: 14 };
+	// Row height estimate for the flip decision: the resolved row padding
+	// (top+bottom) plus the effective option font's line box.
+	const rowEstimate =
+		padAxes.y * 2 + Math.round(Math.max(fsInputFontSize, 13) * 1.25) + 2;
+	const computePlacement = React.useCallback((): SelectMenuPlacement | null => {
+		const el = triggerRef.current;
+		if (!el || typeof window === "undefined") return null;
+		const r = el.getBoundingClientRect();
+		const viewportH = window.innerHeight || 0;
+		const cap = Math.min(viewportH * SELECT_MENU_VIEWPORT_RATIO, SELECT_MENU_MAX_PX);
+		const est = Math.min(Math.max(opts.length, 1) * rowEstimate + 8, cap);
+		const spaceBelow = viewportH - r.bottom - 8;
+		const spaceAbove = r.top - 8;
+		const openBelow =
+			spaceBelow >= Math.min(est, 160) || spaceBelow >= spaceAbove;
+		const maxH = Math.max(
+			120,
+			Math.min(cap, openBelow ? spaceBelow : spaceAbove),
+		);
+		return {
+			left: r.left,
+			top: openBelow ? r.bottom + 4 : Math.max(8, r.top - est - 4),
+			width: r.width,
+			maxHeight: maxH,
+		};
+	}, [opts.length, rowEstimate]);
+
+	const updatePlacement = React.useCallback(() => {
+		const next = computePlacement();
+		if (!next) return;
+		setMenuRect((prev) => {
+			if (
+				prev &&
+				prev.left === next.left &&
+				prev.top === next.top &&
+				prev.width === next.width &&
+				prev.maxHeight === next.maxHeight
+			)
+				return prev;
+			return next;
+		});
+	}, [computePlacement]);
+
+	const openMenu = React.useCallback(
+		(focus?: "start" | "end") => {
+			if (opts.length === 0) return;
+			const el = triggerRef.current;
+			const placement = computePlacement();
+			if (!el || !placement) return;
+			// BE-003: the portal menu lives outside the engine's CSS
+			// inheritance — copy the trigger's COMPUTED font (family,
+			// size, weight, spacing, line-height — including the field's
+			// Styles font and the coarse-pointer 16px floor) so the rows
+			// render exactly the typography the closed field shows.
+			let font: SelectMenuFont | null = null;
+			if (typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+				const cs = window.getComputedStyle(el);
+				font = {
+					fontFamily: cs.fontFamily,
+					fontSize: cs.fontSize,
+					fontWeight: cs.fontWeight,
+					fontStyle: cs.fontStyle,
+					letterSpacing: cs.letterSpacing,
+					lineHeight: cs.lineHeight,
+				};
+			}
+			setMenuFont(font);
+			setMenuRect(placement);
+			const selectedIdx = opts.findIndex((o) => optionValue(o) === displayValue);
+			setActiveIndex(
+				focus === "end"
+					? Math.max(0, opts.length - 1)
+					: selectedIdx >= 0
+						? selectedIdx
+						: 0,
+			);
+			setOpen(true);
+		},
+		[opts, displayValue, computePlacement],
+	);
+
+	const commitOption = React.useCallback(
+		(index: number) => {
+			const opt = opts[index];
+			if (!opt || opt.disabled) return;
+			onFieldChange(field.id, optionValue(opt));
+			setOpen(false);
+		},
+		[opts, field.id, onFieldChange],
+	);
+
+	// Freeze during the POST (W1-20-N1 parity with the native select).
+	React.useEffect(() => {
+		if (isSubmitting) setOpen(false);
+	}, [isSubmitting]);
+
+	// Outside-pointerdown close (INSTANCE-ISOLATION: scoped to THIS menu's
+	// trigger + portal nodes — a second engine's menu/fields never close it).
+	React.useEffect(() => {
+		if (!open) return;
+		if (typeof document === "undefined") return;
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as Node | null;
+			if (!target) return;
+			if (triggerRef.current?.contains(target)) return;
+			if (menuRef.current?.contains(target)) return;
+			setOpen(false);
+		};
+		document.addEventListener("pointerdown", onPointerDown);
+		return () => document.removeEventListener("pointerdown", onPointerDown);
+	}, [open]);
+
+	// Reposition (never re-derive values) on any viewport scroll/resize while
+	// open — capture-phase so nested scrollers (the page, embeds) are caught.
+	React.useEffect(() => {
+		if (!open) return;
+		if (typeof window === "undefined") return;
+		let raf = 0;
+		const reposition = () => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(() => {
+				updatePlacement();
+			});
+		};
+		window.addEventListener("scroll", reposition, true);
+		window.addEventListener("resize", reposition);
+		return () => {
+			cancelAnimationFrame(raf);
+			window.removeEventListener("scroll", reposition, true);
+			window.removeEventListener("resize", reposition);
+		};
+	}, [open, updatePlacement]);
+
+	const clampedActive =
+		opts.length === 0 ? 0 : Math.min(activeIndex, opts.length - 1);
+
+	// ---- keyboard (ARIA combobox/listbox) --------------------------------
+	const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+		if (isSubmitting) return;
+		switch (event.key) {
+			case "Escape":
+				if (open) {
+					event.preventDefault();
+					setOpen(false);
+				}
+				return;
+			case " ":
+			case "Enter":
+				event.preventDefault();
+				if (open) commitOption(clampedActive);
+				else openMenu();
+				return;
+			case "ArrowDown":
+				event.preventDefault();
+				if (!open) {
+					openMenu("start");
+					return;
+				}
+				if (opts.length === 0) return;
+				setActiveIndex((prev) => {
+					const next = (Math.min(prev, opts.length - 1) + 1) % opts.length;
+					return next;
+				});
+				return;
+			case "ArrowUp":
+				event.preventDefault();
+				if (!open) {
+					openMenu("end");
+					return;
+				}
+				if (opts.length === 0) return;
+				setActiveIndex((prev) => {
+					const cur = Math.min(prev, opts.length - 1);
+					const next = cur - 1 < 0 ? opts.length - 1 : cur - 1;
+					return next;
+				});
+				return;
+			case "Home":
+				if (open && opts.length > 0) {
+					event.preventDefault();
+					setActiveIndex(0);
+				}
+				return;
+			case "End":
+				if (open && opts.length > 0) {
+					event.preventDefault();
+					setActiveIndex(opts.length - 1);
+				}
+				return;
+			default:
+				return;
+		}
+	};
+
+	// ---- menu row styles (reuse the field-styles system — no 2nd system) --
+	const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4);
+	const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0;
+	const selectedRowText = fs?.selectedTextColor ?? theme.accentForegroundColor ?? TEXT_ON_ACCENT;
+	const selectedRowSurface = fs?.selectedBackgroundColor ?? theme.accentColor;
+	const optionTextColor = fs?.textColor ?? theme.textPrimaryColor;
+	const hoverRowWash = withAlpha(optionTextColor, 0.06);
+
+	const menuSurfaceStyle: React.CSSProperties = {
+		position: "fixed",
+		left: menuRect?.left,
+		top: menuRect?.top,
+		width: menuRect?.width,
+		maxHeight: menuRect?.maxHeight,
+		margin: 0,
+		padding: 4,
+		boxSizing: "border-box",
+		listStyle: "none",
+		overflowY: "auto",
+		overscrollBehavior: "contain",
+		zIndex: SELECT_MENU_Z_INDEX,
+		// FIELD-STYLES verbatim (same resolvers as the closed field —
+		// unset keys fall back to the engine defaults):
+		background: fs?.backgroundColor ?? theme.surfaceColor,
+		border: `${fsBorder.width}px ${fsBorder.style} ${fsBorder.color ?? theme.borderColor}`,
+		borderRadius: fsRadius,
+		color: optionTextColor,
+		...(menuFont ?? {}),
+		...shadowStyle(fs?.shadow),
+		...backdropStyle(fs?.backgroundBlur),
+	};
+
+	const renderRow = (option: ChoiceOption, index: number) => {
+		const isSelected = optionValue(option) === displayValue;
+		const isActiveRow = index === clampedActive;
+		return (
+			// biome-ignore lint/a11y/useSemanticElements: ARIA listbox
+			// option pattern — the <ul role="listbox">/<li role="option">
+			// contract has no native standalone equivalent, and focus
+			// management stays on the combobox trigger.
+			<li
+				key={`${option.label}-${index}`}
+				id={`${listboxDomId}-option-${index}`}
+				role="option"
+				aria-selected={isSelected}
+				aria-disabled={option.disabled || undefined}
+				// Commit on POINTERDOWN (with preventDefault): the
+				// classic dropdown race — a click on a
+				// non-focusable row first shifts focus to <body>,
+				// whose blur closed (unmounted) the menu before the
+				// click event could land. pointerdown precedes the
+				// focus shift entirely, on mouse AND touch.
+				onPointerDown={(event) => {
+					event.preventDefault();
+					commitOption(index);
+				}}
+				onMouseEnter={() => setActiveIndex(index)}
+				style={{
+					padding: fsPadding,
+					borderRadius: menuRowRadiusValue,
+					margin: 0,
+					listStyle: "none",
+					cursor: option.disabled ? "not-allowed" : "pointer",
+					color: option.disabled
+						? theme.textSecondaryColor
+						: isSelected
+							? selectedRowText
+							: optionTextColor,
+					background: isSelected
+						? selectedRowSurface
+						: isActiveRow
+							? hoverRowWash
+							: "transparent",
+					opacity: option.disabled ? 0.5 : 1,
+					transition: reducedMotion
+						? "none"
+						: "background-color 0.12s ease, color 0.12s ease",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+				}}
+			>
+				{option.label}
+			</li>
+		);
+	};
+
+	return (
+		<div style={{ position: "relative" }}>
+			{/* Hidden transport input — SYN-10 semantics: carries the
+                            REAL stored value (never the presentation fallback) so
+                            form state + the engine payload agree. */}
+			<input
+				type="hidden"
+				name={field.calFieldId || field.id}
+				value={storedValue}
+				aria-hidden="true"
+			/>
+			{/* biome-ignore lint/a11y/useSemanticElements: ARIA combobox
+                            pattern on a non-editable trigger — a native <select> would
+                            render the unstylable browser popup (BE-003); the full
+                            combobox/listbox contract is implemented here. */}
+			<div
+				ref={triggerRef}
+				id={fieldDomId}
+				role="combobox"
+				tabIndex={isSubmitting ? -1 : 0}
+				aria-expanded={open}
+				aria-haspopup="listbox"
+				aria-controls={open ? listboxDomId : undefined}
+				aria-activedescendant={
+					open && opts.length > 0
+						? `${listboxDomId}-option-${clampedActive}`
+						: undefined
+				}
+				aria-label={field.label}
+				aria-required={field.required || undefined}
+				aria-invalid={hasError || undefined}
+				aria-describedby={hasError ? errorDomId : undefined}
+				aria-disabled={isSubmitting || undefined}
+				className={hasError ? "be-input be-input-invalid" : "be-input"}
+				onClick={() => {
+					if (isSubmitting) return;
+					if (open) setOpen(false);
+					else openMenu();
+				}}
+				onKeyDown={handleTriggerKeyDown}
+				// Tabbing away closes the menu — focus never enters
+				// it (aria-activedescendant pattern).
+				onBlur={() => {
+					if (open) setOpen(false);
+				}}
+				style={{
+					...inputBaseStyle,
+					textAlign: "start",
+					cursor: isSubmitting ? "not-allowed" : "pointer",
+					opacity: isSubmitting ? 0.5 : 1,
+					paddingRight: paddingHorizontalFrom(fsPadding) + 22,
+					// BE-002: the empty-hint Placeholder color
+					// survives only for the degenerate zero-options
+					// state (a real option is otherwise always shown).
+					color:
+						!displayValue && fs?.placeholderColor
+							? fs.placeholderColor
+							: (fs?.textColor ?? theme.textPrimaryColor),
+					// Native interaction niceties the generic
+					// button-scoped CSS rule can't reach on a div.
+					touchAction: "manipulation",
+					userSelect: "none",
+					WebkitUserSelect: "none",
+					WebkitTapHighlightColor: "transparent",
+					...(fs?.focusBorderColor
+						? ({ "--be-focus-color": fs.focusBorderColor } as React.CSSProperties)
+						: {}),
+				}}
+			>
+				{selectedOption?.label ?? ""}
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 16 16"
+					fill="none"
+					aria-hidden="true"
+					style={{
+						position: "absolute",
+						right: 12,
+						top: "50%",
+						transform: open
+							? "translateY(-50%) rotate(180deg)"
+							: "translateY(-50%)",
+						pointerEvents: "none",
+						transition: reducedMotion ? "none" : "transform 0.15s ease",
+					}}
+				>
+					<path
+						d="M4 6L8 10L12 6"
+						stroke={fs?.textColor ?? theme.textSecondaryColor}
+						strokeWidth="1.5"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+			</div>
+			{open && menuRect && typeof document !== "undefined"
+				? // Dual @types/react copies in the editor disagree on the
+				// nominal ReactPortal/ReactNode types (editor TS2322) while
+				// agreeing behaviorally — a portal is renderable here under
+				// both. Cast to this file's own ReactNode (the same type
+				// the children slot resolves to) so both worlds agree.
+				(ReactDOM.createPortal(
+					<ul
+						ref={menuRef}
+						id={listboxDomId}
+						role="listbox"
+						aria-label={field.label}
+						className="be-select-scroll"
+						tabIndex={-1}
+						style={menuSurfaceStyle}
+					>
+						{opts.map(renderRow)}
+					</ul>,
+					document.body,
+				) as unknown as React.ReactNode)
+				: null}
+		</div>
+	);
+});
+
 const FieldRenderer = React.memo(function FieldRenderer(
 	props: FieldRendererProps,
 ) {
@@ -15815,7 +16486,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		isTwoCol,
 		onFieldChange,
 		choiceGroupAriaLabel,
-		selectOptionLabel,
 		isSubmitting = false,
 		instanceId = "",
 		// FIELD-STYLES-GLOBAL: shared defaults merged under this
@@ -15938,9 +16608,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 			: field.fieldType === "select"
 				? field.choiceStyles
 				: field.fieldType === "segmented" ||
-					  field.fieldType === "pills" ||
-					  field.fieldType === "cards" ||
-					  field.fieldType === "radio"
+					field.fieldType === "pills" ||
+					field.fieldType === "cards" ||
+					field.fieldType === "radio"
 					? mergeStyleOverrides(field.choiceStyles, variantStyles)
 					: field.styles;
 	const fs = mergeStyleOverrides(
@@ -16113,11 +16783,11 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
 						ref={textareaRef}
 						style={{
-						...inputBaseStyle,
-						// HEIGHT-REMOVED: same fixed 23px floor as inputs
-						// (was 96) — textarea height comes from `rows` +
-						// Padding now.
-						minHeight: fs?.minHeight ?? 23,
+							...inputBaseStyle,
+							// HEIGHT-REMOVED: same fixed 23px floor as inputs
+							// (was 96) — textarea height comes from `rows` +
+							// Padding now.
+							minHeight: fs?.minHeight ?? 23,
 							resize: "vertical",
 							fontFamily: fs?.font?.fontFamily ?? "inherit",
 						}}
@@ -16126,88 +16796,33 @@ const FieldRenderer = React.memo(function FieldRenderer(
 				</div>
 			);
 		case "select":
+			// BE-002 + BE-003: the native <select> (with its placeholder
+			// pseudo-option and unstylable browser popup) is replaced by
+			// SelectFieldControl — a combobox trigger with the exact
+			// closed-field look plus a fully field-styled custom menu.
+			// See the SelectFieldControl header comment for the full
+			// contract (auto-select seed, portal, keyboard/a11y).
 			return (
 				<div style={containerStyle} data-field-id={field.id}>
 					{labelEl}
-					{/* Requirement 4: a visible dropdown-arrow indicator on the
-                        far right of the input, since `appearance: "none"`
-                        below removes the browser's native one. */}
-					<div style={{ position: "relative" }}>
-						<select
-							id={fieldDomId}
-							// W1-20-N5 fix: same semantic-name preference as
-							// the textarea/input sites above.
-							name={field.calFieldId || field.id}
-							className={error ? "be-input be-input-invalid" : "be-input"}
-							value={typeof value === "string" ? value : ""}
-							required={field.required}
-							// FINAL-79 fix: country-style selects get autofill
-							// tokens too (autocompleteToken maps "country" etc.).
-							autoComplete={autocompleteToken(field)}
-							// W1-20-N1 fix: freeze during the POST (see textarea).
-							disabled={isSubmitting}
-							onChange={(e) => onFieldChange(field.id, e.target.value)}
-							aria-invalid={!!error}
-							aria-describedby={
-								error ? errorDomId : undefined
-							}
-							style={{
-								...inputBaseStyle,
-								cursor: isSubmitting ? "not-allowed" : "pointer",
-								appearance: "none",
-								paddingRight:
-									paddingHorizontalFrom(fsPadding) + 22,
-								// FIELD-STYLES: the empty-select hint uses the
-								// Placeholder color; a chosen value uses Text Color.
-								color:
-									!value && fs?.placeholderColor
-										? fs.placeholderColor
-										: (fs?.textColor ?? theme.textPrimaryColor),
-							}}
-						>
-							<option value="" disabled={field.required}>
-								{field.placeholder || selectOptionLabel}
-							</option>
-							{/* T7-M1 fix: options are always strings (the property control is
-                                ControlType.String) - the object branch was dead, and
-                                (opt as any).label was the file's last "as any". */}
-							{/* CHOICE-OPTIONS-INTEGRITY: empty labels are already filtered
-								at normalization; values resolve nullishly (explicit empty string survives)
-								so native select matches the ChoiceGroup variants. Keys are
-								index-suffixed - duplicate labels must not collide. */}
-							{(field.options || []).map((opt, idx) => {
-								const label = opt;
-								const optValue = field.optionValues?.[idx] ?? label;
-								return (
-									<option key={`${label}-${idx}`} value={optValue}>
-										{label}
-									</option>
-								);
-							})}
-						</select>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 16 16"
-							fill="none"
-							aria-hidden="true"
-							style={{
-								position: "absolute",
-								right: 12,
-								top: "50%",
-								transform: "translateY(-50%)",
-								pointerEvents: "none",
-							}}
-						>
-							<path
-								d="M4 6L8 10L12 6"
-								stroke={fs?.textColor ?? theme.textSecondaryColor}
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
-					</div>
+					<SelectFieldControl
+						field={field}
+						opts={opts}
+						value={value}
+						hasError={!!error}
+						isSubmitting={isSubmitting}
+						onFieldChange={onFieldChange}
+						fs={fs}
+						inputBaseStyle={inputBaseStyle}
+						fsInputFontSize={fsInputFontSize}
+						fsPadding={fsPadding}
+						fsRadius={fsRadius}
+						fsBorder={fsBorder}
+						theme={theme}
+						fieldDomId={fieldDomId}
+						errorDomId={errorDomId}
+						reducedMotion={reducedMotion}
+					/>
 					{errorEl}
 				</div>
 			);
@@ -16727,29 +17342,29 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					}).format(slot.date);
 				}
 				list.push({ label: DEFAULT_COPY_DATE_LABEL, value: dateStr });
-			// COPY-SIMPLIFICATION: the slot time renders bare — the visitor
-			// booked in this zone and the value is already zoned, so the
-			// old "(your time)" suffix is gone entirely.
-			list.push({
-				label: DEFAULT_COPY_TIME_LABEL,
-				value: slot.timeLabel,
-			});
-		}
-		// CC-11 fix: surface the booking reference (the Cal.com booking
-		// UID — the booking's ID for reschedule/cancel), when one was
-		// returned. Derived INSIDE the memo: the old code pushed onto the
-		// memoized array in the render body, so EVERY re-render (button
-		// hovers, focus moves, ticks) appended another identical
-		// "Confirmation #" row and the list grew without bound. Never
-		// mutate a memoized value during render.
-		if (bookingResult?.uid) {
-			list.push({
-				label: confirmationNumberLabel,
-				value: bookingResult.uid,
-			});
-		}
-		return list;
-	}, [steps, values, timeZone, bookingResult?.uid, confirmationNumberLabel]);
+				// COPY-SIMPLIFICATION: the slot time renders bare — the visitor
+				// booked in this zone and the value is already zoned, so the
+				// old "(your time)" suffix is gone entirely.
+				list.push({
+					label: DEFAULT_COPY_TIME_LABEL,
+					value: slot.timeLabel,
+				});
+			}
+			// CC-11 fix: surface the booking reference (the Cal.com booking
+			// UID — the booking's ID for reschedule/cancel), when one was
+			// returned. Derived INSIDE the memo: the old code pushed onto the
+			// memoized array in the render body, so EVERY re-render (button
+			// hovers, focus moves, ticks) appended another identical
+			// "Confirmation #" row and the list grew without bound. Never
+			// mutate a memoized value during render.
+			if (bookingResult?.uid) {
+				list.push({
+					label: confirmationNumberLabel,
+					value: bookingResult.uid,
+				});
+			}
+			return list;
+		}, [steps, values, timeZone, bookingResult?.uid, confirmationNumberLabel]);
 
 	// T3-M3 fix: the .ics DESCRIPTION carries the collected answers (minus
 	// the internal "Selected Time" section) instead of nothing; the SUMMARY
@@ -16944,12 +17559,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					...(headingFont?.letterSpacing != null
 						? { letterSpacing: headingFont.letterSpacing }
 						: {}),
-				lineHeight: headingFont?.lineHeight ?? 1.2,
-				color: textPrimaryColor,
-				// TERMINAL-ALIGN: Center = historical design.
-				textAlign: terminalAlignment,
-				marginBottom: 4,
-				marginTop: 0,
+					lineHeight: headingFont?.lineHeight ?? 1.2,
+					color: textPrimaryColor,
+					// TERMINAL-ALIGN: Center = historical design.
+					textAlign: terminalAlignment,
+					marginBottom: 4,
+					marginTop: 0,
 					// FINAL-43 fix: outline:none removed (see .be-focus-target).
 				}}
 			>
@@ -17299,9 +17914,9 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		// announcement on every failure).
 		<div>
 			{/* ERROR-STATE-DESIGN: centered premium layout on the same 320px
-				floor as the form (rule 18) — the component never collapses
-				around this short content. Column centers both axes;
-				max-widths keep lines composed on wide embeds. */}
+                                floor as the form (rule 18) — the component never collapses
+                                around this short content. Column centers both axes;
+                                max-widths keep lines composed on wide embeds. */}
 			<div
 				style={{
 					display: "flex",
@@ -17322,166 +17937,166 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					boxSizing: "border-box",
 				}}
 			>
-			<div
-				style={{
-					display: "flex",
-					flexDirection: "column",
-					alignItems:
-						terminalAlignment === "left"
-							? "flex-start"
-							: terminalAlignment === "right"
-								? "flex-end"
-								: "center",
-					gap: 6,
-					marginBottom: 16,
-					maxWidth: 520,
-				}}
-			>
 				<div
 					style={{
-						// TERMINAL-ICON: author size, 40 historical. The
-						// glyph scales at 60% of the mark size.
-						width: iconSize ?? ERROR_ICON_SIZE,
-						height: iconSize ?? ERROR_ICON_SIZE,
-						borderRadius: "50%",
-						background: withAlpha(errorColor, 0.12),
-						// Soft halo ring for a composed, premium mark.
-						boxShadow: `0 0 0 8px ${withAlpha(errorColor, 0.06)}`,
-						color: errorColor,
-						display: "inline-flex",
-						alignItems: "center",
-						justifyContent: "center",
-						fontSize: Math.round((iconSize ?? ERROR_ICON_SIZE) * 0.6),
-						fontWeight: 700,
-						flexShrink: 0,
-						marginBottom: 10,
-					}}
-					aria-hidden="true"
-				>
-					!
-				</div>
-				<div>
-					<h2
-						ref={headingRef}
-						tabIndex={-1}
-						className="be-focus-target"
-					style={{
-						// Per-surface Heading Font (unset = previous look).
-						fontFamily: headingFont?.fontFamily ?? "inherit",
-						fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
-						fontWeight: headingFont?.fontWeight ?? 700,
-						...(headingFont?.fontStyle
-							? { fontStyle: headingFont.fontStyle }
-							: {}),
-						...(headingFont?.letterSpacing != null
-							? { letterSpacing: headingFont.letterSpacing }
-							: {}),
-						lineHeight: headingFont?.lineHeight ?? 1.2,
-						color: textPrimaryColor,
-						marginTop: 0,
-						marginBottom: 0,
-						// FINAL-43 fix: outline:none removed (see .be-focus-target).
+						display: "flex",
+						flexDirection: "column",
+						alignItems:
+							terminalAlignment === "left"
+								? "flex-start"
+								: terminalAlignment === "right"
+									? "flex-end"
+									: "center",
+						gap: 6,
+						marginBottom: 16,
+						maxWidth: 520,
 					}}
 				>
-					{errorTitle}
-					</h2>
 					<div
 						style={{
-							// BODY-ROLE: terminal body copy follows Body
-							// Font (defaults equal the historical look).
-							fontSize: bodySubtitleSize,
-							color: textSecondaryColor,
-							marginTop: 6,
-							lineHeight: bodySubtitleLineHeight,
-						}}
-					>
-						{errorSubtitle}
-					</div>
-				</div>
-			</div>
-			<div
-				style={{
-					padding: "14px 18px",
-					borderRadius: borderRadius,
-					background: withAlpha(errorColor, 0.08),
-					border: `1px solid ${withAlpha(errorColor, 0.3)}`,
-					color: textPrimaryColor,
-					fontSize: 14,
-					lineHeight: 1.5,
-					marginBottom: 20,
-					width: "100%",
-					maxWidth: 520,
-					boxSizing: "border-box",
-				}}
-			>
-				{message}
-			</div>
-			<div
-				style={{
-					display: "flex",
-					gap: 8,
-					flexWrap: "wrap",
-					alignItems: "center",
-					justifyContent: "center",
-				}}
-			>
-			<button
-				type="button"
-				onClick={onRetry}
-				{...retryIx.bind}
-				style={{
-					minHeight: TOUCH_TARGET_MIN,
-					// ERROR-RETRY-BUTTON: Retry group's resolved surface +
-					// Hover/Pressed deltas. Unopened groups reproduce the
-					// previous hardcoded accent surface exactly.
-					...applyButtonInteraction(
-						retryStyle,
-						retryHover,
-						retryPressed,
-						retryIx,
-						retryAnimate,
-					),
-					cursor: "pointer",
-				}}
-			>
-				{retryLabel}
-			</button>
-				{/* T3-L3 fix: an escalation path for persistent errors —
-                    previously the screen offered Retry and literally nothing
-                    else. Rendered only when the author configured contact
-                    details. */}
-				{supportContactValue ? (
-					<a
-						href={supportContactHref(supportContactValue).href}
-						{...(supportContactHref(supportContactValue).external
-							? { target: "_blank", rel: "noopener noreferrer" }
-							: {})}
-						style={{
+							// TERMINAL-ICON: author size, 40 historical. The
+							// glyph scales at 60% of the mark size.
+							width: iconSize ?? ERROR_ICON_SIZE,
+							height: iconSize ?? ERROR_ICON_SIZE,
+							borderRadius: "50%",
+							background: withAlpha(errorColor, 0.12),
+							// Soft halo ring for a composed, premium mark.
+							boxShadow: `0 0 0 8px ${withAlpha(errorColor, 0.06)}`,
+							color: errorColor,
 							display: "inline-flex",
 							alignItems: "center",
+							justifyContent: "center",
+							fontSize: Math.round((iconSize ?? ERROR_ICON_SIZE) * 0.6),
+							fontWeight: 700,
+							flexShrink: 0,
+							marginBottom: 10,
+						}}
+						aria-hidden="true"
+					>
+						!
+					</div>
+					<div>
+						<h2
+							ref={headingRef}
+							tabIndex={-1}
+							className="be-focus-target"
+							style={{
+								// Per-surface Heading Font (unset = previous look).
+								fontFamily: headingFont?.fontFamily ?? "inherit",
+								fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+								fontWeight: headingFont?.fontWeight ?? 700,
+								...(headingFont?.fontStyle
+									? { fontStyle: headingFont.fontStyle }
+									: {}),
+								...(headingFont?.letterSpacing != null
+									? { letterSpacing: headingFont.letterSpacing }
+									: {}),
+								lineHeight: headingFont?.lineHeight ?? 1.2,
+								color: textPrimaryColor,
+								marginTop: 0,
+								marginBottom: 0,
+								// FINAL-43 fix: outline:none removed (see .be-focus-target).
+							}}
+						>
+							{errorTitle}
+						</h2>
+						<div
+							style={{
+								// BODY-ROLE: terminal body copy follows Body
+								// Font (defaults equal the historical look).
+								fontSize: bodySubtitleSize,
+								color: textSecondaryColor,
+								marginTop: 6,
+								lineHeight: bodySubtitleLineHeight,
+							}}
+						>
+							{errorSubtitle}
+						</div>
+					</div>
+				</div>
+				<div
+					style={{
+						padding: "14px 18px",
+						borderRadius: borderRadius,
+						background: withAlpha(errorColor, 0.08),
+						border: `1px solid ${withAlpha(errorColor, 0.3)}`,
+						color: textPrimaryColor,
+						fontSize: 14,
+						lineHeight: 1.5,
+						marginBottom: 20,
+						width: "100%",
+						maxWidth: 520,
+						boxSizing: "border-box",
+					}}
+				>
+					{message}
+				</div>
+				<div
+					style={{
+						display: "flex",
+						gap: 8,
+						flexWrap: "wrap",
+						alignItems: "center",
+						justifyContent: "center",
+					}}
+				>
+					<button
+						type="button"
+						onClick={onRetry}
+						{...retryIx.bind}
+						style={{
 							minHeight: TOUCH_TARGET_MIN,
-							padding: "10px 22px",
-							borderRadius: borderRadius,
-							border: `1px solid ${borderColor}`,
-							background: "transparent",
-							// W1-11-NEW-FIND-6 fix: the focus outline uses
-							// currentColor (the global :focus-visible rule),
-							// so a deliberately muted textSecondaryColor could
-							// fall under the 3:1 indicator-contrast threshold.
-							// textPrimaryColor keeps the outline legible no
-							// matter how quiet the secondary token is.
-							color: textPrimaryColor,
-							fontFamily: "inherit",
-							fontSize: 14,
-							fontWeight: 600,
-							textDecoration: "none",
+							// ERROR-RETRY-BUTTON: Retry group's resolved surface +
+							// Hover/Pressed deltas. Unopened groups reproduce the
+							// previous hardcoded accent surface exactly.
+							...applyButtonInteraction(
+								retryStyle,
+								retryHover,
+								retryPressed,
+								retryIx,
+								retryAnimate,
+							),
 							cursor: "pointer",
 						}}
 					>
-						{DEFAULT_COPY_SUPPORT_CONTACT_LABEL}
-					</a>
-				) : null}
-			</div>
+						{retryLabel}
+					</button>
+					{/* T3-L3 fix: an escalation path for persistent errors —
+                    previously the screen offered Retry and literally nothing
+                    else. Rendered only when the author configured contact
+                    details. */}
+					{supportContactValue ? (
+						<a
+							href={supportContactHref(supportContactValue).href}
+							{...(supportContactHref(supportContactValue).external
+								? { target: "_blank", rel: "noopener noreferrer" }
+								: {})}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								minHeight: TOUCH_TARGET_MIN,
+								padding: "10px 22px",
+								borderRadius: borderRadius,
+								border: `1px solid ${borderColor}`,
+								background: "transparent",
+								// W1-11-NEW-FIND-6 fix: the focus outline uses
+								// currentColor (the global :focus-visible rule),
+								// so a deliberately muted textSecondaryColor could
+								// fall under the 3:1 indicator-contrast threshold.
+								// textPrimaryColor keeps the outline legible no
+								// matter how quiet the secondary token is.
+								color: textPrimaryColor,
+								fontFamily: "inherit",
+								fontSize: 14,
+								fontWeight: 600,
+								textDecoration: "none",
+								cursor: "pointer",
+							}}
+						>
+							{DEFAULT_COPY_SUPPORT_CONTACT_LABEL}
+						</a>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);
@@ -17645,10 +18260,10 @@ function fieldStylesBorderControl(
 		borderStyle?: string;
 		borderColor?: string;
 	} = {
-		borderWidth: FIELD_STYLES_BORDER_WIDTH,
-		borderStyle: "solid",
-		borderColor: FIELD_STYLES_BORDER_COLOR,
-	},
+			borderWidth: FIELD_STYLES_BORDER_WIDTH,
+			borderStyle: "solid",
+			borderColor: FIELD_STYLES_BORDER_COLOR,
+		},
 ) {
 	return {
 		type: ControlType.Border,
@@ -17739,9 +18354,9 @@ function shadowStyle(shadow: string | undefined): React.CSSProperties {
 function backdropStyle(px: number | undefined): React.CSSProperties {
 	return typeof px === "number" && px > 0
 		? {
-				backdropFilter: `blur(${px}px)`,
-				WebkitBackdropFilter: `blur(${px}px)`,
-			}
+			backdropFilter: `blur(${px}px)`,
+			WebkitBackdropFilter: `blur(${px}px)`,
+		}
 		: {};
 }
 
@@ -18314,8 +18929,10 @@ function makeFieldObjectControls() {
 		// Empty keeps the historical first-option seed; a set value must
 		// match an option label (or Option Values entry) — getInitialSelection
 		// matches value-or-label and falls back to first on no match.
-		// Native `select` is excluded on purpose: its placeholder/empty
-		// state is the correct required-field UX (no auto-pass there).
+		// BE-002 (SELECT-AUTO-SELECT): `select` is now INCLUDED — the
+		// placeholder/empty state was removed, a real option is always
+		// pre-selected, and the author picks which one. This supersedes
+		// rule 97's select-exclusion clause (see the new AGENTS.md rule).
 		defaultOption: {
 			type: ControlType.String,
 			title: "Default Selected",
@@ -18324,10 +18941,7 @@ function makeFieldObjectControls() {
 			description:
 				"Pre-selected option. Must match an option label or value; empty keeps the first option.",
 			hidden: (p: FieldControlProps) =>
-				p?.fieldType !== "segmented" &&
-				p?.fieldType !== "pills" &&
-				p?.fieldType !== "cards" &&
-				p?.fieldType !== "radio",
+				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
 		},
 		// Scalar — safe to conditionally hide (Safety Rule #2).
 		isPrimaryName: {
@@ -18358,19 +18972,34 @@ function makeFieldObjectControls() {
 			hidden: (p: FieldControlProps) =>
 				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
 		},
+		// BE-005 (OPTION-IMAGES-NATIVE): the item control is Framer's native
+		// image picker (ControlType.ResponsiveImage) — the author uploads from
+		// their device and the cards/radio images get Framer's image
+		// processing (srcSet variants, alt text). Canvases saved before this
+		// change stored plain URL STRINGS per entry; the runtime accepts both
+		// shapes (string | OptionImageSource), so old link values keep
+		// rendering. Same Array-of-12 slot, same index-parallel alignment
+		// with Options — only the item control changed.
+		// BE-006 (OPTION-ROWS-GATING): visible ONLY for the variants that
+		// actually consume images — cards and radio (the runtime's
+		// showMedia set). select/segmented/pills never read them, so the
+		// rows are dead configuration there and now hide. Same narrow
+		// Safety Rule #2 exception as `options` itself.
 		optionImages: {
 			type: ControlType.Array,
 			title: "Option Images",
 			maxCount: 12,
 			defaultValue: [],
 			control: {
-				type: ControlType.String,
-				defaultValue: "",
-				placeholder: "e.g. https://…/badge.png",
+				type: ControlType.ResponsiveImage,
 			},
 			hidden: (p: FieldControlProps) =>
-				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
+				p?.fieldType !== "cards" && p?.fieldType !== "radio",
 		},
+		// BE-006 (OPTION-ROWS-GATING): descriptions render on cards and
+		// radio rows only — hidden for select/segmented/pills where the
+		// runtime ignores them. Option Values stays visible for every
+		// choice type (identity used by selection matching + payload).
 		optionDescriptions: {
 			type: ControlType.Array,
 			title: "Option Descriptions",
@@ -18381,7 +19010,7 @@ function makeFieldObjectControls() {
 				defaultValue: "",
 			},
 			hidden: (p: FieldControlProps) =>
-				!CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
+				p?.fieldType !== "cards" && p?.fieldType !== "radio",
 		},
 		// FIELD-STYLES (hard rule): the per-field Styles submenu. Object
 		// controls share the title "Styles"; each is hidden for disjoint
@@ -18760,15 +19389,18 @@ addPropertyControls(BookingEngine, {
 						hidden: (p: ButtonsLayoutControlProps) =>
 							p?.groupNavButtons !== true,
 					},
-					// NAV-ORDER: Back-first (default, historical) or
-					// primary-first. True DOM order — visual, tab, SR, and
-					// activation order stay coherent by construction. Never
-					// CSS order/row-reverse.
+					// NAV-ORDER (BE-004 label-only rename): Back-first (default,
+					// historical) or primary-first. True DOM order — visual, tab, SR,
+					// and activation order stay coherent by construction. Never
+					// CSS order/row-reverse. The row is titled "Back Position"
+					// with Left/Right options so one read tells the author which
+					// side Back lands on (the primary takes the opposite side);
+					// the stored values/defaults are unchanged — rename only.
 					buttonOrder: {
 						type: ControlType.Enum,
-						title: "Order",
+						title: "Back Position",
 						options: ["backFirst", "primaryFirst"],
-						optionTitles: ["Back First", "Primary First"],
+						optionTitles: ["Left", "Right"],
 						defaultValue: "backFirst",
 						displaySegmentedControl: true,
 					},
@@ -18880,69 +19512,69 @@ addPropertyControls(BookingEngine, {
 					borderColor: FIELD_STYLES_BORDER_COLOR,
 				}),
 			},
-		addToCalendarButton: {
-			type: ControlType.Object,
-			title: "Add to Calendar",
-			buttonTitle: "Add to Calendar",
-			icon: "object",
-			optional: true,
-			controls: makeButtonGroupControls({
-				text: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
-				padding: "10px 18px 10px 18px",
-				borderWidth: 1,
-				// Baked Accent default (#0066BB, same as the Accent
-				// control default) — the live Accent token applies
-				// while untouched; see the factory comment.
-				borderColor: "#0066BB",
-			}),
-		},
-		// CALENDAR-DEEP-LINKS: Google/Outlook success actions wear the
-		// same accent-outline role as Add to Calendar. Text falls back
-		// to the pre-move Copy labels so customized canvases keep copy.
-		googleCalendarButton: {
-			type: ControlType.Object,
-			title: "Google Calendar",
-			buttonTitle: "Google Calendar",
-			icon: "object",
-			optional: true,
-			controls: makeButtonGroupControls({
-				text: "Add to Google Calendar",
-				padding: "10px 18px 10px 18px",
-				borderWidth: 1,
-				borderColor: "#0066BB",
-			}),
-		},
-		outlookCalendarButton: {
-			type: ControlType.Object,
-			title: "Outlook",
-			buttonTitle: "Outlook",
-			icon: "object",
-			optional: true,
-			controls: makeButtonGroupControls({
-				text: "Add to Outlook",
-				padding: "10px 18px 10px 18px",
-				borderWidth: 1,
-				borderColor: "#0066BB",
-			}),
-		},
-		// ERROR-RETRY-BUTTON: the error-screen Retry button. Same group
-		// model as every other button — Text first, then the full style
-		// set with the button's own effective defaults (accent-filled
-		// primary like today's hardcoded surface). Optional: unopened
-		// renders exactly as before.
-		retryButton: {
-			type: ControlType.Object,
-			title: "Retry",
-			buttonTitle: "Retry",
-			icon: "object",
-			optional: true,
-			controls: makeButtonGroupControls({
-				text: DEFAULT_COPY_RETRY_LABEL,
-				padding: "10px 22px 10px 22px",
-				borderWidth: 0,
-				borderColor: FIELD_STYLES_BORDER_COLOR,
-			}),
-		},
+			addToCalendarButton: {
+				type: ControlType.Object,
+				title: "Add to Calendar",
+				buttonTitle: "Add to Calendar",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					// Baked Accent default (#0066BB, same as the Accent
+					// control default) — the live Accent token applies
+					// while untouched; see the factory comment.
+					borderColor: "#0066BB",
+				}),
+			},
+			// CALENDAR-DEEP-LINKS: Google/Outlook success actions wear the
+			// same accent-outline role as Add to Calendar. Text falls back
+			// to the pre-move Copy labels so customized canvases keep copy.
+			googleCalendarButton: {
+				type: ControlType.Object,
+				title: "Google Calendar",
+				buttonTitle: "Google Calendar",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: "Add to Google Calendar",
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					borderColor: "#0066BB",
+				}),
+			},
+			outlookCalendarButton: {
+				type: ControlType.Object,
+				title: "Outlook",
+				buttonTitle: "Outlook",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: "Add to Outlook",
+					padding: "10px 18px 10px 18px",
+					borderWidth: 1,
+					borderColor: "#0066BB",
+				}),
+			},
+			// ERROR-RETRY-BUTTON: the error-screen Retry button. Same group
+			// model as every other button — Text first, then the full style
+			// set with the button's own effective defaults (accent-filled
+			// primary like today's hardcoded surface). Optional: unopened
+			// renders exactly as before.
+			retryButton: {
+				type: ControlType.Object,
+				title: "Retry",
+				buttonTitle: "Retry",
+				icon: "object",
+				optional: true,
+				controls: makeButtonGroupControls({
+					text: DEFAULT_COPY_RETRY_LABEL,
+					padding: "10px 22px 10px 22px",
+					borderWidth: 0,
+					borderColor: FIELD_STYLES_BORDER_COLOR,
+				}),
+			},
 			// HOME-URL-REMOVED: no destination control — "Done" always
 			// navigates to the website root (DEFAULT_CONFIRM_HOME_URL).
 		},
@@ -19194,26 +19826,26 @@ addPropertyControls(BookingEngine, {
 				defaultValue: "Your appointment has been confirmed, Details are below.",
 				displayTextArea: true,
 			},
-		errorTitle: {
-			type: ControlType.String,
-			title: "Error Title",
-			defaultValue: "Something went wrong while processing your booking",
-		},
-		errorSubtitle: {
-			type: ControlType.String,
-			title: "Error Subtitle",
-			defaultValue: "Your details are saved — try again in a moment.",
-			displayTextArea: true,
-		},
-		// COPY-SIMPLIFICATION: loading/no-times/submitting/support-label
-		// are fixed internal strings (DEFAULT_COPY_*) — no controls.
-		supportContactValue: {
-			type: ControlType.String,
-			title: "Support Contact",
-			defaultValue: "",
-			placeholder: "Email, phone, or https://… support link",
-		},
-		icsSummaryLabel: {
+			errorTitle: {
+				type: ControlType.String,
+				title: "Error Title",
+				defaultValue: "Something went wrong while processing your booking",
+			},
+			errorSubtitle: {
+				type: ControlType.String,
+				title: "Error Subtitle",
+				defaultValue: "Your details are saved — try again in a moment.",
+				displayTextArea: true,
+			},
+			// COPY-SIMPLIFICATION: loading/no-times/submitting/support-label
+			// are fixed internal strings (DEFAULT_COPY_*) — no controls.
+			supportContactValue: {
+				type: ControlType.String,
+				title: "Support Contact",
+				defaultValue: "",
+				placeholder: "Email, phone, or https://… support link",
+			},
+			icsSummaryLabel: {
 				type: ControlType.String,
 				title: "Calendar Summary",
 				defaultValue: "Appointment",
@@ -19235,16 +19867,16 @@ addPropertyControls(BookingEngine, {
 			},
 			// DEAD CONTROL REMOVAL (rule 8): Detected Time Zone Prefix
 			// had zero runtime reads — same auto-detect rationale.
-		// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
-		// required-fields-hint, saved-answers, save-failed, character-
-		// count and required-marker controls were removed with their
-		// (never-rendered) copy — the component is hard-ruled against
-		// rendering those features, so the controls only promised
-		// output that could never appear. No replacement exists.
-		// COPY-SIMPLIFICATION: availability-error/date/time are fixed
-		// internal strings (DEFAULT_COPY_*/slotsFallbackError) — the
-		// Availability Error control duplicated slotsFallbackError
-		// byte-for-byte, so it was removed, not merged.
+			// DEAD CONTROL REMOVAL (rules 4/5/7): the privacy-notice,
+			// required-fields-hint, saved-answers, save-failed, character-
+			// count and required-marker controls were removed with their
+			// (never-rendered) copy — the component is hard-ruled against
+			// rendering those features, so the controls only promised
+			// output that could never appear. No replacement exists.
+			// COPY-SIMPLIFICATION: availability-error/date/time are fixed
+			// internal strings (DEFAULT_COPY_*/slotsFallbackError) — the
+			// Availability Error control duplicated slotsFallbackError
+			// byte-for-byte, so it was removed, not merged.
 			// T10-H5 fix: deep-link button labels moved to the Buttons
 			// group (Google Calendar / Outlook groups) — the Copy keys
 			// stay readable as fallback so customized canvases keep copy.
@@ -19275,11 +19907,11 @@ addPropertyControls(BookingEngine, {
 			// control for it either.
 			// COPY-SIMPLIFICATION: the demo empty-state text is fixed
 			// internal behavior (DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL).
-			selectOptionLabel: {
-				type: ControlType.String,
-				title: "Select Placeholder",
-				defaultValue: DEFAULT_COPY_SELECT_OPTION_LABEL,
-			},
+			// BE-002 (SELECT-AUTO-SELECT): the "Select Placeholder" control
+			// is REMOVED — the placeholder pseudo-option no longer renders
+			// (a select with options always shows a real option). A stored
+			// value on an existing canvas is inert; do not re-add the
+			// control under another name.
 			stepProgressLabel: {
 				type: ControlType.String,
 				title: "Step Progress",
