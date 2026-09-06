@@ -6586,6 +6586,17 @@ interface BookingEngineStyleProps {
 	// Per-surface heading typography (step + success + error titles).
 	// The base `font` above stays the body control.
 	headingFont?: FramerFont;
+	// FIELD-STYLES-GLOBAL: shared default styling for authored Form
+	// fields across all authored Steps. Same FieldStyleOverrides model
+	// and input-set vocabulary as a field's own Styles submenu — one
+	// mechanism, not a second implementation. Resolution per field:
+	// explicit field value wins, else this global, else the engine
+	// default (per-type natives where they exist). Unset/undefined at
+	// every level inherits; explicit values (including 0) always win —
+	// never falsy checks. Unopened (undefined) changes nothing, so
+	// existing canvases render byte-identically. Calendar, Buttons, and
+	// terminal UI never read this — they own independent style systems.
+	fieldStyles?: FieldStyleOverrides;
 	// TYPOGRAPHY-FIRST: `font` + `headingFont` top the Styles submenu
 	// (`styles.font` / `styles.headingFont`). The retired top-level
 	// "Font" group (`typography.*`) stays readable as a legacy fallback.
@@ -6917,8 +6928,16 @@ interface BookingEngineConfigProps {
 		// anymore — `contentAlignment` above wins when set. Read only
 		// at the single resolution site in useBookingEngineState.
 		terminalAlignment?: "left" | "center" | "right";
-		// TERMINAL-ICON: terminal mark size (success circle + error
-		// mark). Unset keeps each screen's historical size (64 / 40).
+		// TERMINAL-ICON (legacy carrier): mark size configured under the
+		// old Content group. No control writes it anymore — the Terminal
+		// group's `iconSize` wins when set. Read only at the single
+		// resolution site in useBookingEngineState.
+		iconSize?: number;
+	};
+	// TERMINAL: terminal-specific configuration (success/error screens).
+	// Icon Size is the only terminal-scoped styling control — it is NOT
+	// global content, so it lives here, never in the Content group.
+	terminal?: {
 		iconSize?: number;
 	};
 	// LAYOUT-REMOVED (see AGENTS.md): the Content Width control and its
@@ -10711,10 +10730,15 @@ function useBookingEngineState(
 		onAnalytics,
 		advanced,
 		calendar,
-		// CONTENT group (Content Alignment + Icon Size). The retired
-		// per-step alignment carrier (`header.alignment`) still seeds
-		// steps — see the legacy seeding below.
+		// CONTENT group (Content Alignment). The retired per-step
+		// alignment carrier (`header.alignment`) still seeds steps —
+		// see the legacy seeding below. Icon Size moved to Terminal.
 		header,
+		// TERMINAL group (terminal-specific controls such as Icon Size).
+		terminal,
+		// FIELD-STYLES-GLOBAL: shared field defaults (optional group —
+		// unopened is undefined and changes nothing).
+		fieldStyles,
 	} = props;
 
 	// TRANSITION-GROUP: read the nested Transition-submenu path first; fall
@@ -13374,9 +13398,19 @@ function useBookingEngineState(
 				? "flex-end"
 				: "center";
 	// TERMINAL-ICON: author size for the success circle + error mark.
-	// Unset keeps each screen's historical size (64 / 40) — the screens
-	// apply their own fallback, so this stays a pure pass-through.
-	const terminalIconSize = header?.iconSize;
+	// Terminal group wins; the legacy Content-group key stays readable
+	// so configured canvases keep their size. Unset keeps each screen's
+	// historical size (64 / 40) — the screens apply their own fallback,
+	// so this stays a pure pass-through.
+	const terminalIconSize = terminal?.iconSize ?? header?.iconSize;
+	// FIELD-STYLES-GLOBAL: normalized once here (same empty-color strip
+	// as per-field values), then merged UNDER each field's own overrides
+	// at the FieldRenderer site. Unopened group is undefined — zero
+	// behavior change. Memoized so downstream memos keep holding.
+	const globalFieldStyles = React.useMemo(
+		() => normalizeStyleOverrides(fieldStyles),
+		[fieldStyles],
+	);
 	// NAV-ORDER: true DOM order — the primary group renders before Back
 	// when configured. Visual, tab, SR, and activation order stay coherent
 	// by construction (no CSS order/row-reverse anywhere in the footer).
@@ -13417,6 +13451,8 @@ function useBookingEngineState(
 		calApiKey,
 		calEventTypeId,
 		fieldGap,
+		// FIELD-STYLES-GLOBAL: shared field defaults for the body below.
+		globalFieldStyles,
 		completePct,
 		continueLabel,
 		copy,
@@ -13592,6 +13628,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 		borderRadius,
 		sanitizedRadius,
 		fieldGap,
+		// FIELD-STYLES-GLOBAL: shared field defaults, threaded to StepBody.
+		globalFieldStyles,
 		buttonLabels,
 		completePct,
 		copy,
@@ -14635,6 +14673,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 								theme={theme}
 								borderRadius={sanitizedRadius}
 								fieldGap={fieldGap}
+								// FIELD-STYLES-GLOBAL: shared defaults flow
+								// into every authored field (overrides win).
+								globalFieldStyles={globalFieldStyles}
 								hasCalConfig={hasCalConfig}
 								slotsLoading={slotsLoading}
 								availabilitySettled={availabilitySettled}
@@ -15145,6 +15186,9 @@ interface StepBodyProps {
 	 *  control (default 16px, clamped 0–32 at runtime). Single source of
 	 *  truth for both form-grid `gap`s — the hard-coded 12px is gone. */
 	fieldGap: number;
+	/** FIELD-STYLES-GLOBAL: shared field defaults (already normalized).
+	 *  Threaded to every FieldRenderer; per-field overrides win. */
+	globalFieldStyles?: FieldStyleOverrides;
 	hasCalConfig: boolean;
 	slotsLoading: boolean;
 	/** SETTLED-GATE (rule 107): true once a fetch was attempted for the
@@ -15280,6 +15324,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 		theme,
 		borderRadius,
 		fieldGap,
+		// FIELD-STYLES-GLOBAL: shared defaults for the fields below.
+		globalFieldStyles,
 		hasCalConfig,
 		slotsLoading,
 		slotsError,
@@ -15371,6 +15417,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 						// W1-20-N1 fix: freeze authored fields during the POST.
 						isSubmitting={isSubmitting}
 						instanceId={instanceId}
+						globalFieldStyles={globalFieldStyles}
 					/>
 				))}
 			</div>
@@ -15666,6 +15713,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 							// W1-20-N1 fix: freeze authored fields during the POST.
 							isSubmitting={isSubmitting}
 							instanceId={instanceId}
+							globalFieldStyles={globalFieldStyles}
 						/>
 					))}
 			</div>
@@ -15697,6 +15745,10 @@ interface FieldRendererProps {
 	// W1-20-N1 fix: freezes every input/choice/checkbox during the POST
 	// (threaded from StepBodyProps.isSubmitting).
 	isSubmitting?: boolean;
+	/** FIELD-STYLES-GLOBAL: shared defaults merged UNDER this field's
+	 *  own overrides (explicit field values win per row; unset inherits
+	 *  global, then the engine default). */
+	globalFieldStyles?: FieldStyleOverrides;
 	// INSTANCE-ISOLATION (rule 91): this engine's hydration-safe id prefix.
 	// Empty string on the first render (both server and client — no
 	// hydration mismatch), then "be-engine-N" post-mount. Field DOM ids
@@ -15757,6 +15809,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		selectOptionLabel,
 		isSubmitting = false,
 		instanceId = "",
+		// FIELD-STYLES-GLOBAL: shared defaults merged under this
+		// field's own overrides below.
+		globalFieldStyles,
 	} = props;
 
 	// INSTANCE-ISOLATION (rule 91): field DOM ids are scoped per engine
@@ -15848,6 +15903,16 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	// engine look. normalizeStyleOverrides strips values that can never be
 	// real choices (empty-string colors), so activation-time
 	// materialization can never sneak one past the theme fallbacks.
+	// FIELD-STYLES-GLOBAL: the shared defaults merge UNDERNEATH the
+	// field's own object (same per-row granularity as the legacy merge:
+	// a set row replaces the global row wholesale — never Frankenstein
+	// fonts). Each side is normalized first so junk empty-strings fall
+	// through to the next layer instead of sticking. Explicit field
+	// values (including 0) always win — ??/typeof only, never falsy.
+	// Unopened global (undefined) changes nothing: existing canvases
+	// render byte-identically, and removing a field's Styles object
+	// falls back to the global. Calendar surface, Buttons, and terminal
+	// UI never pass through here — independent systems.
 	const variantStyles: FieldStyleOverrides | undefined =
 		field.fieldType === "segmented"
 			? field.segmentedStyles
@@ -15869,7 +15934,10 @@ const FieldRenderer = React.memo(function FieldRenderer(
 					  field.fieldType === "radio"
 					? mergeStyleOverrides(field.choiceStyles, variantStyles)
 					: field.styles;
-	const fs = normalizeStyleOverrides(fieldStyleOverrides);
+	const fs = mergeStyleOverrides(
+		globalFieldStyles,
+		normalizeStyleOverrides(fieldStyleOverrides),
+	);
 	const fsOptionMuted = fs?.textColor
 		? withAlpha(fs.textColor, 0.6)
 		: theme.textSecondaryColor;
@@ -18569,13 +18637,15 @@ addPropertyControls(BookingEngine, {
 	// has no alignment control. Per-step `alignment` survives only as a
 	// legacy carrier (explicit values win; unset follows this global).
 
-	// ----- Content (global content alignment + terminal mark size) -----
+	// ----- Content (global content alignment only) -----
 	// CONTENT-ALIGN (rule 125): this group holds the single global
 	// Content Alignment — step headers and terminal headers share it, so
 	// authors configure alignment once, not per screen. Confirmation/error
 	// action rows are out of scope and unaffected. The `header` prop path
 	// is unchanged (saved values keep working); only the titles/scope are
 	// new. Legacy `terminalAlignment` values stay readable as fallback.
+	// Terminal-scoped rows (Icon Size) live in the Terminal group below —
+	// never here (see AGENTS.md: groups match scope).
 	header: {
 		type: ControlType.Object,
 		title: "Content",
@@ -18590,6 +18660,24 @@ addPropertyControls(BookingEngine, {
 				defaultValue: "left",
 				displaySegmentedControl: true,
 			},
+		},
+	},
+
+	// ----- Terminal (terminal-specific presentation) -----
+	// TERMINAL-SCOPE: rows here configure the success/error terminal
+	// screens only — never global content. Icon Size moved out of the
+	// Content group (same control, same range, same no-default unset
+	// semantics); canvases that configured it under Content keep their
+	// value via the legacy `header.iconSize` fallback at the resolution
+	// site. Unset keeps each screen's historical size (64 success / 40
+	// error), so untouched canvases are byte-identical.
+	terminal: {
+		type: ControlType.Object,
+		title: "Terminal",
+		icon: "object",
+		buttonTitle: "Terminal",
+		optional: true,
+		controls: {
 			// TERMINAL-ICON: success-circle + error-mark size. No
 			// defaultValue — unset keeps each screen's historical size
 			// (64 success / 40 error), so untouched canvases are
@@ -19031,6 +19119,31 @@ addPropertyControls(BookingEngine, {
 	// "Font" panel submenu; they now live at the top of the Styles
 	// submenu. The `typography` prop stays readable as a legacy fallback
 	// (same pattern as SYN-01 `validation`). Never re-add the group.
+
+	// ----- Field Styles (shared field defaults) -----
+	// FIELD-STYLES-GLOBAL: one optional group holding the shared default
+	// look for authored Form fields across all Steps. SAME input-set
+	// vocabulary and effective defaults as a field's own Styles submenu
+	// (one mechanism — `makeInputFieldStylesControls`, not a second
+	// implementation), so opening it materializes the same inherit look
+	// an input field shows. Per-field Styles merge ABOVE this per row:
+	// explicit field values (including 0) always win; unset inherits
+	// this global, then the engine default. Unopened (undefined) changes
+	// nothing — existing canvases render byte-identically. Calendar,
+	// Buttons, and terminal UI never read this group. Choice/checkbox
+	// fields consume the rows meaningful to them (same conditional
+	// behavior as their own submenus); choice-selected and checkbox
+	// accent/size rows stay per-field-only.
+	fieldStyles: {
+		type: ControlType.Object,
+		title: "Field Styles",
+		icon: "effect",
+		buttonTitle: "Field Styles",
+		optional: true,
+		description:
+			"Shared default look for all form fields. A field's own Styles override this per row; fields without their own Styles always follow it.",
+		controls: makeInputFieldStylesControls(),
+	},
 
 	// ----- Animation (grouped: style + behavior in one Transition submenu) -----
 	transitionSettings: {
