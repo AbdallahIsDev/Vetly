@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Booking Engine — Button Visual Reference</title>
+<!--
+  REFERENCE ONLY — no behavior, no booking flow, no API calls.
+  Every surface below copies the production defaults verbatim from
+  Code-Components/BookingEngine.tsx (theme tokens + Buttons-group role
+  defaults + render-site inline styles). Untouched Buttons groups fall
+  back to these role defaults at runtime (resolveButtonStyle), so this
+  page matches an unconfigured component exactly.
+
+  Source values (BookingEngine.tsx):
+    Theme ........ Accent #0066BB | Primary Foreground #FFFFFF | Text #111827
+                   Text Secondary rgba(17,24,39,.62) = withAlpha(#111827,.62)
+                   Border #E5E7EB (= FIELD_STYLES_BORDER_COLOR) | Error #DC2626
+                   Radius 12 (Radius control default, 0-24)
+    Buttons Font . 14px Semibold (weight 600, family inherit)
+    Touch target . min-height 44px (TOUCH_TARGET_MIN)
+    Footer row ... display flex, gap 8, margin-top 24, sticky bottom 0,
+                   Split default: space-between (single button: flex-end)
+                   Grouped+Right default: flex-end; Order default Back-first
+    Interaction .. Hover/Pressed are deltas; unconfigured = no visible change.
+                   Transition armed on all six animated props (.15s ease-out):
+                   background-color, border-color, box-shadow, color,
+                   opacity, transform. Pressed wins over hover.
+    Spinner ...... 14x14 ring, 2px solid <primary text color>,
+                   border-top transparent, be-spin 0.8s linear infinite
+                   (none under prefers-reduced-motion); button text becomes
+                   "Submitting…" (DEFAULT_COPY_SUBMITTING_LABEL), opacity .7
+    Disabled ..... submitting state only: Back/Cancel opacity .5,
+                   primary opacity .7, cursor not-allowed.
+-->
+<style>
+  :root{
+    --accent:#0066BB; --on-accent:#FFFFFF; --text:#111827;
+    --text-2:rgba(17,24,39,.62); --border:#E5E7EB; --error:#DC2626;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#FFFFFF;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding:40px 24px 80px}
+  .page{max-width:960px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{font-size:14px;color:var(--text-2);margin:0 0 8px;line-height:1.5}
+  .note{font-size:13px;color:var(--text-2);background:#F7F8FA;border:1px solid var(--border);
+    border-radius:12px;padding:12px 16px;margin:16px 0 32px;line-height:1.55}
+  h2.group{font-size:16px;margin:36px 0 4px;padding-top:20px;border-top:1px solid var(--border)}
+  .gdesc{font-size:13px;color:var(--text-2);margin:0 0 16px}
+  .card{border:1px solid var(--border);border-radius:12px;padding:18px;margin:0 0 14px}
+  .card h3{font-size:14px;margin:0 0 2px}
+  .meta{font-size:12.5px;color:var(--text-2);margin:0 0 14px;line-height:1.6}
+  .meta code{font-size:12px;background:#F7F8FA;padding:1px 6px;border-radius:6px;color:var(--text)}
+  .row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end}
+  .swatch{display:flex;flex-direction:column;gap:6px}
+  .swatch span.lbl{font-size:11.5px;color:var(--text-2)}
+  /* ---- production button base (from resolveButtonStyle + render sites) ---- */
+  .be{min-height:44px;display:inline-flex;align-items:center;font-family:inherit;
+    font-size:14px;font-weight:600;border-radius:12px;cursor:pointer;text-decoration:none;
+    transition:background-color .15s ease-out,border-color .15s ease-out,
+      box-shadow .15s ease-out,color .15s ease-out,opacity .15s ease-out,transform .15s ease-out}
+  .be-primary{background:var(--accent);color:var(--on-accent);border:none;padding:10px 22px}
+  .be-primary-tight{background:var(--accent);color:var(--on-accent);border:none;padding:10px 18px}
+  .be-ghost{background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 18px}
+  .be-ghost-muted{background:transparent;color:var(--text-2);border:1px solid var(--border);padding:10px 18px}
+  .be-outline{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 18px}
+  .be-loading{opacity:.7;cursor:not-allowed;display:inline-flex;align-items:center;gap:8px}
+  .be-disabled{opacity:.5;cursor:not-allowed}
+  .be-spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--on-accent);
+    border-top-color:transparent;display:inline-block;animation:be-spin .8s linear infinite}
+  @keyframes be-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.be-spinner{animation:none}}
+  .be-mini{background:transparent;color:var(--error);border:1px solid var(--error);
+    padding:6px 14px;font-size:12px;min-height:44px;flex-shrink:0}
+  .be-support{background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 22px}
+  /* ---- layout demos (footer row + confirmation row, values from render sites) ---- */
+  .demo{border:1px dashed var(--border);border-radius:12px;padding:16px;margin:8px 0 0}
+  .demo .cap{font-size:11.5px;color:var(--text-2);margin-bottom:10px}
+  .footer-split{display:flex;gap:8px;margin-top:24px;align-items:center;
+    justify-content:space-between;position:sticky;bottom:0;padding-top:12px}
+  .confirm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+  .err-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    padding:10px 14px;margin-bottom:12px;border-radius:12px;
+    background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);
+    color:var(--error);font-size:12px;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Booking Engine — Button Visual Reference</h1>
+  <p class="sub">Standalone visual catalog of every visitor-facing button/action in <code>Code-Components/BookingEngine.tsx</code>, rendered with current production defaults. Reference only: all clicks are dead, no booking flow, no API calls.</p>
+  <div class="note">
+    <strong>How to read:</strong> 10 actions own a <em>Buttons</em> Property-Control group (label + style fully author-configurable, untouched = exactly what you see here). 3 actions are hardcoded (no Buttons group; see notes per card). Hover/Pressed are unconfigured deltas by default, so they look identical to Default — the .15s ease-out transition is still armed on all six animated props. Disabled/loading appear only while the booking POST is in flight (<code>isSubmitting</code>).
+  </div>
+
+  <h2 class="group">Navigation (footer)</h2>
+  <p class="gdesc">Sticky footer row: flex, gap 8, margin-top 24, sticky bottom 0, padding-top 12. Split default — Back far left, primary far right (space-between; single button: flex-end). Render order follows the Order control (Back-first default).</p>
+
+  <div class="card">
+    <h3>Continue</h3>
+    <p class="meta">Buttons group <code>Continue</code> · <code>&lt;button type="submit"&gt;</code> · primary role: Accent bg, Primary-Foreground text, no border, padding <code>10px 22px</code> · shown on every step except the last · drives the step form submit.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-primary">Continue</button><span class="lbl">Default</span></div>
+      <div class="swatch"><button type="button" class="be be-primary">Continue</button><span class="lbl">Hover (unconfigured — no delta)</span></div>
+      <div class="swatch"><button type="button" class="be be-primary">Continue</button><span class="lbl">Pressed (unconfigured — no delta)</span></div>
+      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Submitting…</button><span class="lbl">Loading (in-flight: opacity .7, spinner, “Submitting…”)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Final Action — “Book Now”</h3>
+    <p class="meta">Buttons group <code>Final Action</code> · <code>&lt;button type="submit"&gt;</code> · same primary surface as Continue · takes over text <em>and</em> style on the last step only.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-primary">Book Now</button><span class="lbl">Default</span></div>
+      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Submitting…</button><span class="lbl">Loading</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Back</h3>
+    <p class="meta">Buttons group <code>Back</code> · <code>&lt;button type="button"&gt;</code> · ghost role: transparent bg, Text color, <code>1px solid Border</code>, padding <code>10px 18px</code> · hidden on the first step.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-ghost">Back</button><span class="lbl">Default</span></div>
+      <div class="swatch"><button type="button" class="be be-ghost">Back</button><span class="lbl">Hover / Pressed (unconfigured — no delta)</span></div>
+      <div class="swatch"><button type="button" class="be be-ghost be-disabled" disabled>Back</button><span class="lbl">Disabled while submitting (opacity .5)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Cancel (in-flight)</h3>
+    <p class="meta">Buttons group <code>Cancel</code> · <code>&lt;button type="button"&gt;</code> · same ghost surface as Back · rendered <em>only</em> while the booking POST is in flight; aborts the request and returns to the form.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-ghost">Cancel</button><span class="lbl">Default (in-flight only)</span></div>
+    </div>
+  </div>
+
+  <div class="demo">
+    <div class="cap">Footer composition — Split default (Back far left · primary far right, gap 8)</div>
+    <div class="footer-split">
+      <button type="button" class="be be-ghost">Back</button>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+        <button type="button" class="be be-primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="group">Success / confirmation actions</h2>
+  <p class="gdesc">Right-aligned wrapping row (<code>justify-content:flex-end</code>, gap 8). Order: calendar/manage secondaries → Done → “Book another” far right. No auto-redirect; Done navigates to <code>/</code> (fixed, no control).</p>
+
+  <div class="card">
+    <h3>Book another</h3>
+    <p class="meta">Buttons group <code>Book Another</code> · <code>&lt;button&gt;</code> · primary role with tighter padding <code>10px 18px</code> · far-right primary action; restarts the flow.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-primary-tight">Book another</button><span class="lbl">Default</span></div>
+      <div class="swatch"><button type="button" class="be be-primary-tight">Book another</button><span class="lbl">Hover / Pressed (unconfigured — no delta)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Done (= “Return Home”)</h3>
+    <p class="meta">Buttons group <code>Done</code> · <code>&lt;a href="/"&gt;</code> · secondary ghost: transparent bg, <em>muted</em> Text-Secondary color, <code>1px solid Border</code>, padding <code>10px 18px</code> · sits immediately left of “Book another”. There is no separate “Return Home” button — Done <em>is</em> the return-home action.</p>
+    <div class="row">
+      <div class="swatch"><a class="be be-ghost-muted">Done</a><span class="lbl">Default</span></div>
+      <div class="swatch"><a class="be be-ghost-muted">Done</a><span class="lbl">Hover / Pressed (unconfigured — no delta)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Add to Calendar (.ics)</h3>
+    <p class="meta">Buttons group <code>Add to Calendar</code> · <code>&lt;a download="Booking Appointment.ics"&gt;</code> · accent-outline role: transparent bg, Accent text, <code>1px solid Accent</code>, padding <code>10px 18px</code> · rendered whenever a booked slot exists.</p>
+    <div class="row">
+      <div class="swatch"><a class="be be-outline">Add to Calendar</a><span class="lbl">Default</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Add to Google Calendar / Add to Outlook</h3>
+    <p class="meta">Buttons groups <code>Google Calendar</code> / <code>Outlook</code> · <code>&lt;a target="_blank"&gt;</code> deep links with the booking pre-filled · same accent-outline surface as Add to Calendar.</p>
+    <div class="row">
+      <div class="swatch"><a class="be be-outline">Add to Google Calendar</a><span class="lbl">Default</span></div>
+      <div class="swatch"><a class="be be-outline">Add to Outlook</a><span class="lbl">Default</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Reschedule or cancel (manage link) — hardcoded, no Buttons group</h3>
+    <p class="meta">Label from Copy (<code>Reschedule or cancel</code>) · <code>&lt;a target="_blank"&gt;</code> to Cal.com reschedule/cancel/manage URL · hardcoded surface: transparent bg, Text-Secondary text, <code>1px solid Border</code>, padding <code>10px 18px</code>, 14px/600 · rendered only when the booking result carries a manage URL.</p>
+    <div class="row">
+      <div class="swatch"><a class="be be-ghost-muted">Reschedule or cancel</a><span class="lbl">Default</span></div>
+    </div>
+  </div>
+
+  <div class="demo">
+    <div class="cap">Confirmation row composition (right-aligned, gap 8, wrap)</div>
+    <div class="confirm-row">
+      <a class="be be-outline">Add to Calendar</a>
+      <a class="be be-outline">Add to Google Calendar</a>
+      <a class="be be-outline">Add to Outlook</a>
+      <a class="be be-ghost-muted">Reschedule or cancel</a>
+      <a class="be be-ghost-muted">Done</a>
+      <button type="button" class="be be-primary-tight">Book another</button>
+    </div>
+  </div>
+
+  <h2 class="group">Error actions</h2>
+  <p class="gdesc">Centered action row (gap 8, wrap) under the error message card.</p>
+
+  <div class="card">
+    <h3>Retry — “Try again”</h3>
+    <p class="meta">Buttons group <code>Retry</code> · <code>&lt;button&gt;</code> · accent-filled primary role, padding <code>10px 22px</code> · error screen; preserves entered values.</p>
+    <div class="row">
+      <div class="swatch"><button type="button" class="be be-primary">Try again</button><span class="lbl">Default</span></div>
+      <div class="swatch"><button type="button" class="be be-primary">Try again</button><span class="lbl">Hover / Pressed (unconfigured — no delta)</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Slots inline retry — hardcoded, no Buttons group</h3>
+    <p class="meta">Shares the Retry <em>label</em> only · <code>&lt;button&gt;</code> inside the slots error banner · hardcoded surface: transparent bg, Error text/border (<code>1px solid #DC2626</code>), padding <code>6px 14px</code>, 12px/600 · clears the month cache and refetches.</p>
+    <div class="row">
+      <div class="swatch">
+        <div class="err-banner" style="margin:0;min-width:280px"><span>Couldn’t load times.</span><button type="button" class="be be-mini">Try again</button></div>
+        <span class="lbl">Default (inside error banner)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Contact support — hardcoded, no Buttons group</h3>
+    <p class="meta">Fixed internal label (<code>Contact support</code>, never a control); destination URL/email/phone from Copy · <code>&lt;a&gt;</code> (mailto:/tel:/URL auto-detected) · hardcoded surface: transparent bg, Text-Primary text, <code>1px solid Border</code>, padding <code>10px 22px</code>, 14px/600 · error screen only, and only when contact details are configured.</p>
+    <div class="row">
+      <div class="swatch"><a class="be be-support">Contact support</a><span class="lbl">Default</span></div>
+    </div>
+  </div>
+
+  <h2 class="group">Deliberately not catalogued</h2>
+  <p class="gdesc">These are selection/navigation controls, not visitor-facing action buttons: time-slot radios, calendar date cells, month prev/next chevrons, the 12h/24h segmented control, and the skip link. No icons are used on any action button — all are text-only (plus the 14px loading spinner).</p>
+</div>
+<script>
+  // Reference only: kill all navigation.
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("a,button");
+    if (t) e.preventDefault();
+  });
+</script>
+</body>
+</html>
