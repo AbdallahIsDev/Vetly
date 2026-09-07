@@ -883,3 +883,53 @@ The user explicitly ordered `fix BookingEngine.tsx`, so the six open Booking-rev
 ### 141. Comments stay minimal; rationale lives in AGENTS.md, not the component (COMMENT-HYGIENE)
 
 **Comments in `Code-Components/BookingEngine.tsx` are surgical and short — one or two lines per site, stating only what the adjacent code does that a reader cannot see.** Forbidden in code: narrated fix histories, multi-paragraph rationale, stale change narratives, duplicated rule text, fix-ID sagas. Any explanation needing more than two lines belongs here in AGENTS.md as (or inside) a hard rule — that is what this file is for: keeping the component clean while keeping the reasoning. A dedicated cleanup pass (BE-018) trimmed ~6,100 comment-only lines on this basis; do not reintroduce them. An agent tempted to write a paragraph in code must instead write the 1–2 line comment plus add/extend the hard rule here.
+
+---
+
+## Hard Rules added by the BE-007…BE-018 sessions (2026-09-07)
+
+BE-007 stays an unrun trial. BE-008…BE-018 were implemented across two sessions; these rules document the resulting intentional states. Where a Done entry cites a rule below as "new", this is its record.
+
+### 142. Buttons share three style sets; per-button groups are Text-only (SHARED-BUTTON-SETS)
+
+**The Buttons group holds three shared style sets — `Primary Buttons`, `Secondary Buttons`, `Calendar Links` — and every per-button group (Continue, Back, Final Action, Cancel, Done, Book Another, Add to Calendar, Google Calendar, Outlook, Retry) is Text-only.** The accent-outline trio is an explicit THIRD set, never folded into Secondary (a Secondary fill edit must not break the trio's outline-link character). Stored per-button style keys survive as legacy carriers that still win per key over the shared set (`mergeButtonStyleGroups`) — old canvases never silently restyle. The submitting/loading state, its spinner ring, and the selected time slot (rule 147) all read the resolved Primary surface. Done keeps its muted-text role default; Book Another keeps its tighter `10px 18px` role padding while Primary is unopened; the manage link reads Secondary. This amends the rules-99/101 per-button style model; text labels were and stay per-button.
+
+### 143. The loading text is "Booking…", internal, never a control (BOOKING-LABEL)
+
+**The in-flight primary button shows the spinner plus `Booking…` (`DEFAULT_COPY_BOOKING_LABEL`).** The old `Submitting…` string is gone under every name — constant renamed and retitled, no control, no legacy carrier. Spinner, `aria-busy`, opacity, and disabled behavior are unchanged.
+
+### 144. Contact Support is removed entirely (CONTACT-REMOVED)
+
+**There is no Contact Support action, label, `supportContactHref()`, `copy.supportContactValue` key/control/plumbing, or ErrorScreen support prop — all removed, no orphans.** The error screen's only forward path is Retry. The keep/remove audit for every other action lives on BE-014: all kept (each is booking-flow-owned, not site-owned). Do not re-add a support action to the component; contact belongs to the host site's header/footer.
+
+### 145. One Density preset scales all spacing; calendar geometry stays out (DENSITY-PRESET)
+
+**`Styles > Density` (Compact / Comfortable / Spacious, default Comfortable) scales field Gap, footer rhythm (gap 8 / marginTop 24 / paddingTop 12), step-header, progress, and terminal rhythm through fixed ratios (`DENSITY_RATIOS` ×0.75/×1/×1.25, `scaleDensity()`).** Comfortable is ×1, so unopened canvases are byte-identical and Gap's own behavior is unchanged. Calendar-internal geometry (7-column grid, 1:2:1 tracks, slot column) is deliberately excluded. `density` is visual-only and never a config-fingerprint input. No raw per-surface spacing controls may be added alongside it.
+
+### 146. Global Field Styles owns Selected and Check rows as shared defaults (FIELD-STYLES-GLOBAL-SELECTED)
+
+**`makeGlobalFieldStylesControls()` is the input-set vocabulary plus Selected BG / Selected Text / Selected Border / Check Accent (default-free colors tracking live theme tokens) and Check Size (default 18).** Resolution is the existing layered merge — per-field explicit wins per row, else global, else engine default (`??`/`typeof`, explicit 0 survives). Zero resolver changes were needed. This amends rule 131's "choice-selected rows and checkbox accent/size stay per-field-only" clause (rewritten openly per rule 140).
+
+### 147. The selected time slot follows shared Primary; slots own no controls (SLOT-PRIMARY-SURFACE)
+
+**The selected slot's background, text, and inset ring follow the resolved Primary surface (`slotPrimarySurface`/`slotPrimaryText` threaded to `TimeSlotButton`); unselected border, hover accent border, elapsed/disabled treatment, 36px geometry, single column, hidden scrollbar, and containment are untouched.** Zero new controls — slots inherit. Do not add slot styling controls.
+
+### 148. Constant CSS lives once in RootShell; new style tags carry the warning flag (HYDRATION-AUDIT)
+
+**All constant CSS (scrollbar-hides, skeleton keyframes, skip-link, select-scroll) lives once in RootShell's root `<style suppressHydrationWarning>` block; inline styles are dynamic-values-only.** Any new `<style>` tag must carry `suppressHydrationWarning`. This is the mechanism migrated out of the stripped HYDRATION-AUDIT code comments (BE-018) — the rule survives, the paragraphs do not. See also rule 65.
+
+### 149. The month grid shows current-month days only; out-of-month cells are blank (MONTH-ONLY-GRID)
+
+**Every out-of-month cell renders as a blank `aria-hidden` gridcell — never selectable, no abbreviation, no tooltip.** Pointer selection can therefore never jump months or fire a surprise fetch; months change only via the arrows, PageUp/PageDown, deliberate keyboard month travel (which preserves focus), the empty-month auto-advance, and restoration. `handleDateSelect`'s cross-month sync stays solely for the keyboard/programmatic path. The slots fetch window is unchanged. This supersedes the adjacent-selectable clauses of rules 46/51/57/61/68 and the adjacent fallback in rule 119's tab-stop clause: a visible grid has exactly one tab stop **iff** an in-month selectable cell exists, otherwise none (never a stop on an inoperable cell).
+
+### 150. The grid renders exactly the weeks containing in-month days — 5 or 6, never clipped (GRID-WEEKS-DYNAMIC)
+
+**`weeksInMonthView()` (pure: offset + daysInMonth over 7) drives the cells memo and both skeleton loops; the fixed-6 constant is deleted.** Five-row months render five airy rows; months requiring six (e.g. a 30-day month starting Sunday under a Monday-first week) render six. A fixed 5-row cap would amputate real days (e.g. Nov 30, 2026) — that damage is why BE-009's letter ("consistent 5") was not implemented literally; recorded openly per rule 140, final call left to the author. Never add spacers or min-heights to fake a fixed frame. This amends rule 120's `6×7` skeleton wording.
+
+### 151. The time aside keeps bottom padding only in the stacked layout (ASIDE-STACKED-PADDING)
+
+**Time `aside` padding is `10px 16px 16px 16px` stacked (narrow) and `16px 16px 0 16px` wide — the wide zero-bottom is intentional and stays.** Do not "unify" them.
+
+### 152. No mask fade on the time scroller, ever (NO-MASK-FADE)
+
+**`.be-dt-scroll` carries no `mask-image`/`-webkit-mask-image` in any state or layout.** `scrollerOverflows` survives solely for its tab-stop/`aria-label` role. The hidden-scrollbar contract is unchanged. Do not reintroduce any fade mechanism in its place.
