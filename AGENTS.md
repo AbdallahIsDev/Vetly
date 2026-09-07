@@ -871,3 +871,11 @@ The user explicitly ordered `fix BookingEngine.tsx`, so the six open Booking-rev
 ### 139. Inactive steps are inerted imperatively via stable ref + per-commit sync — never a prop, never a callback ref (INERT-SYNC)
 
 **The `inert` attribute on step containers is applied only through `stepNodeRef` (a stable ref object) plus a deps-less `useIsomorphicLayoutEffect` that re-syncs `toggleAttribute("inert", !isActive)` from current props after every commit.** Do not render `inert={...}` as a JSX prop (older `@types/react` has no such prop — editor TS2322 — while the runtime needs the real attribute), and do not use a callback ref keyed on `isActive` (its fire-on-attach/detach cycle can be missed across remounts, animation restarts, or restore-before-paint, leaving a STUCK `inert=""` on the ACTIVE step: dead clicks, page-only scroll, DevTools picker skipping to the form — BE-001). The effect form self-heals: no stuck state survives a render. It lives with the other hooks before the early return (FINAL-54); both the static and motion paths share the same ref object.
+
+### 140. Rules serve the product through mechanics, not obedience (RULES-ARE-MECHANICS)
+
+**A rule is a written-down mechanism, not a law.** When the user explicitly orders work that contradicts a rule, do not refuse by citing the rule number and do not comply blindly either — argue the concrete mechanics (what breaks, what it costs, what evidence would settle it), then follow the user's call:
+
+- If the work observably improves the component without regressing correctness, implement it **and rewrite the contradicted rule** in the same pass so the file never learns to lie — a rule that describes a world that no longer exists is worse than no rule.
+- If the work would damage the component, regress architecture, or trade a working system for a fragile one, say so plainly with the mechanism (not "rule N forbids it") and do not implement it without an explicit, informed override.
+- Uncertainty about severity (flash? mismatch? silent failure?) is settled by isolated experiment (git worktree, time-boxed spike with kill criteria), never by prolonged debate. Revert cost must stay near zero.
