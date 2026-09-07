@@ -869,37 +869,6 @@ function getTodayInTimeZone(timeZone: string | undefined): Date {
 	return candidate;
 }
 
-// CAL-ADJ-INDICATOR: single shared source for the adjacent-month indicator in
-// BOTH directions (leading previous-month cells AND trailing next-month
-// cells). Returns the compact uppercase month abbreviation ONLY for the
-// first RENDERED date of an adjacent month (grid index 0, the first cell
-// after a month boundary, or the first non-placeholder cell after skipping
-// same-month empty leading blanks); null everywhere else, so in-month dates
-// never carry it. Callers gate on eligibility themselves: already-selected
-// dates must not show it.
-function getAdjacentMonthAbbreviation(
-	cells: Date[],
-	index: number,
-	isPlaceholder: (date: Date) => boolean,
-): string | null {
-	const date = cells[index];
-	if (!date) return null;
-	let i = index - 1;
-	while (
-		i >= 0 &&
-		cells[i] &&
-		cells[i].getMonth() === date.getMonth() &&
-		isPlaceholder(cells[i])
-	) {
-		i -= 1;
-	}
-	const prev = i >= 0 ? cells[i] : undefined;
-	if (prev && prev.getMonth() === date.getMonth()) return null;
-	return getCachedDateTimeFormat(pageLocale(), { month: "short" })
-		.format(date)
-		.toUpperCase();
-}
-
 // RADIUS-INNER: numeric px value of the shared Radius token (the engine
 // sanitizes to "0px".."24px" strings; parse defensively).
 function parseRadiusNumber(value: string | number | undefined): number {
@@ -2510,11 +2479,11 @@ interface CalendarCellProps {
 	dateKey: string;
 	isUnavailable: boolean;
 	isSelected: boolean;
-	isInMonth: boolean;
-	// CAL-ADJ-INDICATOR: compact month abbreviation when this cell is the
-	// first visible date of an adjacent month (either direction); null/absent
-	// otherwise. Computed by the shared getAdjacentMonthAbbreviation helper.
-	adjacentMonthLabel?: string | null;
+	// BE-008 (CURRENT-MONTH-GRID): adjacent-month cells never reach this
+	// component — the grid renders them as inert blank placeholders, so
+	// the former isInMonth/adjacentMonthLabel props and the
+	// adjacent-month tooltip are gone (dead carriers removed with the
+	// feature, rule 111).
 	isToday: boolean;
 	isRingHover: boolean;
 	// ROVING-TABINDEX: exactly ONE selectable date per visible grid is the
@@ -2558,8 +2527,6 @@ const CalendarCell = React.memo(function CalendarCell({
 	dateKey,
 	isUnavailable,
 	isSelected,
-	isInMonth,
-	adjacentMonthLabel,
 	isToday,
 	isRingHover,
 	isActive,
@@ -2737,31 +2704,6 @@ const CalendarCell = React.memo(function CalendarCell({
                     showing Dec 14 slots. slice(-2) = the zero-padded day. */}
 				<span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
 					{Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
-					{adjacentMonthLabel && !isSelected ? (
-						/* CAL-ADJ-INDICATOR: adjacent-month dates carry a
-			   compact month abbreviation above the number (generic
-			   — derived from the date's own month by the shared
-			   helper, shown only on the first visible date of each
-			   adjacent month in EITHER direction). */
-						<span
-							aria-hidden="true"
-							style={{
-								position: "absolute",
-								top: 2,
-								left: "50%",
-								transform: "translateX(-50%)",
-								fontSize: 8,
-								fontWeight: 700,
-								letterSpacing: "0.06em",
-								textTransform: "uppercase",
-								color: mutedSoftText,
-								pointerEvents: "none",
-								whiteSpace: "nowrap",
-							}}
-						>
-							{adjacentMonthLabel}
-						</span>
-					) : null}
 					{isToday && !isSelected ? (
 						/* W2-52 fix: today's marker is a small dot beneath the
 			   number — visually independent of the selected-date
@@ -2786,46 +2728,6 @@ const CalendarCell = React.memo(function CalendarCell({
 						/>
 					) : null}
 				</span>
-				{/* CAL-ADJ-TOOLTIP: custom hover tooltip for AVAILABLE
-                    adjacent-month dates only — unavailable/disabled adjacent
-                    cells render no tooltip and receive no hover treatment at
-                    all (the mouse handlers above already gate on
-                    !isUnavailable). Purely decorative: aria-hidden, the
-                    button's aria-label remains the screen-reader surface.
-                    Text is the full month name only (never the year);
-                    background follows the author's Accent token with the
-                    component's fixed on-accent foreground. */}
-				{!isInMonth && !isUnavailable ? (
-					<span
-						className="be-adj-tooltip"
-						aria-hidden="true"
-						style={{
-							position: "absolute",
-							bottom: "100%",
-							left: "50%",
-							transform: "translateX(-50%)",
-							marginBottom: 6,
-							// PRIMARY-FOREGROUND: tooltip sits on the Primary
-							// (Accent) surface — semantic On-Primary token.
-							background: accentColor,
-							color: selectedAccentText,
-							padding: "4px 8px",
-							borderRadius: 4,
-							fontSize: 12,
-							fontWeight: 600,
-							whiteSpace: "nowrap",
-							pointerEvents: "none",
-							opacity: 0,
-							transition: reducedMotion ? "none" : "opacity 0.15s ease",
-							zIndex: 10,
-						}}
-					>
-						{getCachedDateTimeFormat(locale, {
-							month: "long",
-							...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-						}).format(date)}
-					</span>
-				) : null}
 			</button>
 		</div>
 	);
@@ -2952,17 +2854,26 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	// twice. One announcement source remains.
 	const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null);
 	const rows: React.ReactNode[] = [];
+	// BE-009 (DYNAMIC-ROW-GRID): the row count is derived from the cells
+	// array itself (calendarCells already carries the month's dynamic
+	// week count). Both the skeleton and the real grid use it, so the
+	// skeleton during a month-change fetch has the SAME row count as the
+	// month it is loading — no row-count jump when the fetch resolves.
+	// Pre-gate the cells are the deterministic placeholder month's, so
+	// the prerendered skeleton and every visitor's first paint are
+	// byte-identical (rule 42/109 parity).
+	const gridRowCount = Math.ceil(cells.length / 7);
 	// PRERENDER-SAFE skeleton grid: while the interactive gate is closed,
-	// every renderer draws the same 6×7 neutral skeleton — no dates, no
+	// every renderer draws the same neutral skeleton — no dates, no
 	// month-dependent states — so the served HTML matches the visitor's
 	// first paint byte-for-byte. The real grid appears pre-paint in the
 	// same pass the gate flips (clockReady → true).
 	// SLOTS-LOADING reuses the identical skeleton while the availability
-	// fetch is in flight (month navigation, refetch): same 6×7 structure
+	// fetch is in flight (month navigation, refetch): same row structure
 	// the cells resolve into, so loading never flashes false-unavailable
 	// cells and never shifts layout. Header/nav above stay live.
 	if (!clockReady || slotsLoading) {
-		for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
+		for (let r = 0; r < gridRowCount; r++) {
 			rows.push(
 				<div key={`skeleton-row-${r}`} style={{ display: "contents" }}>
 					{Array.from({ length: 7 }).map((_, c) => (
@@ -2981,7 +2892,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
 			);
 		}
 	} else {
-		for (let r = 0; r < CALENDAR_WEEKS_TO_RENDER; r++) {
+		for (let r = 0; r < gridRowCount; r++) {
 			rows.push(
 				/* biome-ignore lint/a11y/useFocusableInteractive: row is a structural
 		       grouping only (display: contents) — focus lives on the cells
@@ -2989,39 +2900,32 @@ const CalendarGrid = React.memo(function CalendarGrid({
 		       add a dead stop. */
 				// biome-ignore lint/a11y/useSemanticElements: see CSS-grid calendar note above.
 				<div role="row" key={`row-${r}`} style={{ display: "contents" }}>
-					{cells.slice(r * 7, r * 7 + 7).map((date, cIdx) => {
-						const globalIdx = r * 7 + cIdx;
+					{cells.slice(r * 7, r * 7 + 7).map((date) => {
 						const dateKey = dateKeyOf(date);
 						const isInMonth = date.getMonth() === visibleMonth.getMonth();
-						const isPast = startOfDay(date).getTime() < today.getTime();
-						// W2-54 fix: adjacency is no longer a blanket
-						// unavailability. Next/previous-month days inside the
-						// visible grid behave like real dates — selectable when
-						// availability exists (the slots fetch already covers the
-						// month edges), disabled otherwise. `isInMonth` now only
-						// drives the month-abbreviation indicator.
-						// CAL-ADJ-SOURCE: `hasAvailability` is the SAME normalized
-						// availability source used by the in-month view (the
-						// parent's month-wide Cal.com slots, fetched with ±15-day
-						// edge widening) — a previewed adjacent date shows exactly
-						// the state it will have after navigating into its month.
-						// Unknown/not-yet-fetched dates are unavailable, never
-						// "available because rendered".
-						const isUnavailable = isPast || !hasAvailability(date);
-						const isSelected = isSameDay(selectedDate, date);
-						const isToday = isSameDay(today, date);
-						// W2-55 fix: LEADING cells from the previous month that
-						// are past or have no availability render as EMPTY
-						// gridcells — matching Cal.com, where irrelevant leading
-						// days are blank while trailing next-month days continue
-						// into the grid. Alignment (7 columns) is preserved by
-						// keeping each placeholder in its track.
-						const isEmptyLeadingCell =
-							!isInMonth && date.getTime() < visibleMonth.getTime() && (isPast || !hasAvailability(date));
-						if (isEmptyLeadingCell) {
+						// BE-008 (CURRENT-MONTH-GRID, direction A): the
+						// grid renders CURRENT-MONTH days only — exactly
+						// like the official Cal.com booking calendar.
+						// Leading AND trailing adjacent-month cells render
+						// as EMPTY non-interactive gridcells (blank
+						// placeholders that preserve the 7-column
+						// alignment): no month abbreviation, no tooltip,
+						// no hover, no selection. Picking an adjacent day
+						// therefore can no longer jump the whole calendar
+						// to that month with a full-panel loading state
+						// and a fresh availability fetch — month changes
+						// happen only via the month arrows (and their
+						// keyboard equivalents, PageUp/PageDown/cross-
+						// month arrows), which legitimately fetch. This
+						// intentionally supersedes the W2-54/W2-55
+						// adjacent-selectable behavior and the
+						// CAL-ADJ-INDICATOR/CAL-ADJ-TOOLTIP machinery
+						// (AGENTS.md adjacent-month grid rules are
+						// superseded by the BE-008 rule).
+						if (!isInMonth) {
 							return (
-								// A11Y: blank placeholders carry no state — the old
-								// aria-disabled="true" announced meaningless noise.
+								// A11Y: blank placeholders carry no state —
+								// no aria-disabled noise (rule 103).
 								<div
 									key={`empty-${dateKey}`}
 									role="gridcell"
@@ -3033,20 +2937,10 @@ const CalendarGrid = React.memo(function CalendarGrid({
 								/>
 							);
 						}
-						// CAL-ADJ-INDICATOR: one shared helper drives BOTH the
-						// previous-month and next-month abbreviations — only the
-						// first rendered date of each adjacent month carries one
-						// (empty leading placeholders are skipped over).
-						const adjacentMonthLabel = !isInMonth
-							? getAdjacentMonthAbbreviation(
-								cells,
-								globalIdx,
-								(candidate) =>
-									candidate.getTime() < visibleMonth.getTime() &&
-									(startOfDay(candidate).getTime() < today.getTime() ||
-										!hasAvailability(candidate)),
-							)
-							: null;
+						const isPast = startOfDay(date).getTime() < today.getTime();
+						const isUnavailable = isPast || !hasAvailability(date);
+						const isSelected = isSameDay(selectedDate, date);
+						const isToday = isSameDay(today, date);
 						// ROVING-TABINDEX: exactly one selectable cell per grid
 						// is the tab stop; unavailable cells are never active.
 						const isActive =
@@ -3064,8 +2958,6 @@ const CalendarGrid = React.memo(function CalendarGrid({
 								dateKey={dateKey}
 								isUnavailable={isUnavailable}
 								isSelected={isSelected}
-								isInMonth={isInMonth}
-								adjacentMonthLabel={adjacentMonthLabel}
 								isToday={isToday}
 								isRingHover={isRingHover}
 								isActive={isActive}
@@ -3102,9 +2994,11 @@ const CalendarGrid = React.memo(function CalendarGrid({
 	}
 	return (
 		<>
-			{/* CSS-NOTE: the .be-adj-tooltip hover/focus reveal rule is defined
-                ONCE in RootShell's root <style> block (search "CSS-CONSOLIDATED")
-                — this grid no longer injects a per-instance copy. */}
+			{/* CSS-NOTE: the .be-dt-scroll hidden-scrollbar rules are defined
+		ONCE in RootShell's root <style> block (search
+		"CSS-CONSOLIDATED") — this grid no longer injects a
+		per-instance copy. (The former .be-adj-tooltip reveal rule
+		was removed with BE-008's blank adjacent cells.) */}
 			<div
 				style={{
 					display: "flex",
@@ -3697,9 +3591,11 @@ const TimeSlotList = React.memo(function TimeSlotList(
 	);
 	// A11Y-SCROLLER: the list hides its scrollbar (rule 53) — magnifier
 	// and keyboard users get no "more below" affordance otherwise. When
-	// the content overflows, the region becomes a labelled tab stop and
-	// gains a bottom fade (a mask, not a scrollbar). No overflow → no
-	// extra stop, no fade, byte-identical to before.
+	// the content overflows, the region becomes a labelled tab stop.
+	// No overflow → no extra stop, byte-identical to before.
+	// (BE-011 MASK-REMOVED: the former bottom fade mask was removed by
+	// author direction — slot rows render without any mask treatment;
+	// only the labelled tab stop survives from this contract.)
 	const scrollerRef = React.useRef<HTMLDivElement | null>(null);
 	const [scrollerOverflows, setScrollerOverflows] = React.useState(false);
 	React.useEffect(() => {
@@ -3789,7 +3685,9 @@ const TimeSlotList = React.memo(function TimeSlotList(
 				minWidth: 0,
 				borderLeft: isNarrow ? "none" : subtleBorder,
 				borderTop: isNarrow ? subtleBorder : "none",
-				padding: isNarrow ? "10px 16px 0 16px" : "16px 16px 0 16px",
+				padding: isNarrow
+					? "16px 16px 0px 16px"
+					: "16px 16px 0 16px",
 				boxSizing: "border-box",
 				display: "flex",
 				flexDirection: "column",
@@ -3950,28 +3848,12 @@ const TimeSlotList = React.memo(function TimeSlotList(
 								maxHeight: "40vh",
 								overflowY: "auto",
 								overscrollBehavior: "contain",
-								...(scrollerOverflows
-									? {
-										WebkitMaskImage:
-											"linear-gradient(to bottom, black 88%, transparent)",
-										maskImage:
-											"linear-gradient(to bottom, black 88%, transparent)",
-									}
-									: {}),
 							}
 							: {
 								position: "absolute",
 								inset: 0,
 								overflowY: "auto",
 								minWidth: 0,
-								...(scrollerOverflows
-									? {
-										WebkitMaskImage:
-											"linear-gradient(to bottom, black 88%, transparent)",
-										maskImage:
-											"linear-gradient(to bottom, black 88%, transparent)",
-									}
-									: {}),
 							}
 					}
 				>
@@ -4421,8 +4303,24 @@ function useCalendarNavigation(options: UseCalendarNavigationOptions): {
 		const start = new Date(firstOfMonth);
 		const offset = (firstOfMonth.getDay() - firstDayOfWeek + 7) % 7;
 		start.setDate(firstOfMonth.getDate() - offset);
+		// BE-009 (DYNAMIC-ROW-GRID): rows = ceil((leading offset +
+		// days in month)/7) with the 5-row floor (see the
+		// CALENDAR_MIN_WEEKS_TO_RENDER constant) — the Cal.com
+		// reference renders exactly the weeks the month needs, so
+		// September 2026 (2 leading + 30 days = 32 cells) is a
+		// 5-row grid instead of a padded 6-row block. Pre-gate the
+		// visibleMonth is the fixed placeholder (January 2024), so
+		// the cell count stays deterministic for the prerendered
+		// skeleton and every visitor's first paint (rule 42 parity).
+		const daysInMonth = new Date(
+			visibleMonth.getFullYear(),
+			visibleMonth.getMonth() + 1,
+			0,
+		).getDate();
+		const weeksNeeded = Math.ceil((offset + daysInMonth) / 7);
+		const rowsToRender = Math.max(CALENDAR_MIN_WEEKS_TO_RENDER, weeksNeeded);
 		const cells: Date[] = [];
-		for (let i = 0; i < CALENDAR_WEEKS_TO_RENDER * 7; i++) {
+		for (let i = 0; i < rowsToRender * 7; i++) {
 			const next = new Date(start);
 			next.setDate(start.getDate() + i);
 			cells.push(next);
@@ -5578,12 +5476,16 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 	// DEFAULT-SELECTION (hard rule): first available date ON/AFTER
 	// visitor-local today across the ENTIRE loaded grid window. Unlike
 	// firstAvailableDate above this is NOT restricted to the visible month —
-	// calendarCells spans the leading/trailing adjacent-month rows and the
-	// slots fetch covers ±15 days beyond the month, so adjacent-window
-	// availability is the same normalized Cal.com source the grid renders.
-	// This is what makes "today unavailable late in the month" select the
-	// first available date in the following days/month instead of leaving
-	// nothing selected (AGENTS.md rule 78).
+	// the loaded window includes adjacent-month days (the slots fetch
+	// covers ±15 days beyond the month). This is what makes "today
+	// unavailable late in the month" select the first available date in
+	// the following days/month instead of leaving nothing selected
+	// (AGENTS.md rule 78/84). BE-008 note: the adjacent days this scan
+	// may land on are NOT rendered as grid cells anymore (blank
+	// placeholders) — the DEFAULT-SELECTION effect below follows the
+	// decision into its month (setVisibleMonth advance) so the selected
+	// day always renders in-month; the scan exists for the decision, not
+	// the grid.
 	const firstAvailableDateFromToday = React.useMemo(() => {
 		for (const date of calendarCells) {
 			const isPast = startOfDay(date).getTime() < today.getTime();
@@ -5619,21 +5521,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 		if (firstAvailableDate) {
 			return dateKeyOf(firstAvailableDate);
 		}
-		// EMPTY-MONTH-TABSTOP: no available day in-month (e.g. a fully
-		// booked month with live trailing adjacent-month days) — fall back
-		// to the first available date anywhere in the loaded grid so the
-		// grid keeps exactly one tab stop (roving-tabindex contract, rule
-		// 63). firstAvailableDateFromToday scans the same selectable cells
-		// the grid renders (non-past + available), so the target is always
-		// a real, focusable cell — never an empty placeholder.
-		if (firstAvailableDateFromToday) {
-			return dateKeyOf(firstAvailableDateFromToday);
-		}
+		// BE-008 (CURRENT-MONTH-GRID): adjacent-month days are no longer
+		// rendered as selectable cells, so a fully-booked month's grid
+		// honestly has ZERO selectable cells and therefore no roving
+		// tab stop — activeDateKey resolves to null and the month
+		// arrows remain the keyboard path forward. (The former
+		// EMPTY-MONTH-TABSTOP fallback onto firstAvailableDateFromToday
+		// matched a trailing adjacent cell that no longer renders.)
+		// Demo mode (availableDates undefined) always finds an in-month
+		// date here, so the demo grid keeps its tab stop.
 		return null;
 	}, [
 		selectedDate,
 		firstAvailableDate,
-		firstAvailableDateFromToday,
 		visibleMonth,
 		dateKeyOf,
 		hasKnownAvailability,
@@ -5769,11 +5669,30 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			if (fallback) {
 				setSelectedDate(fallback);
 				onDateChange?.(fallback);
+				// BE-008 (CURRENT-MONTH-GRID): the fallback can live in
+				// the adjacent window (rule-84 scan) while the grid
+				// renders current-month days only — follow the decision
+				// into its month exactly like the DEFAULT-SELECTION
+				// effect above, but only while the visitor is still
+				// viewing the stale date's month (a visitor who paged
+				// away keeps their view; the selection lands invisibly
+				// and the H1 in-view fallback governs the tab stop).
+				const staleInView =
+					selectedDate.getFullYear() === visibleMonth.getFullYear() &&
+					selectedDate.getMonth() === visibleMonth.getMonth();
+				const fallbackOutOfView =
+					fallback.getFullYear() !== visibleMonth.getFullYear() ||
+					fallback.getMonth() !== visibleMonth.getMonth();
+				if (staleInView && fallbackOutOfView) {
+					setVisibleMonth(
+						new Date(fallback.getFullYear(), fallback.getMonth(), 1),
+					);
+				}
 			} else {
 				setSelectedDate(null);
 			}
 		});
-	}, [clockReady, selectedDate, today, availableDates, slotsLoading, availabilitySettled, hasKnownAvailability, firstAvailableDateFromToday, onDateChange]);
+	}, [clockReady, selectedDate, today, availableDates, slotsLoading, availabilitySettled, hasKnownAvailability, firstAvailableDateFromToday, visibleMonth, setVisibleMonth, onDateChange]);
 
 
 	const getPayload = React.useCallback(
@@ -5839,13 +5758,15 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 			setInitialSelectionPending(false);
 			React.startTransition(() => {
 				setSelectedDate(date);
-				// ADJACENT-FOLLOW fix: picking a live trailing/leading
-				// adjacent-month date selected an off-view date while the
-				// view stayed behind (selected cell tabIndex -1, header
-				// showing the wrong month). Follow the selection exactly
-				// like the default effect above (raw setVisibleMonth +
-				// onDateChange below lets the parent prop follow, so the
-				// parent-prop sync never yanks it back — rule 39).
+				// ADJACENT-FOLLOW (defensive invariant under BE-008
+				// direction A): the grid now renders current-month days
+				// only, so no interactive cell can deliver an
+				// out-of-month date here — but if any future code path
+				// (or a regression) fires onSelect with one, following
+				// the selection into its month keeps the view and the
+				// selection from desyncing (raw setVisibleMonth +
+				// onDateChange below lets the parent prop follow, so
+				// the parent-prop sync never yanks it back — rule 39).
 				if (
 					date.getFullYear() !== visibleMonth.getFullYear() ||
 					date.getMonth() !== visibleMonth.getMonth()
@@ -7123,7 +7044,18 @@ const PHONE_REGEX =
 // compact breakpoint, calendar grid size, Progress height, icon sizes).
 const TOUCH_TARGET_MIN = 44;
 const COMPACT_BREAKPOINT = 768;
-const CALENDAR_WEEKS_TO_RENDER = 6;
+// BE-009 (DYNAMIC-ROW-GRID): the grid renders a DYNAMIC number of week rows
+// matching the Cal.com reference — ceil((leading offset + days in month)/7) —
+// with this FIVE-row floor. Most months render 5 rows (the airier Cal.com
+// look the author asked for); a 6th row appears ONLY when a month's geometry
+// forces it (e.g. a 31-day month starting late in the week needs 37 cells —
+// cutting the row would hide real days). The floor exists because a 28-day
+// February starting exactly on the week-start column would otherwise
+// collapse to 4 rows and oscillate 4↔5 between adjacent months; the row
+// count is a deterministic pure function of (visibleMonth, firstDayOfWeek),
+// so it never flickers within a month. This constant is the FLOOR, never a
+// fixed row count.
+const CALENDAR_MIN_WEEKS_TO_RENDER = 5;
 // TIME-SLOTS-SKELETON: the loading placeholder mirrors the resolved
 // single-column slot list — 8 rows at the real 36px slot height (rule 56),
 // same gap and radius vocabulary. Eight is the resolved list's normal
@@ -8389,18 +8321,19 @@ function useCalcomSlots(
 		// 00:00–01:59 slot instants could still land BEFORE the widened
 		// start.
 		// FINAL-23 fix: the buffer is intentionally FIFTEEN days per side,
-		// not two — it must cover (a) the drift above AND (b) the full
-		// leading/trailing adjacent-month rows the grid renders (AGENTS.md
-		// rules 51/57: trailing next-month cells stay selectable and their
-		// previewed availability must exactly match the real Cal.com source),
-		// which a ±2-day window cannot reach. Fifteen (not twelve): the
-		// 6×7 grid holds 42 cells, so a 28-day month starting on the
-		// grid-start weekday (e.g. Feb 2026, Feb 1 = Sunday) renders FOURTEEN
-		// trailing next-month days (Mar 1–14) — a ±12 window ended Mar 12
-		// and left the last two cells falsely unavailable until navigation.
-		// The grid only renders visible dates, so extra neighboring-day
-		// slots are unused data, never orphaned UI; the cost is a larger
-		// fetch window by design.
+		// not two — it must cover (a) the browser↔visitor-tz drift above
+		// AND (b) the adjacent-window days the DEFAULT-SELECTION /
+		// STALE-SELECTION scans (rule 84: first future bookable date
+		// on/after today, which can live early in the next month when
+		// the rest of this one is booked) plus (c) warm availability
+		// for cross-month arrow/keyboard navigation, which a ±2-day
+		// window cannot reach.
+		// BE-008 note: the grid no longer RENDERS adjacent-month cells
+		// (they are blank placeholders now), so the window's adjacent
+		// data feeds the decision scans and navigation warmth — the
+		// window stays ±15 per rule 119 (FETCH-15), and neighboring-day
+		// slots outside what any code reads are unused data, never
+		// orphaned UI; the cost is a larger fetch window by design.
 		const start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
 		start.setDate(start.getDate() - 15);
 		const end = new Date(
@@ -15065,17 +14998,14 @@ export default function BookingEngine(props: BookingEngineProps) {
 /* CSS-CONSOLIDATED: static Calendar CSS defined ONCE here instead of being
    re-injected per Calendar/time-panel instance. All rules are constant —
    no dynamic tokens inside.
-   1. Adjacent-month custom tooltip: revealed on hover/focus of the date
-      button; the tooltip element itself is aria-hidden + pointer-events:none
-      and only renders for AVAILABLE adjacent-month dates.
-   2. Time list (.be-dt-scroll): scrollable with an invisible browser
+   1. Time list (.be-dt-scroll): scrollable with an invisible browser
       scrollbar (::-webkit-scrollbar cannot be targeted by inline styles).
-   3. Skeleton pulse (shadcn animate-pulse equivalent): opacity-only, so
+   2. Skeleton pulse (shadcn animate-pulse equivalent): opacity-only, so
       skeleton markup is identical on server/prerender/first paint; motion
-      collapses entirely under prefers-reduced-motion. */
-.be-motion-root button:hover .be-adj-tooltip,
-.be-motion-root button:focus .be-adj-tooltip,
-.be-motion-root button:focus-visible .be-adj-tooltip { opacity: 1 !important; }
+      collapses entirely under prefers-reduced-motion.
+   (BE-008 CURRENT-MONTH-GRID: the former .be-adj-tooltip reveal rule for
+   adjacent-month date hovers was removed with the adjacent cells — blank
+   placeholders carry no hover treatment at all.) */
 .be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-dt-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 /* BE-003 (SELECT-MENU-STYLED): the select dropdown menu's hidden scrollbar —
