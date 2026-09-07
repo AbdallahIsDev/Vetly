@@ -927,13 +927,11 @@ interface SegmentedControlProps {
 	thumbBorderColor?: string;
 	optionPaddingX?: number;
 	optionFont?: FramerFont;
-	/** DECOR: track shadow/blur (segmented choice variant). */
 	trackShadow?: string;
-	trackBlur?: number;
 }
 
 const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedControlProps) {
-	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled, trackBackground, thumbBorderColor, optionPaddingX, optionFont, trackShadow, trackBlur } = props;
+	const { options, value, onChange, borderRadius, textColor, mutedTextColor, backgroundColor, borderColor, ariaLabel, disabled, trackBackground, thumbBorderColor, optionPaddingX, optionFont, trackShadow } = props;
 	const isStaticRender = useIsStaticRenderer();
 	const prefersReducedMotion = useReducedMotion();
 	const count = options.length;
@@ -964,7 +962,6 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 				minHeight: 32,
 				boxSizing: "border-box",
 				...shadowStyle(trackShadow),
-				...backdropStyle(trackBlur),
 			}}
 		>
 			{isStaticRender ? (
@@ -1124,12 +1121,7 @@ interface ChoiceGroupInlineProps {
 	optionPaddingX?: number;
 	optionMinHeight?: number;
 	optionFont?: FramerFont;
-	/** DECOR: option shadow/blur layers (pills/cards/radio buttons and
-	 *  the segmented track). Undefined/“none”/0 = untouched. */
 	optionShadow?: string;
-	optionBlur?: number;
-	/** Segmented variant only: track surface override (thumb uses
-	 *  selectedBackgroundColor via backgroundColor). */
 	trackBackground?: string;
 }
 
@@ -1213,7 +1205,6 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		optionMinHeight,
 		optionFont,
 		optionShadow,
-		optionBlur,
 		trackBackground,
 	} = props;
 
@@ -1498,7 +1489,6 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					]
 						.filter(Boolean)
 						.join(", ") || "none",
-					...backdropStyle(optionBlur),
 					fontFamily: optionFont?.fontFamily ?? "inherit",
 					fontSize: effectiveFontSize,
 					lineHeight: 1.2,
@@ -1734,7 +1724,6 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 					optionPaddingX={optionPaddingX}
 					optionFont={optionFont}
 					trackShadow={optionShadow}
-					trackBlur={optionBlur}
 					borderColor={borderColor}
 					ariaLabel={label || choiceGroupAriaLabel || inputName}
 					disabled={isSubmitting}
@@ -4201,7 +4190,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(
 				background: surfaceBackground,
 				...(surfacePadding ? { padding: surfacePadding } : {}),
 				...shadowStyle(normalizedCalendarStyles?.shadow),
-				...backdropStyle(normalizedCalendarStyles?.backgroundBlur),
 				color: resolvedTextColor,
 				border: surfaceBorder,
 				overflow: "hidden",
@@ -4469,45 +4457,28 @@ interface FramerBorderStyle {
 }
 
 interface FieldStyleOverrides {
-	/** Control typography (input text / option labels). Weight is ignored
-	 *  on segmented options, which stay 600 per the shared-thumb rule. */
 	font?: FramerFont;
-	textAlign?: "left" | "center" | "right";
-	/** The field label's typography. */
 	labelFont?: FramerFont;
 	labelColor?: string;
-	/** Text/input content color — also option text on choice groups. */
 	textColor?: string;
 	placeholderColor?: string;
-	/** Input / option / segmented-track surface color. */
 	backgroundColor?: string;
-	/** NEW (native compound): one logical Border control — color, width and
-	 *  style in a single value. Wins over the legacy scalar keys below. */
 	border?: FramerBorderStyle;
 	borderColor?: string;
 	borderWidth?: number;
 	radius?: number | string;
 	padding?: string;
-	/** LEGACY scalar padding keys — see `padding`. */
 	paddingY?: number;
 	paddingX?: number;
-	/** Focus/active border color (inset focus ring on .be-input). */
 	focusBorderColor?: string;
-	/** Minimum control height (inputs, options). */
 	minHeight?: number;
-	/** Label ↔ control ↔ error spacing inside the field column. */
 	spacing?: number;
-	/** Selected/active option surface (choice groups). */
 	selectedBackgroundColor?: string;
 	selectedTextColor?: string;
 	selectedBorderColor?: string;
-	/** Native checkbox accent + square size. */
 	accentColor?: string;
 	checkSize?: number;
 	shadow?: string;
-	/** DECOR: backdrop-blur radius in px (frosted glass over imagery).
-	 *  Applied only when > 0; 0/unset means no backdrop layer. */
-	backgroundBlur?: number;
 }
 
 interface FieldConfig {
@@ -4594,16 +4565,12 @@ interface BookingEngineStyleProps {
 }
 
 interface ButtonInteractionState {
-	/** Framer native transition into this state (first row). */
 	transition?: Transition;
-	/** 1 = no zoom. Applied as transform: scale(). */
 	scale?: number;
-	/** 1 = fully opaque. */
 	opacity?: number;
 	textColor?: string;
 	backgroundColor?: string;
 	border?: FramerBorderStyle;
-	/** Applied only when a real shadow (see shadowStyle). */
 	shadow?: string;
 }
 interface ButtonStyleGroup {
@@ -4622,9 +4589,7 @@ interface ButtonStyleGroup {
 	radius?: string | number;
 	padding?: string;
 	font?: FramerFont;
-	/** DECOR: see FieldStyleOverrides.shadow/backgroundBlur. */
 	shadow?: string;
-	backgroundBlur?: number;
 	hover?: ButtonInteractionState;
 	pressed?: ButtonInteractionState;
 }
@@ -4660,7 +4625,6 @@ interface BookingEngineCopyProps {
 		bookAnotherLabel?: string;
 		addToCalendarLabel?: string;
 		retryButton?: ButtonStyleGroup;
-		// HOME-URL-REMOVED: "Done" always goes to the site root (rule 29).
 	};
 	copy: {
 		successTitle: string;
@@ -4902,7 +4866,6 @@ function useCoarsePointer(): boolean {
 		try {
 			setCoarse(window.matchMedia("(pointer: coarse)").matches);
 		} catch {
-			// non-fatal: fine-pointer rendering is the safe default
 		}
 	}, [beInteractive]);
 	return coarse;
@@ -5003,9 +4966,7 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
 					regexPreviewInput: undefined,
 				})),
 			}))
-			// T10-M9: drop zero-field form steps (canvas warning explains).
 			.filter((step) => !(step.stepType === "form" && step.fields.length === 0))
-			// Review step removed: persisted "review" steps are dropped.
 			.filter((step) => (step.stepType as string) !== "review")
 	);
 }
@@ -5298,7 +5259,6 @@ function beSetInteractive(): void {
 		try {
 			listener();
 		} catch {
-			// A throwing listener must not block the others.
 		}
 	}
 }
@@ -5420,7 +5380,6 @@ function useCalcomSlots(
 
 	React.useEffect(() => {
 		cacheRef.current.clear();
-		// FINAL-10: apiBase in deps drops stale deployment cache entries.
 	}, [apiKey, eventTypeId, timeZone, apiBase]);
 
 	React.useEffect(() => {
@@ -5602,7 +5561,6 @@ function useCalcomSlots(
 								minutes,
 							};
 						})
-						// W1-05-N3: drop slots whose start ISO string is unusable.
 						.filter((slot) => !Number.isNaN(slot.minutes))
 						.sort((a, b) => (a.value < b.value ? -1 : 1));
 					cacheRef.current.set(monthKey, {
@@ -5660,8 +5618,7 @@ function useCalcomSlots(
 							plainErr?.message === MALFORMED_JSON_ERROR
 								? copy.slotsFallbackError
 								: plainErr instanceof TypeError ||
-									plainErr?.name === "TypeError"
-									? // DETERMINISTIC-LIFECYCLE (honesty): a TypeError right
+									plainErr?.name === "TypeError" ?
 									recentCalRateLimit()
 										? copy.slotsRateLimitGenericError
 										: copy.networkError
@@ -5690,7 +5647,6 @@ function useCalcomSlots(
 				window.clearTimeout(id);
 			});
 		};
-		// Copy/error deps: string + memoized values, safe in the array.
 	}, [
 		apiKey,
 		eventTypeId,
@@ -6022,7 +5978,6 @@ function useCalcomEventMeta(params: {
 				setStatus("failed");
 			}
 		})
-			// Defensive: fail closed so the panel never sticks on loading.
 			.catch(() => {
 				if (cancelled) return;
 				setMeta(null);
@@ -6758,8 +6713,7 @@ function buildIcsDataUri(
 		`DTEND:${end}`,
 		`SUMMARY:${escapeIcsText(summary || summaryFallback)}`,
 		...(description
-			? // W1-06-F-06-2 fix: slice the RAW text to 500 chars FIRST, then
-			[`DESCRIPTION:${escapeIcsText(description.slice(0, 500))}`]
+			? [`DESCRIPTION:${escapeIcsText(description.slice(0, 500))}`]
 			: []),
 		...(location && location.trim()
 			? [`LOCATION:${escapeIcsText(location.trim())}`]
@@ -7174,7 +7128,6 @@ function useBookingEngineState(
 				DEFAULT_VALIDATION_COPY.pastTimeError,
 			minLength: DEFAULT_VALIDATION_COPY.minLength,
 		};
-		// W1-04-H1: validation must stay in deps or messages go stale.
 	}, [validation]);
 
 	const {
@@ -7427,8 +7380,7 @@ function useBookingEngineState(
 		const remapped =
 			pinnedIndex !== -1
 				? pinnedIndex
-				: // W1-03-5 fix: the fallback used raw `currentIndex`; the
-				Math.min(baseSafeCurrentIndex, baseTotalActive - 1);
+				: Math.min(baseSafeCurrentIndex, baseTotalActive - 1);
 		if (remapped !== currentIndex) {
 			setCurrentIndex(remapped);
 		}
@@ -8084,7 +8036,6 @@ function useBookingEngineState(
 			el.focus({ preventScroll: true });
 			el.scrollIntoView({ block: "nearest" });
 		} catch {
-			/* ignore — engines without scrollIntoView options */
 		}
 	}, []);
 	const submitButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -8169,7 +8120,6 @@ function useBookingEngineState(
 							target.focus({ preventScroll: true });
 							target.scrollIntoView({ behavior: "smooth", block: "nearest" });
 						} catch {
-							/* ignore */
 						}
 						break;
 					}
@@ -9435,9 +9385,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 				))
 				: null}
 
-			{/* VALIDATION-REMOVED (rule 100): canvas regex verdicts lived
-                here — deleted with the custom-regex machinery. */}
-
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
 				<div style={{ marginBottom: scaleDensity(16, densityRatio) }}>
 					{progressShowTextContent && stepCountPosition === "top" ? (
@@ -9692,8 +9639,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 			</form>
 
 			{/* Footer nav */}
-			{/* T10-H2 fix: sticky so Back/Continue stay reachable on long
-                steps instead of scrolling out of view. */}
 			<div
 				style={{
 					display: "flex",
@@ -9722,7 +9667,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 				)}
 			</div>
 
-			{/* FINAL-37 fix: skip-link landing target (programmatic focus). */}
 			<div
 				id={`be-skip-end-${reactInstanceId}`}
 				tabIndex={-1}
@@ -9922,7 +9866,6 @@ const RootShell = React.memo(function RootShell(props: {
 
 interface StepBodyProps {
 	step: NormalizedStep;
-	/** Fix #2: full pipeline so ReviewStepBody can derive real field labels. */
 	steps: NormalizedStep[];
 	values: BookingValues;
 	errors: Record<string, string | null>;
@@ -9932,13 +9875,10 @@ interface StepBodyProps {
 	slotSelectedSurface?: string;
 	slotSelectedText?: string;
 	fieldGap: number;
-	/** FIELD-STYLES-GLOBAL: shared field defaults (already normalized).
-	 *  Threaded to every FieldRenderer; per-field overrides win. */
 	globalFieldStyles?: FieldStyleOverrides;
 	hasCalConfig: boolean;
 	slotsLoading: boolean;
 	availabilitySettled?: boolean;
-	/** Fix #13: surface Cal.com fetch errors as an inline banner. */
 	slotsError: string | null;
 	slotsForSelectedDate: Array<{
 		value: string;
@@ -9946,22 +9886,15 @@ interface StepBodyProps {
 		end?: string;
 		minutes: number;
 	}>;
-	/** Undefined keeps the no-Cal.com demo calendar fully selectable. */
 	availableDates: Set<string> | undefined;
 	selectedDate: Date | null;
-	/** Fix #19: parent-controlled visible month. */
 	visibleMonth: Date | null;
 	timeZone: string;
 	timeFormat: "12h" | "24h";
 	hideDemoWhenUnconfigured: boolean;
 	calendarSurface?: FieldStyleOverrides;
-	/** Fix #20: configurable copy. */
 	copy: BookingEngineProps["copy"];
-	/** W1-02-F9 note: merged copy.aria labels, computed by the parent —
-	 *  children must not re-derive them from props.copy (single source). */
 	ariaLabels: typeof DEFAULT_ARIA_LABELS;
-	/** W1-02-F4–F8 fix (bundle 17): merged error copy for the
-	 *  unconfigured-date-time notice (title + body). */
 	errorCopy: ErrorCopy;
 	instanceId: string;
 	onFieldChange: (fieldId: string, value: string | boolean | undefined) => void;
@@ -10671,7 +10604,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(
 		color: optionTextColor,
 		...(menuFont ?? {}),
 		...shadowStyle(fs?.shadow),
-		...backdropStyle(fs?.backgroundBlur),
 	};
 
 	const renderRow = (option: ChoiceOption, index: number) => {
@@ -10963,7 +10895,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		background: fs?.backgroundColor ?? theme.surfaceColor,
 		color: fs?.textColor ?? theme.textPrimaryColor,
 		fontFamily: fs?.font?.fontFamily ?? "inherit",
-		...(fs?.textAlign ? { textAlign: fs.textAlign } : {}),
 		fontSize: fsInputFontSize,
 		...(fs?.font?.fontWeight != null ? { fontWeight: fs.font.fontWeight } : {}),
 		...(fs?.font?.fontStyle ? { fontStyle: fs.font.fontStyle } : {}),
@@ -10979,7 +10910,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 			? ({ "--be-focus-color": fs.focusBorderColor } as React.CSSProperties)
 			: {}),
 		...shadowStyle(fs?.shadow),
-		...backdropStyle(fs?.backgroundBlur),
 		transition: reducedMotion
 			? "none"
 			: "border-color 0.15s ease, box-shadow 0.15s ease",
@@ -11105,7 +11035,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						optionMinHeight={fs?.minHeight}
 						optionFont={fs?.font}
 						optionShadow={fs?.shadow}
-						optionBlur={fs?.backgroundBlur}
 						trackBackground={fs?.backgroundColor}
 						controlledValue={typeof value === "string" ? value : undefined}
 						ariaInvalid={!!error}
@@ -11175,7 +11104,6 @@ const FieldRenderer = React.memo(function FieldRenderer(
 								accentColor: checkAccent,
 								cursor: "pointer",
 								...shadowStyle(fs?.shadow),
-								...backdropStyle(fs?.backgroundBlur),
 							}}
 						/>
 						<span>{field.label}</span>
@@ -11999,10 +11927,6 @@ type ButtonsLayoutControlProps = {
 	buttonWidth?: "fit" | "fill";
 };
 
-const FIELD_STYLE_INPUT_TYPES = ["text", "email", "phone", "textarea"];
-const isFieldStyleInputType = (fieldType?: string) =>
-	FIELD_STYLE_INPUT_TYPES.includes(fieldType || "");
-
 function fieldStylesColorControl(title: string) {
 	return { type: ControlType.Color, title, optional: true };
 }
@@ -12083,36 +12007,16 @@ function isNoShadowValue(value: string | undefined): boolean {
 		n === NO_SHADOW_VALUE.replace(/\s+/g, "").toLowerCase()
 	);
 }
-function fieldStylesShadowControl() {
+function fieldStylesShadowControl(title: string = "Shadow") {
 	return {
 		type: ControlType.BoxShadow,
-		title: "Shadow",
+		title,
 		defaultValue: NO_SHADOW_VALUE,
-	};
-}
-function fieldStylesBackgroundBlurControl() {
-	return {
-		type: ControlType.Number,
-		title: "BG Blur",
-		optional: true,
-		min: 0,
-		max: 40,
-		step: 1,
-		unit: "px",
-		defaultValue: 0,
 	};
 }
 function shadowStyle(shadow: string | undefined): React.CSSProperties {
 	return !isNoShadowValue(shadow) && shadow && shadow.trim()
 		? { boxShadow: shadow }
-		: {};
-}
-function backdropStyle(px: number | undefined): React.CSSProperties {
-	return typeof px === "number" && px > 0
-		? {
-			backdropFilter: `blur(${px}px)`,
-			WebkitBackdropFilter: `blur(${px}px)`,
-		}
 		: {};
 }
 
@@ -12124,26 +12028,17 @@ function makeInputFieldStylesControls() {
 			variant: "Medium",
 			lineHeight: 1.6,
 		}),
-		font: fieldStylesFontControl("Font", {
+		font: fieldStylesFontControl("Field Font", {
 			fontSize: "14px",
 			variant: "Regular",
 		}),
-		textAlign: {
-			type: ControlType.Enum,
-			title: "Text Align",
-			options: ["left", "center", "right"],
-			optionTitles: ["Left", "Center", "Right"],
-			displaySegmentedControl: true,
-		},
 		labelColor: fieldStylesColorControl("Label Color"),
-		textColor: fieldStylesColorControl("Text Color"),
+		textColor: fieldStylesColorControl("Field Color"),
 		placeholderColor: fieldStylesColorControl("Placeholder Color"),
-		backgroundColor: fieldStylesColorControl("Background"),
+		backgroundColor: fieldStylesColorControl("Fill"),
 		radius: fieldStylesRadiusControl(),
-		border: fieldStylesBorderControl(),
-		shadow: fieldStylesShadowControl(),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
 		padding: fieldStylesPaddingControl(),
+		border: fieldStylesBorderControl(),
 		focusBorderColor: fieldStylesColorControl("Focus Border"),
 		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
 	};
@@ -12151,6 +12046,8 @@ function makeInputFieldStylesControls() {
 
 function makeGlobalFieldStylesControls() {
 	const checkEff = getFieldStylesEffectiveDefaults("checkbox");
+	// STYLES-ORDER: Shadows closes the set (BE-023) — after the
+	// Selected/Check rows, not with the base rows.
 	return {
 		...makeInputFieldStylesControls(),
 		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
@@ -12158,73 +12055,27 @@ function makeGlobalFieldStylesControls() {
 		selectedBorderColor: fieldStylesColorControl("Selected Border"),
 		accentColor: fieldStylesColorControl("Check Accent"),
 		checkSize: fieldStylesNumberControl("Check Size", 12, 32, checkEff.minHeight),
-	};
-}
-
-function makeVariantChoiceStylesControls(
-	variant: "select" | "segmented" | "pills" | "cards" | "radio",
-) {
-	const eff = getFieldStylesEffectiveDefaults(variant);
-	return {
-		labelFont: fieldStylesFontControl("Label Font", {
-			fontSize: "13px",
-			variant: "Medium",
-			lineHeight: 1.6,
-		}),
-		font: fieldStylesFontControl("Font", {
-			fontSize: "14px",
-			variant: "Regular",
-		}),
-		labelColor: fieldStylesColorControl("Label Color"),
-		textColor: fieldStylesColorControl("Text Color"),
-		backgroundColor: fieldStylesColorControl("Background"),
-		radius: fieldStylesRadiusControl(eff.radius),
-		border: fieldStylesBorderControl(),
-		shadow: fieldStylesShadowControl(),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		padding: fieldStylesPaddingControl(eff.padding),
-		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
-		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
-		selectedTextColor: fieldStylesColorControl("Selected Text"),
-		selectedBorderColor: fieldStylesColorControl("Selected Border"),
-	};
-}
-
-function makeCheckboxFieldStylesControls() {
-	const eff = getFieldStylesEffectiveDefaults("checkbox");
-	return {
-		labelFont: fieldStylesFontControl("Label Font", {
-			fontSize: "14px",
-			variant: "Regular",
-			lineHeight: 1.6,
-		}),
-		labelColor: fieldStylesColorControl("Label Color"),
-		accentColor: fieldStylesColorControl("Accent"),
-		shadow: fieldStylesShadowControl(),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		checkSize: fieldStylesNumberControl("Size", 12, 32, eff.minHeight),
-		spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
+		shadow: fieldStylesShadowControl("Shadows"),
 	};
 }
 
 function makeCalendarStylesStylesControls() {
 	const eff = getFieldStylesEffectiveDefaults("calendar-widget");
 	return {
-		font: fieldStylesFontControl("Font", {
+		font: fieldStylesFontControl("Field Font", {
 			fontSize: "14px",
 			variant: "Regular",
 		}),
-		textColor: fieldStylesColorControl("Text Color"),
-		backgroundColor: fieldStylesColorControl("Background"),
+		textColor: fieldStylesColorControl("Field Color"),
+		backgroundColor: fieldStylesColorControl("Fill"),
 		radius: fieldStylesRadiusControl(eff.radius),
+		padding: fieldStylesPaddingControl(eff.padding),
 		border: fieldStylesBorderControl({
 			borderWidth: 1,
 			borderStyle: "solid",
 			borderColor: FIELD_STYLES_BORDER_COLOR,
 		}),
-		shadow: fieldStylesShadowControl(),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		padding: fieldStylesPaddingControl(eff.padding),
+		shadow: fieldStylesShadowControl("Shadows"),
 	};
 }
 
@@ -12282,17 +12133,16 @@ function makeSharedButtonStylesControls(defaults: {
 			fontSize: "14px",
 			variant: "Semibold",
 		}),
-		textColor: fieldStylesColorControl("Text Color"),
-		backgroundColor: fieldStylesColorControl("Background"),
+		textColor: fieldStylesColorControl("Color"),
+		backgroundColor: fieldStylesColorControl("Fill"),
 		radius: fieldStylesRadiusControl("12px"),
+		padding: fieldStylesPaddingControl(defaults.padding),
 		border: fieldStylesBorderControl({
 			borderWidth: defaults.borderWidth,
 			borderStyle: "solid",
 			borderColor: defaults.borderColor,
 		}),
 		shadow: fieldStylesShadowControl(),
-		backgroundBlur: fieldStylesBackgroundBlurControl(),
-		padding: fieldStylesPaddingControl(defaults.padding),
 		hover: {
 			type: ControlType.Object,
 			title: "Hover",
@@ -12363,7 +12213,6 @@ function resolveButtonStyle(
 			: {}),
 		...(font?.lineHeight != null ? { lineHeight: font.lineHeight } : {}),
 		...shadowStyle(group?.shadow),
-		...backdropStyle(group?.backgroundBlur),
 	};
 }
 
@@ -12626,78 +12475,6 @@ function makeFieldObjectControls() {
 			},
 			hidden: (p: FieldControlProps) =>
 				p?.fieldType !== "cards" && p?.fieldType !== "radio",
-		},
-		styles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeInputFieldStylesControls(),
-			hidden: (p: FieldControlProps) => !isFieldStyleInputType(p?.fieldType),
-		},
-		choiceStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeVariantChoiceStylesControls("select"),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "select",
-		},
-		segmentedStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeVariantChoiceStylesControls("segmented"),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "segmented",
-		},
-		pillsStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeVariantChoiceStylesControls("pills"),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "pills",
-		},
-		cardsStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeVariantChoiceStylesControls("cards"),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "cards",
-		},
-		radioStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeVariantChoiceStylesControls("radio"),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "radio",
-		},
-		checkStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "effect",
-			optional: true,
-			controls: makeCheckboxFieldStylesControls(),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
-		},
-		calendarStyles: {
-			type: ControlType.Object,
-			title: "Styles",
-			buttonTitle: "Styles",
-			icon: "color",
-			optional: true,
-			controls: makeCalendarStylesStylesControls(),
-			hidden: (p: FieldControlProps) => p?.fieldType !== "calendar-widget",
 		},
 		width: {
 			type: ControlType.Enum,

@@ -6,31 +6,19 @@
 <title>Booking Engine — Button Visual Reference</title>
 <!--
   REFERENCE ONLY — no behavior, no booking flow, no API calls.
-  Every surface below copies the production defaults verbatim from
-  Code-Components/BookingEngine.tsx (theme tokens + Buttons-group role
-  defaults + render-site inline styles). Untouched Buttons groups fall
-  back to these role defaults at runtime (resolveButtonStyle), so this
-  page matches an unconfigured component exactly.
+  Surfaces copy the production defaults verbatim from
+  Code-Components/BookingEngine.tsx (theme tokens + shared-set role
+  defaults + render-site inline styles). Unopened sets fall back to
+  these role defaults, so this page matches an unconfigured component.
 
-  Source values (BookingEngine.tsx):
-    Theme ........ Accent #0066BB | Primary Foreground #FFFFFF | Text #111827
-                   Text Secondary rgba(17,24,39,.62) = withAlpha(#111827,.62)
-                   Border #E5E7EB (= FIELD_STYLES_BORDER_COLOR) | Error #DC2626
-                   Radius 12 (Radius control default, 0-24)
-    Buttons Font . 14px Semibold (weight 600, family inherit)
-    Touch target . min-height 44px (TOUCH_TARGET_MIN)
-    Footer row ... display flex, gap 8, margin-top 24, sticky bottom 0,
-                   Split default: space-between (single button: flex-end)
-                   Grouped+Right default: flex-end; Order default Back-first
-    Interaction .. Hover/Pressed are deltas; unconfigured = no visible change.
-                   Transition armed on all six animated props (.15s ease-out).
-                   Pressed wins over hover.
-    Spinner ...... 14x14 ring, 2px solid <primary text color>,
-                   border-top transparent, be-spin 0.8s linear infinite
-                   (none under prefers-reduced-motion); button text becomes
-                   "Submitting…", opacity .7
-    Disabled ..... submitting state only: Back/Cancel opacity .5,
-                   primary opacity .7, cursor not-allowed.
+  Current model: 3 shared style sets (Primary / Secondary / Calendar
+  Links) + Text-only per-button groups. Theme: Accent #0066BB,
+  Primary Foreground #FFFFFF, Text #111827,
+  Text Secondary rgba(17,24,39,.62), Border #E5E7EB, Error #DC2626,
+  Radius 12. Buttons Font 14px Semibold (600). Touch target min 44px.
+  Footer: flex, gap 8, margin-top 24, sticky bottom 0. Split default =
+  space-between (single button: flex-end). Loading text "Booking…"
+  with 14px spinner ring; disabled only while submitting.
 -->
 <style>
   :root{
@@ -43,15 +31,18 @@
     padding:40px 24px 80px}
   .page{max-width:960px;margin:0 auto}
   h1{font-size:22px;margin:0 0 6px}
-  .sub{font-size:14px;color:var(--text-2);margin:0 0 32px}
+  .sub{font-size:14px;color:var(--text-2);margin:0 0 24px}
   h2.group{font-size:16px;margin:36px 0 16px;padding-top:20px;border-top:1px solid var(--border)}
   .card{border:1px solid var(--border);border-radius:12px;padding:18px;margin:0 0 14px}
   .card h3{font-size:14px;margin:0 0 2px}
+  .does{font-size:13px;margin:0 0 2px}
   .shows{font-size:12.5px;color:var(--text-2);margin:0 0 14px}
-  .row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end}
+  .settag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    background:#F7F8FA;border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin:0 0 10px;color:var(--text-2)}
+  .row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;margin-bottom:14px}
+  .row:last-child{margin-bottom:0}
   .swatch{display:flex;flex-direction:column;gap:6px}
   .swatch span.lbl{font-size:11.5px;color:var(--text-2)}
-  /* ---- production button base (from resolveButtonStyle + render sites) ---- */
   .be{min-height:44px;display:inline-flex;align-items:center;font-family:inherit;
     font-size:14px;font-weight:600;border-radius:12px;cursor:pointer;text-decoration:none;
     transition:background-color .15s ease-out,border-color .15s ease-out,
@@ -69,69 +60,115 @@
   @media (prefers-reduced-motion:reduce){.be-spinner{animation:none}}
   .be-mini{background:transparent;color:var(--error);border:1px solid var(--error);
     padding:6px 14px;font-size:12px;min-height:44px;flex-shrink:0}
-  .be-support{background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 22px}
-  /* ---- in-action compositions (values from render sites) ---- */
-  .demo{border:1px dashed var(--border);border-radius:12px;padding:16px;margin:8px 0 0}
+  .demo{border:1px dashed var(--border);border-radius:12px;padding:16px;margin:0}
   .demo .cap{font-size:11.5px;color:var(--text-2);margin-bottom:10px}
   .footer-split{display:flex;gap:8px;margin-top:24px;align-items:center;
     justify-content:space-between;position:sticky;bottom:0;padding-top:12px}
+  .footer-single{display:flex;gap:8px;margin-top:24px;align-items:center;
+    justify-content:flex-end;position:sticky;bottom:0;padding-top:12px}
   .confirm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
   .err-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-    padding:10px 14px;margin-bottom:12px;border-radius:12px;
+    padding:10px 14px;border-radius:12px;min-width:280px;
     background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);
     color:var(--error);font-size:12px;line-height:1.4}
+  .gone{font-size:13px;color:var(--text-2);border:1px dashed var(--border);border-radius:12px;padding:14px 18px}
+  /* ---- failure screen replica (exact ErrorScreen production values) ---- */
+  .fail-screen{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+    text-align:left;min-height:320px;padding:24px 16px;box-sizing:border-box}
+  .fail-markcol{display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+    margin-bottom:16px;max-width:520px}
+  .fail-mark{width:40px;height:40px;border-radius:50%;background:rgba(220,38,38,.12);
+    box-shadow:0 0 0 8px rgba(220,38,38,.06);color:var(--error);display:inline-flex;
+    align-items:center;justify-content:center;font-size:24px;font-weight:700;flex-shrink:0;margin-bottom:10px}
+  .fail-title{font-size:22px;font-weight:700;line-height:1.2;color:var(--text);margin:0}
+  .fail-sub{font-size:14px;color:var(--text-2);margin-top:6px;line-height:1.5}
+  .fail-msg{padding:14px 18px;border-radius:12px;background:rgba(220,38,38,.08);
+    border:1px solid rgba(220,38,38,.3);color:var(--text);font-size:14px;line-height:1.5;
+    margin-bottom:20px;width:100%;max-width:520px;box-sizing:border-box}
+  .fail-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
 <div class="page">
   <h1>Booking Engine — Button Visual Reference</h1>
-  <p class="sub">What every button looks like, and when it shows. Reference only — all clicks are dead.</p>
+  <p class="sub">What every button looks like, what it does, when it shows, and who stands next to it. Reference only — all clicks are dead.</p>
+
+  <h2 class="group">The 3 shared style sets</h2>
+  <div class="card">
+    <div class="row">
+      <div class="swatch"><span class="settag">Primary Buttons</span><button type="button" class="be be-primary">Continue</button><span class="lbl">Accent fill · padding 10px 22px · Continue, Book Now, Book another*, Try again, loading</span></div>
+      <div class="swatch"><span class="settag">Secondary Buttons</span><button type="button" class="be be-ghost">Back</button><span class="lbl">Transparent · 1px Border · padding 10px 18px · Back, Cancel, Done*, Reschedule*</span></div>
+      <div class="swatch"><span class="settag">Calendar Links</span><a class="be be-outline">Add to Calendar</a><span class="lbl">Transparent · Accent text + border · .ics, Google, Outlook</span></div>
+    </div>
+    <p class="shows" style="margin:14px 0 0">*Book another keeps tighter 10px 18px padding · Done and Reschedule render muted secondary text. Per-button groups are Text-only — labels editable, surfaces shared.</p>
+  </div>
 
   <h2 class="group">Navigation</h2>
 
   <div class="card">
     <h3>Continue</h3>
-    <p class="shows">Shows on every step except the last — submits the step form.</p>
+    <p class="does">Submits the current step's form and advances one step.</p>
+    <p class="shows">Shows on every step except the last (and except while submitting, when it becomes the loading state below).</p>
     <div class="row">
       <div class="swatch"><button type="button" class="be be-primary">Continue</button><span class="lbl">Default</span></div>
       <div class="swatch"><button type="button" class="be be-primary">Continue</button><span class="lbl">Hover / Pressed</span></div>
-      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Submitting…</button><span class="lbl">Loading</span></div>
+      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Booking…</button><span class="lbl">Loading</span></div>
+    </div>
+    <div class="demo">
+      <div class="cap">In step — middle form step: Back far left, Continue far right</div>
+      <div class="footer-split">
+        <button type="button" class="be be-ghost">Back</button>
+        <button type="button" class="be be-primary">Continue</button>
+      </div>
     </div>
   </div>
 
   <div class="card">
     <h3>Book Now</h3>
-    <p class="shows">Shows on the last step only, in place of Continue — submits the booking.</p>
+    <p class="does">Submits the booking to Cal.com.</p>
+    <p class="shows">Shows on the last step only (usually the calendar), in place of Continue.</p>
     <div class="row">
       <div class="swatch"><button type="button" class="be be-primary">Book Now</button><span class="lbl">Default</span></div>
-      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Submitting…</button><span class="lbl">Loading</span></div>
+      <div class="swatch"><button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Booking…</button><span class="lbl">Loading</span></div>
+    </div>
+    <div class="demo">
+      <div class="cap">In step — calendar (last) step: Back far left, Book Now far right</div>
+      <div class="footer-split">
+        <button type="button" class="be be-ghost">Back</button>
+        <button type="button" class="be be-primary">Book Now</button>
+      </div>
     </div>
   </div>
 
   <div class="card">
     <h3>Back</h3>
-    <p class="shows">Shows on every step except the first — goes one step back.</p>
+    <p class="does">Goes one step back; entered values are kept.</p>
+    <p class="shows">Shows on every step except the first. Disabled (dimmed) while submitting.</p>
     <div class="row">
       <div class="swatch"><button type="button" class="be be-ghost">Back</button><span class="lbl">Default</span></div>
       <div class="swatch"><button type="button" class="be be-ghost">Back</button><span class="lbl">Hover / Pressed</span></div>
       <div class="swatch"><button type="button" class="be be-ghost be-disabled" disabled>Back</button><span class="lbl">Disabled (while submitting)</span></div>
     </div>
-  </div>
-
-  <div class="card">
-    <h3>Cancel</h3>
-    <p class="shows">Shows only while the booking request is in flight — aborts it and returns to the form.</p>
-    <div class="row">
-      <div class="swatch"><button type="button" class="be be-ghost">Cancel</button><span class="lbl">Default</span></div>
+    <div class="demo">
+      <div class="cap">In step — first form step has no Back: Continue stands alone, right</div>
+      <div class="footer-single">
+        <button type="button" class="be be-primary">Continue</button>
+      </div>
     </div>
   </div>
 
-  <div class="demo">
-    <div class="cap">In action — footer: Back far left, Continue far right</div>
-    <div class="footer-split">
-      <button type="button" class="be be-ghost">Back</button>
-      <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
-        <button type="button" class="be be-primary">Continue</button>
+  <div class="card">
+    <h3>Cancel + Booking… (submitting)</h3>
+    <p class="does">Cancel aborts the in-flight booking request and returns to the form.</p>
+    <p class="shows">Both appear only while the request is in flight: Back dims, Cancel joins the primary side, Continue/Book Now turns into the Booking… loader.</p>
+    <div class="demo">
+      <div class="cap">In step — submitting: dimmed Back left; Cancel + Booking… right</div>
+      <div class="footer-split">
+        <button type="button" class="be be-ghost be-disabled" disabled>Back</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="be be-ghost">Cancel</button>
+          <button type="button" class="be be-primary be-loading" aria-busy="true"><span class="be-spinner" aria-hidden="true"></span>Booking…</button>
+        </div>
       </div>
     </div>
   </div>
@@ -140,7 +177,8 @@
 
   <div class="card">
     <h3>Book another</h3>
-    <p class="shows">Success screen, far right — starts a new booking.</p>
+    <p class="does">Restarts the flow for a new booking.</p>
+    <p class="shows">Success screen, far right — the row's primary action.</p>
     <div class="row">
       <div class="swatch"><button type="button" class="be be-primary-tight">Book another</button><span class="lbl">Default</span></div>
       <div class="swatch"><button type="button" class="be be-primary-tight">Book another</button><span class="lbl">Hover / Pressed</span></div>
@@ -149,7 +187,8 @@
 
   <div class="card">
     <h3>Done</h3>
-    <p class="shows">Success screen, left of “Book another” — leaves to the site home.</p>
+    <p class="does">Leaves to the site home (/). This <em>is</em> the return-home action — no separate button exists.</p>
+    <p class="shows">Success screen, immediately left of “Book another”.</p>
     <div class="row">
       <div class="swatch"><a class="be be-ghost-muted">Done</a><span class="lbl">Default</span></div>
       <div class="swatch"><a class="be be-ghost-muted">Done</a><span class="lbl">Hover / Pressed</span></div>
@@ -158,7 +197,8 @@
 
   <div class="card">
     <h3>Add to Calendar</h3>
-    <p class="shows">Success screen, when a booked time exists — downloads the .ics file.</p>
+    <p class="does">Downloads the appointment as a generic “Booking Appointment.ics” file.</p>
+    <p class="shows">Success screen, only when a booked time exists.</p>
     <div class="row">
       <div class="swatch"><a class="be be-outline">Add to Calendar</a><span class="lbl">Default</span></div>
     </div>
@@ -166,7 +206,8 @@
 
   <div class="card">
     <h3>Add to Google Calendar / Add to Outlook</h3>
-    <p class="shows">Success screen — opens Google / Outlook with the booking pre-filled.</p>
+    <p class="does">Opens Google / Outlook with the booking pre-filled.</p>
+    <p class="shows">Success screen, beside Add to Calendar.</p>
     <div class="row">
       <div class="swatch"><a class="be be-outline">Add to Google Calendar</a><span class="lbl">Default</span></div>
       <div class="swatch"><a class="be be-outline">Add to Outlook</a><span class="lbl">Default</span></div>
@@ -175,14 +216,15 @@
 
   <div class="card">
     <h3>Reschedule or cancel</h3>
-    <p class="shows">Success screen, only when Cal.com returned a manage link — opens reschedule / cancel.</p>
+    <p class="does">Opens the Cal.com manage link for this booking.</p>
+    <p class="shows">Success screen, only when Cal.com returned a manage URL.</p>
     <div class="row">
       <div class="swatch"><a class="be be-ghost-muted">Reschedule or cancel</a><span class="lbl">Default</span></div>
     </div>
   </div>
 
-  <div class="demo">
-    <div class="cap">In action — success row, right-aligned</div>
+  <div class="demo" style="border:1px dashed var(--border);border-radius:12px;padding:16px;margin-top:14px">
+    <div class="cap">In step — full success row, right-aligned: links + manage, then Done, then Book another far right</div>
     <div class="confirm-row">
       <a class="be be-outline">Add to Calendar</a>
       <a class="be be-outline">Add to Google Calendar</a>
@@ -196,8 +238,27 @@
   <h2 class="group">Error</h2>
 
   <div class="card">
+    <h3>Failure screen (full)</h3>
+    <p class="does">Shows the booking failure: mark, title, subtitle, message card, then the retry action.</p>
+    <p class="shows">Replaces the whole flow on booking failure. Content follows Content Alignment (Left default — shown); the action row stays centered on its own.</p>
+    <div class="demo" style="margin:0">
+      <div class="cap">In step — full failure screen (message text below is a sample)</div>
+      <div class="fail-screen">
+        <div class="fail-markcol">
+          <div class="fail-mark" aria-hidden="true">!</div>
+          <h2 class="fail-title">Something went wrong while processing your booking</h2>
+          <div class="fail-sub">Your details are saved — try again in a moment.</div>
+        </div>
+        <div class="fail-msg">The booking could not be confirmed. Check your connection and try again.</div>
+        <div class="fail-actions"><button type="button" class="be be-primary">Try again</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h3>Try again</h3>
-    <p class="shows">Error screen — retries the failed booking, keeps everything entered.</p>
+    <p class="does">Retries the failed booking; everything entered is kept.</p>
+    <p class="shows">Error screen — the only forward path (centered action row).</p>
     <div class="row">
       <div class="swatch"><button type="button" class="be be-primary">Try again</button><span class="lbl">Default</span></div>
       <div class="swatch"><button type="button" class="be be-primary">Try again</button><span class="lbl">Hover / Pressed</span></div>
@@ -205,23 +266,19 @@
   </div>
 
   <div class="card">
-    <h3>Try again <span style="font-weight:400">— inside the times error banner</span></h3>
-    <p class="shows">Calendar step, when loading times fails — refetches the times.</p>
+    <h3>Try again <span style="font-weight:400">— times banner</span></h3>
+    <p class="does">Refetches the available times (clears the month cache first).</p>
+    <p class="shows">Calendar step, inside the red banner shown when loading times fails. Small hardcoded error-outline style — shares only the Retry label.</p>
     <div class="row">
       <div class="swatch">
-        <div class="err-banner" style="margin:0;min-width:280px"><span>Couldn’t load times.</span><button type="button" class="be be-mini">Try again</button></div>
+        <div class="err-banner" style="margin:0"><span>Couldn’t load times.</span><button type="button" class="be be-mini">Try again</button></div>
         <span class="lbl">Default (in banner)</span>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <h3>Contact support</h3>
-    <p class="shows">Error screen, only if the author set a contact — opens mail / call / link.</p>
-    <div class="row">
-      <div class="swatch"><a class="be be-support">Contact support</a><span class="lbl">Default</span></div>
-    </div>
-  </div>
+  <h2 class="group">Removed</h2>
+  <div class="gone"><strong>Contact support</strong> — removed from the error screen entirely. Contact belongs to the host site's header/footer, not to a booking-only component.</div>
 </div>
 <script>
   // Reference only: kill all navigation.
