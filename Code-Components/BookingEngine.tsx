@@ -440,6 +440,7 @@ interface ErrorCopy {
 	submitTimeoutError: string;
 	malformedResponseError: string;
 	badRequestError: string;
+	attendeeContactError: string;
 	emptyResponseError: string;
 	httpStatusTemplate: string;
 	slotsTimeoutError: string;
@@ -472,6 +473,8 @@ const ERROR_COPY_DEFAULTS: ErrorCopy = {
 		"The booking service returned an unusable response. Please try again later, or contact the site owner if the problem persists.",
 	badRequestError:
 		"The booking service rejected the request details. Please go back, check your answers, and try again.",
+	attendeeContactError:
+		"Your booking needs your name and an email address to be confirmed. Please go back, complete the contact details, and try again.",
 	emptyResponseError:
 		"We couldn't confirm your booking. Please check your email for a confirmation before trying again.",
 	httpStatusTemplate: "Booking failed (HTTP {status})",
@@ -4597,6 +4600,7 @@ interface StepConfig {
 interface BookingEngineStyleProps {
 	style?: React.CSSProperties;
 	styles: {
+		contentAlignment?: "left" | "center" | "right";
 		accentColor: string;
 		accentForegroundColor: string;
 		surfaceColor: string;
@@ -4604,7 +4608,6 @@ interface BookingEngineStyleProps {
 		borderColor: string;
 		borderRadius: string | number;
 		gap?: number;
-		density?: "compact" | "comfortable" | "spacious";
 		font?: FramerFont;
 		headingFont?: FramerFont;
 		fieldStyles?: FieldStyleOverrides;
@@ -4668,8 +4671,6 @@ interface BookingEngineCopyProps {
 			continueLabel?: string;
 			backLabel?: string;
 			finalActionLabel?: string;
-			cancelSubmitLabel?: string;
-			retryLabel?: string;
 		};
 		continueButton?: ButtonStyleGroup;
 		backButton?: ButtonStyleGroup;
@@ -4678,7 +4679,6 @@ interface BookingEngineCopyProps {
 		continueLabel?: string;
 		backLabel?: string;
 		finalActionLabel?: string;
-		cancelSubmitLabel?: string;
 		buttonsLayout?: {
 			groupNavButtons?: boolean;
 			groupedNavAlignment?: "left" | "center" | "right";
@@ -4698,7 +4698,6 @@ interface BookingEngineCopyProps {
 		successSubtitle: string;
 		errorTitle: string;
 		errorSubtitle: string;
-		retryLabel?: string;
 		icsSummaryLabel: string;
 		stepCounterTemplate: string;
 		timeFormatLabel: string;
@@ -4759,10 +4758,6 @@ interface BookingEngineConfigProps {
 		alignment?: "left" | "center" | "right";
 		contentAlignment?: "left" | "center" | "right";
 		terminalAlignment?: "left" | "center" | "right";
-		iconSize?: number;
-	};
-	terminal?: {
-		iconSize?: number;
 	};
 	calApiKey: string;
 	calEventTypeId: string;
@@ -4787,14 +4782,6 @@ const PHONE_REGEX =
 
 const TOUCH_TARGET_MIN = 44;
 const COMPACT_BREAKPOINT = 768;
-const DENSITY_RATIOS: Record<"compact" | "comfortable" | "spacious", number> = {
-	compact: 0.75,
-	comfortable: 1,
-	spacious: 1.25,
-};
-function scaleDensity(px: number, ratio: number): number {
-	return Math.round(px * ratio);
-}
 function weeksInMonthView(year: number, month: number, firstDayOfWeek: number): number {
 	const offset = (new Date(year, month, 1).getDay() - firstDayOfWeek + 7) % 7;
 	const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -4802,8 +4789,9 @@ function weeksInMonthView(year: number, month: number, firstDayOfWeek: number): 
 }
 const TIME_SLOT_SKELETON_COUNT = 8;
 const PROGRESS_BAR_HEIGHT = 4;
-const CHECKMARK_ICON_SIZE = 64;
-const ERROR_ICON_SIZE = 40;
+// BE-042: terminal marks are fixed 48px circles with 24px glyphs.
+const CHECKMARK_ICON_SIZE = 48;
+const ERROR_ICON_SIZE = 48;
 const CHOICE_COLUMNS_BREAKPOINT_WIDE = 560;
 const CHOICE_COLUMNS_BREAKPOINT_MEDIUM = 380;
 const PILLS_TWO_PER_ROW_BREAKPOINT = 420;
@@ -5005,8 +4993,39 @@ function isStepAlignment(
 	return value === "left" || value === "center" || value === "right";
 }
 
+// BE-039: designations imply mandatory. Primary-Name and Email-typed
+// fields are always required (the attendee name + contact the Cal.com
+// booking needs); with no designation, the label-matched identity field
+// is forced instead. Identity resolution is first-wins.
+function applyMandatoryIdentityFields(
+	steps: NormalizedStep[],
+): NormalizedStep[] {
+	const allFields = steps.flatMap((step) => step.fields);
+	const forcedIds = new Set<string>();
+	for (const field of allFields) {
+		if (field.isPrimaryName === true || field.fieldType === "email") {
+			forcedIds.add(field.id);
+		}
+	}
+	if (!allFields.some((field) => field.isPrimaryName === true)) {
+		const fallbackName = findNameField(steps);
+		if (fallbackName) forcedIds.add(fallbackName.id);
+	}
+	if (!allFields.some((field) => field.fieldType === "email")) {
+		const fallbackContact = findEmailField(steps);
+		if (fallbackContact) forcedIds.add(fallbackContact.id);
+	}
+	if (forcedIds.size === 0) return steps;
+	return steps.map((step) => ({
+		...step,
+		fields: step.fields.map((field) =>
+			forcedIds.has(field.id) ? { ...field, required: true } : field,
+		),
+	}));
+}
+
 function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
-	return (
+	return applyMandatoryIdentityFields(
 		(steps || [])
 			.map((step, stepIdx) => ({
 				...step,
@@ -6441,6 +6460,17 @@ function mapCalcomError(
 	status?: number,
 ): string {
 	const copy = { ...ERROR_COPY_DEFAULTS, ...(errorCopy || {}) };
+	const m = (message || "").toLowerCase();
+	// BE-040: attendee/contact failures render actionable copy, never raw
+	// API text (message shapes: "Attendee must have at least one contact
+	// method (email or phone number)", "attendee property is wrong").
+	if (
+		m.includes("contact method") ||
+		(m.includes("attendee") &&
+			(m.includes("email") || m.includes("phone") || m.includes("name")))
+	) {
+		return copy.attendeeContactError;
+	}
 	switch ((code || "").toUpperCase()) {
 		case "UNAUTHORIZED":
 		case "INVALID_API_KEY":
@@ -6470,7 +6500,6 @@ function mapCalcomError(
 		default:
 			break;
 	}
-	const m = (message || "").toLowerCase();
 	if (m.includes("already") && m.includes("booked")) return copy.timeTakenError;
 	if (m.includes("outside") || m.includes("availability"))
 		return copy.timeNoLongerAvailableError;
@@ -7156,7 +7185,6 @@ function useBookingEngineState(
 		advanced,
 		calendar,
 		header,
-		terminal,
 		fieldStyles,
 	} = props;
 
@@ -7219,13 +7247,11 @@ function useBookingEngineState(
 		return Math.max(0, Math.min(24, Math.round(n)));
 	}, [borderRadius]);
 	const sanitizedRadius = `${sanitizedRadiusValue}px`;
-	const densityRatio = DENSITY_RATIOS[styles?.density ?? "comfortable"] ?? 1;
 	const fieldGap = React.useMemo(() => {
 		const raw = Number(styles?.gap);
 		const n = Number.isFinite(raw) ? raw : 16;
-		const clamped = Math.max(0, Math.min(32, Math.round(n)));
-		return Math.round(clamped * densityRatio);
-	}, [styles?.gap, densityRatio]);
+		return Math.max(0, Math.min(32, Math.round(n)));
+	}, [styles?.gap]);
 	const progressVisible = (progressBar?.barVisible ?? progressBar?.visible) !== false;
 	const stepCountPosition: "top" | "bottom" =
 		(progressBar?.progressText ?? progressBar?.stepCountPosition) === "bottom" ? "bottom" : "top";
@@ -7264,12 +7290,9 @@ function useBookingEngineState(
 	);
 	const bookAnotherLabel = DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL;
 	const addToCalendarButtonLabel = DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL;
-	const retryLabel = resolveButtonText(
-		buttonTexts.retryLabel,
-		bl.retryButton?.text,
-		copy?.retryLabel,
-		DEFAULT_COPY_RETRY_LABEL,
-	);
+	// BUTTON-TEXTS (BE-038): Cancel/Retry are fixed constants — no
+	// control, no interface key, no legacy carrier.
+	const retryLabel = DEFAULT_COPY_RETRY_LABEL;
 
 	const persistState = true;
 	const reactInstanceId = useHydrationSafeId("be-engine");
@@ -8040,6 +8063,44 @@ function useBookingEngineState(
 				);
 			}
 		});
+		// BE-039: identity designation warnings (canvas-only).
+		const identityFields = baseActiveSteps.flatMap((step) => step.fields);
+		const flaggedNames = identityFields.filter(
+			(field) => field.isPrimaryName === true,
+		);
+		const typedEmails = identityFields.filter(
+			(field) => field.fieldType === "email",
+		);
+		if (flaggedNames.length > 1) {
+			warnings.push(
+				`Multiple fields are marked "Primary Name" (${flaggedNames
+					.map((f) => `"${f.label}"`)
+					.join(", ")}). The first is used as the booking attendee name; keep exactly one to avoid confusion.`,
+			);
+		}
+		if (typedEmails.length > 1) {
+			warnings.push(
+				`Multiple Email fields found (${typedEmails
+					.map((f) => `"${f.label}"`)
+					.join(", ")}). The first is used as the booking contact email; every Email field is always required.`,
+			);
+		}
+		if (flaggedNames.length === 0) {
+			const fallbackName = findNameField(baseActiveSteps);
+			if (fallbackName) {
+				warnings.push(
+					`No field is marked "Primary Name", so "${fallbackName.label}" is used as the booking attendee name (matched by label) and is always required. Mark it "Primary Name" to make this explicit.`,
+				);
+			}
+		}
+		if (typedEmails.length === 0) {
+			const fallbackContact = findEmailField(baseActiveSteps);
+			if (fallbackContact) {
+				warnings.push(
+					`No Email-type field exists, so "${fallbackContact.label}" is used as the booking contact email (matched by label) and is always required. Change its type to Email to make this explicit.`,
+				);
+			}
+		}
 		return warnings;
 	}, [
 		normalizedSteps,
@@ -8629,7 +8690,9 @@ function useBookingEngineState(
 				? "flex-end"
 				: "space-between";
 	const contentAlignmentRaw =
-		header?.contentAlignment ?? header?.terminalAlignment;
+		styles?.contentAlignment ??
+		header?.contentAlignment ??
+		header?.terminalAlignment;
 	const terminalAlignment: "left" | "center" | "right" = isStepAlignment(
 		contentAlignmentRaw,
 	)
@@ -8641,7 +8704,6 @@ function useBookingEngineState(
 			: terminalAlignment === "right"
 				? "flex-end"
 				: "center";
-	const terminalIconSize = terminal?.iconSize ?? header?.iconSize;
 	const globalFieldStyles = React.useMemo(
 		() => normalizeStyleOverrides(styles.fieldStyles ?? fieldStyles),
 		[styles.fieldStyles, fieldStyles],
@@ -8668,7 +8730,6 @@ function useBookingEngineState(
 		calApiKey,
 		calEventTypeId,
 		fieldGap,
-		densityRatio,
 		globalFieldStyles,
 		completePct,
 		continueLabel,
@@ -8764,7 +8825,6 @@ function useBookingEngineState(
 		navJustify,
 		terminalAlignment,
 		terminalJustify,
-		terminalIconSize,
 		primaryFirst,
 		navFill,
 		style,
@@ -8823,7 +8883,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		borderRadius,
 		sanitizedRadius,
 		fieldGap,
-		densityRatio,
 		globalFieldStyles,
 		buttonLabels,
 		completePct,
@@ -8861,7 +8920,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		navJustify,
 		terminalAlignment,
 		terminalJustify,
-		terminalIconSize,
 		primaryFirst,
 		navFill,
 		progressAnimate,
@@ -8901,12 +8959,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 		calEventMetaStatus,
 	} = useBookingEngineState(props, engineRootRef);
 
-	const cancelSubmitLabel = resolveButtonText(
-		buttonLabels?.buttonTexts?.cancelSubmitLabel,
-		buttonLabels?.cancelButton?.text,
-		buttonLabels?.cancelSubmitLabel,
-		DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
-	);
+	// BUTTON-TEXTS (BE-038): in-flight Cancel label is a fixed constant.
+	const cancelSubmitLabel = DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL;
 
 	const blGroups = buttonLabels ?? {};
 	const primarySharedSet = blGroups.primaryButtonStyles;
@@ -9148,8 +9202,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					successSubtitle={copy.successSubtitle}
 					headingFont={headingFont}
 					terminalAlignment={terminalAlignment}
-					iconSize={terminalIconSize}
-					densityRatio={densityRatio}
 					bodySubtitleSize={bodySubtitleSize}
 					bodySubtitleLineHeight={bodySubtitleLineHeight}
 					addToCalendarLabel={addToCalendarButtonLabel}
@@ -9192,8 +9244,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 					errorSubtitle={copy.errorSubtitle}
 					headingFont={headingFont}
 					terminalAlignment={terminalAlignment}
-					iconSize={terminalIconSize}
-					densityRatio={densityRatio}
 					bodySubtitleSize={bodySubtitleSize}
 					bodySubtitleLineHeight={bodySubtitleLineHeight}
 					retryLabel={retryLabel}
@@ -9410,7 +9460,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 				: null}
 
 			{totalActive > 1 && (progressVisible || progressShowTextContent) ? (
-				<div style={{ marginBottom: scaleDensity(16, densityRatio) }}>
+				<div style={{ marginBottom: 16 }}>
 					{progressShowTextContent && stepCountPosition === "top" ? (
 						<div
 							style={{
@@ -9420,7 +9470,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 								flexWrap: "wrap",
 								rowGap: 2,
 								marginBottom: progressVisible
-									? scaleDensity(8, densityRatio)
+									? 8
 									: 0,
 								color: theme.textSecondaryColor,
 								fontSize: 12,
@@ -9593,7 +9643,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										...(headingFont?.lineHeight != null
 											? { lineHeight: headingFont.lineHeight }
 											: { lineHeight: 1.2 }),
-										marginBottom: scaleDensity(4, densityRatio),
+										marginBottom: 4,
 										marginTop: 0,
 										scrollMarginTop: 72,
 									}}
@@ -9605,7 +9655,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 										style={{
 											color: theme.textSecondaryColor,
 											fontSize: bodySubtitleSize,
-											marginBottom: scaleDensity(16, densityRatio),
+											marginBottom: 16,
 											lineHeight: bodySubtitleLineHeight,
 											...(isStepAlignment(step.alignment)
 												? { textAlign: step.alignment }
@@ -9669,15 +9719,15 @@ export default function BookingEngine(props: BookingEngineProps) {
 			<div
 				style={{
 					display: "flex",
-					gap: scaleDensity(8, densityRatio),
-					marginTop: scaleDensity(24, densityRatio),
+					gap: 8,
+					marginTop: 24,
 					alignItems: "center",
 					justifyContent: navJustify,
 					flexWrap: "wrap",
 					position: "sticky",
 					bottom: 0,
 					zIndex: 10,
-					paddingTop: scaleDensity(12, densityRatio),
+					paddingTop: 12,
 					paddingBottom: "env(safe-area-inset-bottom, 0px)",
 				}}
 			>
@@ -11687,8 +11737,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	terminalAlignment: "left" | "center" | "right";
 	bodySubtitleSize: number;
 	bodySubtitleLineHeight: number | string;
-	iconSize?: number;
-	densityRatio: number;
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
 	addToCalendarStyle: React.CSSProperties;
@@ -11729,8 +11777,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		successSubtitle,
 		headingFont,
 		terminalAlignment,
-		iconSize,
-		densityRatio,
 		bodySubtitleSize,
 		bodySubtitleLineHeight,
 		addToCalendarLabel,
@@ -11966,7 +12012,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 							: terminalAlignment === "right"
 								? "flex-end"
 								: "center",
-					marginBottom: scaleDensity(16, densityRatio),
+					marginBottom: 16,
 				}}
 			>
 				<motion.div
@@ -11984,11 +12030,15 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				>
 					<div
 						style={{
-							width: iconSize ?? CHECKMARK_ICON_SIZE,
-							height: iconSize ?? CHECKMARK_ICON_SIZE,
+							// BE-043: layered concentric circles (failure-mark
+							// rhythm — faint halo ring, stronger inner wash,
+							// glyph in the state color).
+							width: CHECKMARK_ICON_SIZE,
+							height: CHECKMARK_ICON_SIZE,
 							borderRadius: "50%",
-							background: successColor,
-							color: TEXT_ON_ACCENT,
+							background: withAlpha(successColor, 0.12),
+							boxShadow: `0 0 0 8px ${withAlpha(successColor, 0.06)}`,
+							color: successColor,
 							display: "inline-flex",
 							alignItems: "center",
 							justifyContent: "center",
@@ -11997,8 +12047,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						aria-hidden="true"
 					>
 						<svg
-							width={Math.round((iconSize ?? CHECKMARK_ICON_SIZE) / 2)}
-							height={Math.round((iconSize ?? CHECKMARK_ICON_SIZE) / 2)}
+							width={Math.round(CHECKMARK_ICON_SIZE / 2)}
+							height={Math.round(CHECKMARK_ICON_SIZE / 2)}
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
@@ -12045,7 +12095,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					lineHeight: headingFont?.lineHeight ?? 1.2,
 					color: textPrimaryColor,
 					textAlign: terminalAlignment,
-					marginBottom: scaleDensity(4, densityRatio),
+					marginBottom: 4,
 					marginTop: 0,
 					// FINAL-43 fix: outline:none removed (see .be-focus-target).
 				}}
@@ -12059,7 +12109,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					fontSize: bodySubtitleSize,
 					color: textSecondaryColor,
 					textAlign: terminalAlignment,
-					marginBottom: scaleDensity(24, densityRatio),
+					marginBottom: 24,
 					lineHeight: bodySubtitleLineHeight,
 				}}
 			>
@@ -12073,7 +12123,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 					border: `1px solid ${borderColor}`,
 					background: surfaceColor,
 					overflow: "hidden",
-					marginBottom: scaleDensity(16, densityRatio),
+					marginBottom: 16,
 				}}
 			>
 				{entries.map((entry, idx) => (
@@ -12114,7 +12164,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			<div
 				style={{
 					display: "flex",
-					gap: scaleDensity(8, densityRatio),
+					gap: 8,
 					flexWrap: "wrap",
 					alignItems: "center",
 					justifyContent: "flex-end",
@@ -12228,8 +12278,6 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 	terminalAlignment: "left" | "center" | "right";
 	bodySubtitleSize: number;
 	bodySubtitleLineHeight: number | string;
-	iconSize?: number;
-	densityRatio: number;
 	retryLabel: string;
 	retryStyle: React.CSSProperties;
 	retryHover?: ButtonInteractionState;
@@ -12247,8 +12295,6 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 		errorSubtitle,
 		headingFont,
 		terminalAlignment,
-		iconSize,
-		densityRatio,
 		bodySubtitleSize,
 		bodySubtitleLineHeight,
 		retryLabel,
@@ -12282,6 +12328,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 					minHeight: 320,
 					padding: "24px 16px",
 					boxSizing: "border-box",
+					// BE-041: balanced wrapping for terminal copy lines.
+					textWrap: "balance",
 				}}
 			>
 				<div
@@ -12295,14 +12343,14 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 									? "flex-end"
 									: "center",
 						gap: 6,
-						marginBottom: scaleDensity(16, densityRatio),
+						marginBottom: 16,
 						maxWidth: 520,
 					}}
 				>
 					<div
 						style={{
-							width: iconSize ?? ERROR_ICON_SIZE,
-							height: iconSize ?? ERROR_ICON_SIZE,
+							width: ERROR_ICON_SIZE,
+							height: ERROR_ICON_SIZE,
 							borderRadius: "50%",
 							background: withAlpha(errorColor, 0.12),
 							boxShadow: `0 0 0 8px ${withAlpha(errorColor, 0.06)}`,
@@ -12310,7 +12358,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 							display: "inline-flex",
 							alignItems: "center",
 							justifyContent: "center",
-							fontSize: Math.round((iconSize ?? ERROR_ICON_SIZE) * 0.6),
+							fontSize: Math.round(ERROR_ICON_SIZE / 2),
 							fontWeight: 700,
 							flexShrink: 0,
 							marginBottom: 10,
@@ -12364,7 +12412,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 						color: textPrimaryColor,
 						fontSize: 14,
 						lineHeight: 1.5,
-						marginBottom: scaleDensity(20, densityRatio),
+						marginBottom: 20,
 						width: "100%",
 						maxWidth: 520,
 						boxSizing: "border-box",
@@ -12375,7 +12423,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 				<div
 					style={{
 						display: "flex",
-						gap: scaleDensity(8, densityRatio),
+						gap: 8,
 						flexWrap: "wrap",
 						alignItems: "center",
 						justifyContent: "center",
@@ -12916,7 +12964,11 @@ function makeFieldObjectControls() {
 			type: ControlType.Boolean,
 			title: "Required",
 			defaultValue: false,
-			hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
+			hidden: (p: FieldControlProps) =>
+				// BE-039: identity fields are always required — no toggle.
+				p?.isPrimaryName === true ||
+				p?.fieldType === "email" ||
+				p?.fieldType === "calendar-widget",
 		},
 		options: {
 			type: ControlType.Array,
@@ -13106,41 +13158,6 @@ addPropertyControls(BookingEngine, {
 		},
 	},
 
-	header: {
-		type: ControlType.Object,
-		title: "Content",
-		icon: "object",
-		buttonTitle: "Content",
-		controls: {
-			contentAlignment: {
-				type: ControlType.Enum,
-				title: "Content Alignment",
-				options: ["left", "center", "right"],
-				optionTitles: ["Left", "Center", "Right"],
-				defaultValue: "left",
-				displaySegmentedControl: true,
-			},
-		},
-	},
-
-	terminal: {
-		type: ControlType.Object,
-		title: "Terminal",
-		icon: "object",
-		buttonTitle: "Terminal",
-		optional: true,
-		controls: {
-			iconSize: {
-				type: ControlType.Number,
-				title: "Icon Size",
-				min: 24,
-				max: 96,
-				step: 1,
-				unit: "px",
-			},
-		},
-	},
-
 	buttonLabels: {
 		type: ControlType.Object,
 		title: "Buttons",
@@ -13226,8 +13243,8 @@ addPropertyControls(BookingEngine, {
 					borderColor: "#0066BB",
 				}),
 			},
-			// BUTTON-TEXTS (BE-027): one submenu for every editable
-			// label. Hard-coded verdicts (BE-028) are constants, not rows.
+			// BUTTON-TEXTS (BE-027/BE-038): one submenu for the three
+			// editable labels. Every other label is a constant, not a row.
 			buttonTexts: {
 				type: ControlType.Object,
 				title: "Button Texts",
@@ -13237,28 +13254,18 @@ addPropertyControls(BookingEngine, {
 				controls: {
 					continueLabel: {
 						type: ControlType.String,
-						title: "Continue",
+						title: "Next Step",
 						defaultValue: "Continue",
 					},
 					backLabel: {
 						type: ControlType.String,
-						title: "Back",
+						title: "Back Step",
 						defaultValue: "Back",
 					},
 					finalActionLabel: {
 						type: ControlType.String,
 						title: "Final Action",
 						defaultValue: "Book Now",
-					},
-					cancelSubmitLabel: {
-						type: ControlType.String,
-						title: "Cancel",
-						defaultValue: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
-					},
-					retryLabel: {
-						type: ControlType.String,
-						title: "Retry",
-						defaultValue: DEFAULT_COPY_RETRY_LABEL,
 					},
 				},
 			},
@@ -13313,6 +13320,14 @@ addPropertyControls(BookingEngine, {
 		icon: "color",
 		buttonTitle: "Styles",
 		controls: {
+			contentAlignment: {
+				type: ControlType.Enum,
+				title: "Text Align",
+				options: ["left", "center", "right"],
+				optionTitles: ["Left", "Center", "Right"],
+				defaultValue: "left",
+				displaySegmentedControl: true,
+			},
 			headingFont: {
 				type: ControlType.Font,
 				title: "Head Font",
@@ -13391,14 +13406,6 @@ addPropertyControls(BookingEngine, {
 				step: 1,
 				unit: "px",
 				displayStepper: true,
-			},
-			density: {
-				type: ControlType.Enum,
-				title: "Density",
-				options: ["compact", "comfortable", "spacious"],
-				optionTitles: ["Compact", "Comfortable", "Spacious"],
-				defaultValue: "comfortable",
-				displaySegmentedControl: true,
 			},
 		},
 	},
@@ -13621,6 +13628,11 @@ addPropertyControls(BookingEngine, {
 						type: ControlType.String,
 						title: "Request Rejected (400)",
 						defaultValue: ERROR_COPY_DEFAULTS.badRequestError,
+					},
+					attendeeContactError: {
+						type: ControlType.String,
+						title: "Missing Contact Details",
+						defaultValue: ERROR_COPY_DEFAULTS.attendeeContactError,
 					},
 					emptyResponseError: {
 						type: ControlType.String,

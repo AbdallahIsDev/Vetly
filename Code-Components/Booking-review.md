@@ -224,128 +224,128 @@
 
 ### BE-038 — Button Texts keeps 3 rows; Cancel/Retry hard-code; Continue/Back rows renamed
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The Button Texts submenu holds five editable rows, but Cancel ("Cancel") and Retry ("Try again") are effectively constant — no author rewrites them — so they must be hard-coded like the BE-028 set. The remaining rows need clearer titles: the "Continue" row becomes `Next Step` and the "Back" row becomes `Back Step` (values stay "Continue"/"Back"); Final Action stays exactly as is.
 - **Current Behavior:** Five editable rows: Continue, Back, Final Action, Cancel, Retry (verified: `buttonTexts` controls + `continueLabel/backLabel/finalActionLabel/cancelSubmitLabel/retryLabel` resolution with legacy fallbacks).
 - **Expected Behavior:** Three editable rows — Next Step (value "Continue"), Back Step (value "Back"), Final Action (unchanged). Cancel and Retry render their fixed strings with no control, interface key, or legacy carrier.
 - **Acceptance Criteria:**
-  - [ ] Cancel/Retry have no editable row, key, or carrier; they always render "Cancel"/"Try again" (in-flight Cancel and both Retry surfaces included).
-  - [ ] Row titles read Next Step / Back Step / Final Action with unchanged default values ("Continue"/"Back"/"Book Now").
-  - [ ] Stored custom Cancel/Retry values intentionally freeze to the shipped strings (recorded here); stored Continue/Back/Final-Action customs survive under the renamed rows.
+  - [x] Cancel/Retry have no editable row, key, or carrier; they always render "Cancel"/"Try again" (in-flight Cancel and both Retry surfaces included).
+  - [x] Row titles read Next Step / Back Step / Final Action with unchanged default values ("Continue"/"Back"/"Book Now").
+  - [x] Stored custom Cancel/Retry values intentionally freeze to the shipped strings (recorded here); stored Continue/Back/Final-Action customs survive under the renamed rows.
 - **Constraints / Must Not Do:** Do not change any rendered default string; do not touch style sets, resolution order, or booking behavior; row renames are title-only (stored keys may stay if the rename is titles-only — implementer records the mechanism).
 - **Related AGENTS.md Rule(s):** Button-text rules (e.g. Rules 99/142 plus BE-027/028 updates) — implementer to confirm exact numbers and record the 3-row structure openly.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08. **Mechanism (title-only renames, recorded):** stored interface keys stay `continueLabel`/`backLabel`/`finalActionLabel`, only the Framer row titles changed (Continue → `Next Step`, Back → `Back Step`, Final Action untouched) — saved values migrate with their rows automatically. Cancel/Retry became fixed constants with the full carrier chain deleted: the `buttonTexts.cancelSubmitLabel`/`buttonTexts.retryLabel` rows and interface keys, the flat `buttonLabels.cancelSubmitLabel` key, the `copy.retryLabel` interface key, and every resolution read (`buttonTexts.<row> → perButtonGroup.text → flat legacy → default`) for both labels — both now resolve directly to `DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL` ("Cancel") / `DEFAULT_COPY_RETRY_LABEL` ("Try again"), covering the in-flight Cancel button and both Retry surfaces (error screen + slots inline retry, which already share the single resolved value). Stored per-button `cancelButton`/`retryButton` style objects keep winning for hover/pressed styles via `mergeButtonStyleGroups` (rule 142 contract) — only their text plumbing is gone. **Freeze verdict:** stored custom Cancel/Retry texts intentionally stop applying (the rows always render the shipped strings), per this entry's own spec.
 
 ---
 
 ### BE-039 — Name and contact are mandatory: Primary-Name/email designation forces Required; duplicates resolved
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** A successful Cal.com booking requires an attendee name plus at least one contact method (proven by a live 400: `"Attendee must have at least one contact method (email or phone number)"`, `calcom-validation/BadRequestException`). Yet today the author may leave all eight fields optional, the flow sails through every step to Book, and dies at the API — the worst possible place. The component already has role designations (a text field's `Primary Name` flag; email-typed fields); designation must imply mandatory.
 - **Current Behavior:** All fields optional is allowed; validation passes; `POST /v2/bookings` returns 400 and the visitor lands on the failure screen after completing everything.
 - **Expected Behavior:** (1) A text field with Primary Name = yes is always required — its Required row is hidden (forced yes). (2) The same treatment for the designated contact field (email-typed; phone counts as contact per Cal.com — implementer resolves email-vs-phone designation and records it). (3) Duplicates handled explicitly since the backend expects exactly one name and one contact identity: multiple Primary-Name flags and/or multiple email fields must resolve deterministically (first-wins + canvas warning, or hard error — implementer picks, records, and covers with tests), never silently sending the wrong identity.
 - **Acceptance Criteria:**
-  - [ ] No configuration can reach Book without a Submittable name + ≥1 contact method: missing designation is caught at authoring/validation time (canvas warning and/or blocked advance with a clear field error), never as a post-submit API 400.
-  - [ ] Primary-Name fields show no Required row (forced required, including validation + payload paths).
-  - [ ] Duplicate name/email designations resolve deterministically with a recorded rule and canvas-visible signal; single-identity payload guaranteed.
-  - [ ] All-optional legacy canvases that previously 400d now fail fast with a clear message (never a silent behavior change for valid configs).
+  - [x] No configuration can reach Book without a Submittable name + ≥1 contact method: missing designation is caught at authoring/validation time (canvas warning and/or blocked advance with a clear field error), never as a post-submit API 400.
+  - [x] Primary-Name fields show no Required row (forced required, including validation + payload paths).
+  - [x] Duplicate name/email designations resolve deterministically with a recorded rule and canvas-visible signal; single-identity payload guaranteed.
+  - [x] All-optional legacy canvases that previously 400d now fail fast with a clear message (never a silent behavior change for valid configs).
 - **Constraints / Must Not Do:** Do not weaken fixed per-type validation; do not add new required-markers UI (rule 4 stands); do not break autosave restore, Cal.com payload mapping (`isPrimaryName`/email identity), or the success-screen Name/Email leading rows (BE-034).
 - **Related AGENTS.md Rule(s):** Validation, payload-identity, and marker rules (e.g. Rules 4/76/81/100) — implementer to confirm exact numbers.
-- **Additional Context:** Live proof (console, `POST /v2/bookings` → 400): `{category: 'calcom-validation', errorCode: 'BadRequestException', calcomMessage: 'attendee property is wrong, attendee email or phone property is wrong, Attendee must have at least one contact method (email or phone number)'}`. Verified in code: `required` Boolean control (default false), `isPrimaryName` Boolean (text-only), email field type, `findField`/identity helpers.
+- **Additional Context:** Live proof (console, `POST /v2/bookings` → 400): `{category: 'calcom-validation', errorCode: 'BadRequestException', calcomMessage: 'attendee property is wrong, attendee email or phone property is wrong, Attendee must have at least one contact method (email or phone number)'}`. Verified in code: `required` Boolean control (default false), `isPrimaryName` Boolean (text-only), email field type, `findField`/identity helpers. Implemented 2026-09-08 via `applyMandatoryIdentityFields` (single choke point at the end of `normalizeSteps`, harness-tested: 12 identity cases pass). **Designation model (recorded):** (1) every text field flagged `Primary Name` is forced `required: true`; (2) the contact designation is the **email type** — every email-typed field is forced required (email is this engine's contact-identity vocabulary: email fields are excluded from `bookingFieldsResponses` and exist solely as attendee contact; the first email is the submitted attendee email); (3) with no designation at all, the label-matched identity field (`findNameField`/`findEmailField` — the exact field the submit path sends) is forced required instead, so no reachable config can submit an empty name/contact. **Phone verdict (email-vs-phone resolution, recorded):** email is the designated contact method — the booking POST attendee payload carries only email, a phone-only config is already blocked at the `!emailField` guard (`misconfiguredFormError`, canvas guardrail), and phone fields flow through bookingFieldsResponses/notes — so phone never receives the forced-required treatment and keeps its authored Required row. **Duplicates (first-wins, recorded):** multiple Primary-Name flags and/or multiple email fields resolve to the FIRST field in pipeline order — exactly what `findNameField`/`findEmailField` already submit — with canvas warnings for both duplicate shapes plus fallback-designation warnings ("mark it Primary Name" / "change its type to Email"). **Control surface:** the Required row is hidden (Property Control `hidden`) for `isPrimaryName` text fields and email-typed fields; a label-fallback text field keeps its visible Required row while being forced (the canvas warning explains the force). **Behavior change (intended, recorded):** previously-optional email fields now enforce required — this is the exact 400 BE-039 kills; autosave restore, per-type validation caps, payload mapping, and the BE-034 success rows are untouched. The 400 cure for any residual edge case is BE-040's `attendeeContactError` copy.
 
 ---
 
 ### BE-040 — Submit failures must surface actionable messages, not the vague bad-request fallback
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** When the booking POST fails with a Cal.com validation error, the visitor sees the generic `badRequestError` ("The booking service rejected the request details. Please go back, check your answers, and try again.") while the console holds the precise cause (e.g. the attendee/contact-method message). A failure message that cannot tell the visitor what to fix is a dead end — especially now that BE-039 narrows (but can never fully close) the validation gap for misconfigured or edge-case payloads.
 - **Current Behavior:** Cal.com 400s render the vague `badRequestError` fallback; the specific `calcomMessage` is console-only.
 - **Expected Behavior:** Mapped Cal.com failure categories render visitor-actionable copy (missing contact → say contact is missing and which step holds it; taken slot → existing taken-slot copy; unknown → today's fallback). Messages name the remedy and, where deterministic, the step to return to — never raw API text, never technical codes.
 - **Acceptance Criteria:**
-  - [ ] Each mapped failure (at minimum: attendee/contact validation, taken slot, timeout/offline already covered) shows copy that tells the visitor what happened and what to do next.
-  - [ ] Unmapped failures keep today's fallback (no blank/technical leakage: no status codes, errorCode strings, or raw `calcomMessage` in UI).
-  - [ ] The categorization already logged for `booking:failure` (endpoint/status/category) is reused — no second taxonomy.
+  - [x] Each mapped failure (at minimum: attendee/contact validation, taken slot, timeout/offline already covered) shows copy that tells the visitor what happened and what to do next.
+  - [x] Unmapped failures keep today's fallback (no blank/technical leakage: no status codes, errorCode strings, or raw `calcomMessage` in UI).
+  - [x] The categorization already logged for `booking:failure` (endpoint/status/category) is reused — no second taxonomy.
 - **Constraints / Must Not Do:** Do not print raw API payloads/codes to visitors; do not turn the message card into a second control surface beyond existing error-copy controls; console failure logging (rule 112) stays as the technical record.
 - **Related AGENTS.md Rule(s):** Error-state/logging/copy rules (e.g. Rules 102/110/111/112) — implementer to confirm exact numbers.
-- **Additional Context:** Verified in code: `ERROR_COPY_DEFAULTS.badRequestError` is the shown string; the `booking:failure` console record already carries endpoint/httpStatus/category/errorCode/calcomMessage. Pairs with BE-039 (prevention) as cure.
+- **Additional Context:** Verified in code: `ERROR_COPY_DEFAULTS.badRequestError` is the shown string; the `booking:failure` console record already carries endpoint/httpStatus/category/errorCode/calcomMessage. Pairs with BE-039 (prevention) as cure. Implemented 2026-09-08 in `mapCalcomError` (the single existing taxonomy point — no second system): a content branch now runs FIRST, before the code switch, catching the live 400 shapes ("Attendee must have at least one contact method (email or phone number)", "attendee property is wrong, attendee email or phone property is wrong") via `contact method` or `attendee` + email/phone/name token matching, returning the new `attendeeContactError` copy ("Your booking needs your name and an email address to be confirmed. Please go back, complete the contact details, and try again."). The key is a first-class `ErrorCopy` member with a Copy control row ("Booking Error Messages > Missing Contact Details") so authors can reword it. Taken-slot, timeout, offline, and every other mapping are untouched; unmapped failures still land on `badRequestError`/the fallback — the function never returns raw API text (harness-tested: contact-400 both with `BadRequestException` and `BAD_REQUEST` codes, unmapped 400, already-booked, and unknown-message cases). **Step-naming verdict (recorded):** the copy names the remedy ("go back, complete the contact details") but not a specific step number — the contact field can live on any authored step, so deterministic step naming is not possible without new plumbing; the visitor's values survive the error screen, so Retry → back → the field error shows exactly where to fix it.
 
 ---
 
 ### BE-041 — Failure-screen text should use balanced wrapping
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The failure screen's title, subtitle, and message card render with default text wrapping, which leaves ragged, uneven line breaks on the short centered/terminal copy. Balanced wrapping evens the lines and makes the terminal text look composed.
 - **Current Behavior:** No `text-wrap`/`textWrap` value exists anywhere in the component (verified by grep) — terminal text wraps with the browser default.
 - **Expected Behavior:** The failure-screen parent (the element containing the title, subtitle, and failure message) applies `text-wrap: balance`, so multi-line terminal copy breaks evenly.
 - **Acceptance Criteria:**
-  - [ ] Title, subtitle, and message lines wrap balanced on the failure screen at narrow and wide widths.
-  - [ ] No other surface changes (balance applies to the failure parent only — implementer confirms scope on this entry; success screen explicitly out unless justified).
-  - [ ] Untouched single-line renders pixel-identical (balance is a no-op there).
+  - [x] Title, subtitle, and message lines wrap balanced on the failure screen at narrow and wide widths.
+  - [x] No other surface changes (balance applies to the failure parent only — implementer confirms scope on this entry; success screen explicitly out unless justified).
+  - [x] Untouched single-line renders pixel-identical (balance is a no-op there).
 - **Constraints / Must Not Do:** Do not change copy, fonts, sizes, colors, or layout — wrapping only; do not apply globally without recording why.
 - **Related AGENTS.md Rule(s):** Error-state/terminal rules (e.g. Rules 102/129) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08: `textWrap: "balance"` on the ErrorScreen's outer terminal column — the single element containing the mark row, title, subtitle, and the failure message card — so all failure text wraps balanced while inheriting into the existing `textAlign` behavior. **Scope confirmed on this entry (failure parent only):** the success screen and every other surface are untouched; single-line renders are byte-identical because balance is a no-op without a line break. No copy, font, size, color, or layout values changed.
 
 ---
 
 ### BE-042 — Remove the Terminal Icon Size control; hard-code 48px marks with 24px glyphs
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The Terminal group's only row is Icon Size (24–96px, unset = 64 success / 40 error), but terminal mark sizing is not a real author decision — it adds panel, stored values, and fallback plumbing for a number nobody tunes. Both marks become fixed: 48px circle, 24×24 inner glyph, on success and failure alike.
 - **Current Behavior:** Icon Size control drives both marks (`iconSize ?? 64` success circle with half-size check SVG; `iconSize ?? 40` error circle with 60% "!" glyph); unset keeps the two historical sizes.
 - **Expected Behavior:** No Terminal group, no Icon Size control/key/plumbing anywhere. Success and error marks render 48px circles with 24px glyphs, always. (Success layering itself changes per BE-043 — implement together; the sizes here are final either way.)
 - **Acceptance Criteria:**
-  - [ ] Zero Icon Size control/interface/plumbing remnants; the emptied Terminal group is gone too.
-  - [ ] Both marks measure exactly 48px circles with 24px glyphs at every width, motion setting, and terminal.
-  - [ ] Untouched canvases that never set Icon Size keep their... (explicit change recorded: historical 64/40 become 48 — this is an intended visual change, not a silent regression; record it here, which this line does).
+  - [x] Zero Icon Size control/interface/plumbing remnants; the emptied Terminal group is gone too.
+  - [x] Both marks measure exactly 48px circles with 24px glyphs at every width, motion setting, and terminal.
+  - [x] Untouched canvases that never set Icon Size keep their... (explicit change recorded: historical 64/40 become 48 — this is an intended visual change, not a silent regression; record it here, which this line does).
 - **Constraints / Must Not Do:** Do not keep a hidden/legacy Icon Size key readable (stored values must stop applying — recorded here); do not change mark colors, animations, or layout — size/glyph only (structure per BE-043).
 - **Related AGENTS.md Rule(s):** Terminal/controls rules (e.g. Rules 129/131) — implementer to confirm exact numbers and delete/amend the Icon Size clauses openly.
-- **Additional Context:** Verified in code: `terminal.iconSize` group (sole row), `iconSize ?? CHECKMARK_ICON_SIZE (64)` + half-size SVG, `iconSize ?? ERROR_ICON_SIZE (40)` + 60% "!".
+- **Additional Context:** Verified in code: `terminal.iconSize` group (sole row), `iconSize ?? CHECKMARK_ICON_SIZE (64)` + half-size SVG, `iconSize ?? ERROR_ICON_SIZE (40)` + 60% "!". Implemented 2026-09-08 (together with BE-043 in one pass, as the entry directs). Full removal, grep-verified zero remnants: the `terminal` control group AND its interface key, the `header.iconSize` interface key (stored values stop applying — both legacy reads deleted per this entry's constraint), the `terminalIconSize` resolution in the state hook, its return/destructure rows, and the `iconSize` props on `SuccessScreen`/`ErrorScreen` (props, destructures, render threads). Constants now read `CHECKMARK_ICON_SIZE = 48` / `ERROR_ICON_SIZE = 48`; the success check SVG is 24×24 (half) and the error "!" glyph fontSize is `Math.round(ERROR_ICON_SIZE / 2)` = 24px (the historical 60%-of-40 was also 24 — the glyph size is unchanged, only the circles grew). **Intended visual change (recorded):** success circles 64 → 48 and error circles 40 → 48, applied to every canvas regardless of stored values (stored Icon Size values are inert — no hidden readable key remains).
 
 ---
 
 ### BE-043 — Success mark becomes layered concentric circles like the failure mark
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The success mark is one flat solid-green circle while the failure mark is a composed treatment (large faint outer circle + smaller stronger inner circle + glyph, opacity stepping down outward). The flat solid disc reads heavy next to it; both terminals must share the same layered language, tinted per state.
 - **Current Behavior:** Success = single solid `successColor` circle with white check; failure = error 12% disc + 6% halo ring + error glyph.
 - **Expected Behavior:** Success renders two concentric success-green circles (outer faintest, inner stronger — same opacity-step construction as the failure mark) with the check glyph inside. Failure mark untouched.
 - **Acceptance Criteria:**
-  - [ ] Success shows outer + inner green circles with visibly stepped opacity, check centered inside — same construction rhythm as the failure mark.
-  - [ ] Final sizes honor BE-042 (48px outer, 24px glyph); entrance + check-draw animations behave exactly as today.
-  - [ ] Failure mark pixel-identical; reduced-motion/static-render end states unchanged.
+  - [x] Success shows outer + inner green circles with visibly stepped opacity, check centered inside — same construction rhythm as the failure mark.
+  - [x] Final sizes honor BE-042 (48px outer, 24px glyph); entrance + check-draw animations behave exactly as today.
+  - [x] Failure mark pixel-identical; reduced-motion/static-render end states unchanged.
 - **Constraints / Must Not Do:** Do not change the success green token, the check path/draw, or the entrance transition selection; do not touch the failure mark.
 - **Related AGENTS.md Rule(s):** Terminal/success-animation rules (e.g. Rules 33/37) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08 together with BE-042. The success mark now uses the failure mark's exact construction: outer halo ring `0 0 0 8px withAlpha(successColor, 0.06)` (faintest) + inner disc `withAlpha(successColor, 0.12)` (stronger) + the glyph in the full state color — the check SVG's `currentColor` now resolves to `successColor` (the flat solid disc and its `TEXT_ON_ACCENT` white-on-green are gone; `TEXT_ON_ACCENT` remains in use for its other accent-surface consumers). The check path (`M4 12 9 17 20 6`), `pathLength` 0 → 1 draw, strokeWidth, the circle entrance via `TRANSITION_VARIANT_DEFS[transitionVariant]` + the existing `Transition` timing (duration override included), the static-render/reduced-motion end states, and the success green token are all untouched. Failure mark untouched (pixel-identical styling values, only the shared constant changed 40 → 48 per BE-042).
 
 ---
 
 ### BE-044 — Move Content Alignment to the top of Styles; drop the emptied Content group
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The Content group exists solely to hold one row (Content Alignment) — a group-per-row is panel bloat. Alignment is a styling decision and belongs in Styles as its first row, so typography-adjacent decisions read top-down in one place.
 - **Current Behavior:** `header` group titled Content holds only `contentAlignment` (Left/Center/Right, default Left); Styles starts with fonts/tokens.
 - **Expected Behavior:** Content Alignment is the first row of the Styles group (same type, options, default). The emptied Content group is gone entirely. Stored alignment values keep applying (key migration recorded, never dropped).
 - **Acceptance Criteria:**
-  - [ ] Styles lists Content Alignment first with identical options/default and identical effect (step headers + terminal headers).
-  - [ ] No Content group remains; stored values survive the move with zero visual change.
+  - [x] Styles lists Content Alignment first with identical options/default and identical effect (step headers + terminal headers).
+  - [x] No Content group remains; stored values survive the move with zero visual change.
 - **Constraints / Must Not Do:** Do not change alignment behavior, defaults, or legacy-carrier resolution — move only; do not merge it with Buttons Alignment (separate decisions, rule stands).
 - **Related AGENTS.md Rule(s):** Alignment/grouping rules (e.g. Rules 116/125/129/131) — implementer to confirm exact numbers and record the move openly.
-- **Additional Context:** Verified in code: `header` group (sole row `contentAlignment`) and `terminal` group (sole row `iconSize`) — BE-042 removes the latter the same way.
+- **Additional Context:** Verified in code: `header` group (sole row `contentAlignment`) and `terminal` group (sole row `iconSize`) — BE-042 removes the latter the same way. Implemented 2026-09-08. `Content Alignment` is now the FIRST row of the `Styles` group (identical Enum, Left/Center/Right options, `left` default, segmented display) so typography-adjacent decisions read top-down; the emptied `Content` control group is deleted. **Key migration (recorded):** the new stored path is `styles.contentAlignment`; the old `header.contentAlignment` and `header.terminalAlignment` values keep applying as readable legacy carriers via one resolution site (`styles?.contentAlignment ?? header?.contentAlignment ?? header?.terminalAlignment`) — a saved canvas with a stored Content value renders identically after the move; per-step `StepConfig.alignment` carriers are unchanged. Alignment behavior (step headers + terminal headers, Calendar excluded) is untouched, and it stays unmerged with Buttons Alignment.
 
 ---
 
 ### BE-045 — Remove the Density control; fix spacing at 1x (today's Comfortable values)
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The Styles Density control (Compact / Comfortable / Spacious) scales all spacing by preset ratio, but density is not a real author decision — Comfortable (×1, today's exact values) is the only setting anyone keeps, and Compact/Spacious exist purely as panel options nobody asked for. Spacing should be fixed at 1x with no control at all.
 - **Current Behavior:** Density enum drives field Gap, footer rhythm, step-header, progress, and terminal rhythm through ×0.75/×1/×1.25 ratios (`DENSITY_RATIOS`, `scaleDensity()`).
 - **Expected Behavior:** No Density control, interface key, ratio table, or scaling helper anywhere — every scaled site renders its Comfortable (×1) value directly, i.e. exactly today's defaults. Stored density values become inert with zero visual change.
 - **Acceptance Criteria:**
-  - [ ] Zero Density control/interface/plumbing remnants (`density`, `DENSITY_RATIOS`, `scaleDensity`, `densityRatio` threading — all gone).
-  - [ ] Every previously scaled site renders its exact ×1 value (field Gap default 16, footer 8/24/12, header/progress/terminal rhythm as today) — untouched canvases pixel-identical.
-  - [ ] Rules rewritten in the same pass: rule 145 (DENSITY-PRESET) deleted, plus any other Density mention — implementer verifies the full list against AGENTS.md.
+  - [x] Zero Density control/interface/plumbing remnants (`density`, `DENSITY_RATIOS`, `scaleDensity`, `densityRatio` threading — all gone).
+  - [x] Every previously scaled site renders its exact ×1 value (field Gap default 16, footer 8/24/12, header/progress/terminal rhythm as today) — untouched canvases pixel-identical.
+  - [x] Rules rewritten in the same pass: rule 145 (DENSITY-PRESET) deleted, plus any other Density mention — implementer verifies the full list against AGENTS.md.
 - **Constraints / Must Not Do:** Do not change a single rendered pixel — removal only; do not reintroduce per-surface spacing controls in its place (spacing stays fixed internals).
 - **Related AGENTS.md Rule(s):** Rule 145 (to be deleted) plus spacing rules (e.g. Rules 82/123) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08, grep-verified zero remnants: the `Styles > Density` control row, the `styles.density` interface key (stored values inert — unreadable), `DENSITY_RATIOS`, `scaleDensity`, the `densityRatio` resolution/return/destructure threading, and the `densityRatio` props on `SuccessScreen`/`ErrorScreen` are all deleted. All 15 former `scaleDensity(N, densityRatio)` sites now render their literal ×1 values (progress wrapper 16, progress-text 8, step-title 4, step-subtitle 16, footer gap 8 / marginTop 24 / paddingTop 12, terminal margins 16/4/24/16/20, action-row gaps 8); `fieldGap` clamps 0–32 directly with no ratio multiply, so the Gap control's behavior is unchanged and the default stays 16. TypeScript compiles clean against the Framer shims; the full-file diff is removal-only for spacing (no rendered pixel changes at ×1). AGENTS.md rule 145 is deleted in the same pass (openly, per rule 140) with a tombstone marker; no other AGENTS.md rule cited Density. Calendar geometry (rule 69's 1:2:1 tracks, slot column) was never density-scaled and remains untouched.
 
 ---
