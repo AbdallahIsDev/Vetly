@@ -1032,3 +1032,22 @@ The user explicitly ordered `fix BookingEngine.tsx` from Booking-review.md, skip
 
 **`Content Alignment` (Left/Center/Right, default Left) is the FIRST row of the `Styles` group — there is no `Content` control group.** The stored path is `styles.contentAlignment`; the previous `header.contentAlignment` and `header.terminalAlignment` values keep applying as readable legacy carriers at one resolution site, so a saved canvas renders identically after the move. Scope and behavior are unchanged (step headers + terminal headers together, per-step carriers, Calendar excluded, never merged with Buttons Alignment — rule 125's amended clauses stand). Do not re-create a one-row Content group and do not drop the legacy reads. (BE-044)
 
+### 173. First designated identity field is mandatory; later duplicates are ordinary fields (IDENTITY-FIRST-WINS)
+
+**`applyMandatoryIdentityFields` forces `required: true` on exactly the FIRST Primary-Name flag and the FIRST email-typed field in document order — never on later duplicates.** Later email fields obey their own Required toggle; later Primary-Name flags keep their stored value (duplicates stay a canvas-warned misconfiguration: keep exactly one). The Required row hides for flagged names (any flag = intent) but stays visible on email fields — a per-item `hidden()` cannot see siblings to hide first-only, so the first email's stored-off is instead neutralized by a canvas warning ("always required as the booking identity; the toggle is ignored"), which fires only on explicit off, never on untouched defaults. The payload still submits the first designated name/email. This amends rule 167's force-all behavior. (BE-046)
+
+### 174. Terminal headers are horizontal on Left/Right, stacked on Center (TERMINAL-HEADER-ROW)
+
+**On Left alignment the terminal header is one row — mark left, title/subtitle block right, 16px gap, vertically centered; Right mirrors it (row-reverse); Center keeps the stacked mark-above-text treatment byte-identical.** Success and failure screens share the construction (same gap, same centering); marks, copy, fonts, animations, action rows, and Center rendering are untouched. Do not re-stack Left/Right and do not touch Center. (BE-047)
+
+### 175. Calendar menu icons are the true provider SVGs, namespaced per icon (MENU-BRAND-ICONS)
+
+**The Google/Office/Outlook menu rows render the author-supplied high-resolution brand SVGs at the fixed 20px row size — never approximations, raster, icon fonts, or hotlinked URLs.** Every gradient/mask/filter id is namespaced per icon (`gcal-*`, `msof-*`, `msol-*`) so the three inline SVGs can never collide with each other or the page; the Manage row uses a neutral currentColor external-link glyph at the same size. Row geometry, labels, payloads, and the BE-029 menu mechanics are untouched. (BE-048)
+
+### 176. The success row is two actions: merged calendar split-button + Book another (MERGED-CALENDAR-BUTTON)
+
+**One merged control in Manage styles (label "Add to Calendar" + chevron) opens the calendar menu; the menu holds the calendar options plus a trailing Manage item to the booking page; Book another stays the far-right primary.** The standalone manage link is gone; the trigger's main face opens the menu (same as before — the trigger was always menu-only). The orphaned `addToCalendarStyle` prop/interface/call-site are deleted while `addToCalendarButton` hover/pressed legacy keys keep working; stored trigger-style customs intentionally stop applying (recorded freeze — the Calendar Links set owns the menu panel). The menu renders when an ICS uri OR a manage href exists; the Other row only when its URI exists. Do not split them back apart. (BE-049)
+
+### 177. Buttons Alignment governs grouped terminal rows; Split stays definitional (TERMINAL-ACTION-ALIGN)
+
+**`terminalActionJustify` (grouped Left/Center/Right → flex-start/center/flex-end, undefined in Split) positions the success and failure action rows exactly like the footer: grouped follows the authored alignment on all three screens, Split keeps success at flex-end and failure centered.** It is threaded as an `actionJustify` prop with per-screen fallbacks, so Split behavior is byte-identical to before. Content/header alignment, DOM order, and keyboard contracts are untouched. This bends (not breaks) the old right-grouped-terminal clauses openly per rule 140. (BE-050)
