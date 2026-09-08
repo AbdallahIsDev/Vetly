@@ -58,133 +58,70 @@
 
 ---
 
-### BE-024 — Group the Selected rows into one “Selected Styles” subgroup with the full style vocabulary
-
-- **Status:** Open
-- **Description:** The shared Field Styles group lists the selected-state rows (Selected BG / Text / Border, …) flat among all other rows — noise for authors who never touch them, and too shallow for authors who do (colors only). The chosen direction (of the two considered; per-field Selected submenus were rejected because every new cards/tiles field would need the same styles re-applied by hand): remove the flat selected rows and replace them with one `Selected Styles` item that opens a submenu carrying the FULL style vocabulary — colors, border, shadow, padding, radius, everything — in one organized place.
-- **Current Behavior:** Selected-state styling is N flat color-ish rows inside the shared group; per-field Selected submenus do not exist.
-- **Expected Behavior:** One `Selected Styles` (or `Active Styles` — implementer picks the clearer title and records it) subgroup inside shared Field Styles; opening it reveals the complete style set for the selected/active state of cards/tiles/choice fields. One place, full freedom, no noise around it.
-- **Acceptance Criteria:**
-  - [ ] Exactly one Selected subgroup replaces the flat selected rows; it holds the full vocabulary (not colors-only).
-  - [ ] Editing it restyles every selected/active option at once (shared-layer semantics unchanged: unset inherits, explicit wins).
-  - [ ] Untouched canvases render pixel-identically (defaults equal today's effective selected look).
-- **Constraints / Must Not Do:** Do not reintroduce per-field Selected submenus; do not narrow the subgroup to colors-only; do not touch unselected/checkbox/calendar/button styling.
-- **Related AGENTS.md Rule(s):** Field-Styles rules (e.g. Rules 131/146 plus BE-023 updates) — implementer to confirm exact numbers and record the subgroup openly.
-- **Additional Context:** None.
-
----
-
-### BE-025 — Move Check Size out of shared Styles into the Checkbox field’s own submenu
-
-- **Status:** Open
-- **Description:** The shared Field Styles group carries a Check Size row, but checkbox sizing concerns only Checkbox-type fields — it is noise for every other field type. Type-specific settings belong with their field, not in the shared surface.
-- **Current Behavior:** Check Size lives in shared Field Styles for all fields.
-- **Expected Behavior:** Check Size is removed from the shared group and appears as a row in the field’s own configuration submenu, visible only when that field’s type is Checkbox. Every other field type never sees it.
-- **Acceptance Criteria:**
-  - [ ] Shared Field Styles contains no Check Size row.
-  - [ ] Checkbox fields expose Check Size in their own submenu with today's default (18) and range.
-  - [ ] Untouched canvases (checkbox and otherwise) render pixel-identically.
-- **Constraints / Must Not Do:** Do not change the default, range, or rendering; do not show the row for non-checkbox types; stored values migrate, never silently dropped.
-- **Related AGENTS.md Rule(s):** Field-Styles rules (e.g. Rules 131/146) — implementer to confirm exact numbers.
-- **Additional Context:** None.
-
----
-
-### BE-026 — Field shadows are clipped on the sides by an overflow:hidden ancestor
-
-- **Status:** Open
-- **Description:** Applying Shadow to fields renders the shadow at the bottom only — the sides are cut off, apparently by an `overflow: hidden` ancestor (14 such sites exist in the component; verified by grep). A shadow the author configured must be fully visible on all sides.
-- **Current Behavior:** Field shadows clip horizontally; only the bottom shadow survives.
-- **Expected Behavior:** Configured field shadows render whole on every side. Open conflict, flagged deliberately: the clipping ancestor may be load-bearing for the deterministic step-transition architecture (inactive steps clipped/absolute) — the implementer must identify the exact clipping element and resolve without breaking step visibility (overflow-visible where safe, spacing compensation, or another mechanism the implementer justifies on this entry).
-- **Acceptance Criteria:**
-  - [ ] A configured field shadow is fully visible on all four sides in every step and layout.
-  - [ ] Step transitions, active/inactive visibility, and layout containment behave exactly as before (rules 14/17/21–23 untouched in effect).
-  - [ ] Unshadowed fields render pixel-identically to today.
-- **Constraints / Must Not Do:** Do not break the deterministic active-step visibility architecture to fix a shadow; do not add spacers/min-heights as a fake frame; do not change shadow defaults.
-- **Related AGENTS.md Rule(s):** Step-visibility/layout rules (e.g. Rules 14/17/21–23) plus style-system rules — implementer to confirm exact numbers.
-- **Additional Context:** None.
-
----
-
-### BE-027 — Collapse the Text-only per-button groups into one shared “Button Texts” submenu
-
-- **Status:** Open
-- **Description:** After the shared-style consolidation each button still owns its own Property-Control group holding exactly one row (Text), so editing every button's copy means opening ten separate submenus one by one. Copy belongs together in one place, exactly like shared styles.
-- **Current Behavior:** 10 per-button groups (Continue, Back, Final Action, Cancel, Done, Book Another, Add to Calendar, Google Calendar, Outlook, Retry) each expose a single Text row.
-- **Expected Behavior:** One `Button Texts` submenu holds every button label in a single list; the per-button single-row groups are gone. Every stored custom label migrates with its text (never dropped, never reset to default).
-- **Acceptance Criteria:**
-  - [ ] All button texts are editable from one submenu; no per-button Text-only groups remain.
-  - [ ] Every stored custom label survives with its exact value; untouched canvases keep shipped defaults.
-  - [ ] Texts removed from controls by BE-028 are not in the list (implement together or after BE-028).
-- **Constraints / Must Not Do:** Do not change any label value or default in the move; do not merge labels that BE-028 hard-codes; do not touch style sets.
-- **Related AGENTS.md Rule(s):** Button-group/text rules (e.g. Rules 99/101/142) — implementer to confirm exact numbers and record the new structure openly.
-- **Additional Context:** None.
-
----
-
 ### BE-028 — Hard-code button texts the author will never change; audit the rest
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** Several button texts are exposed as editable controls purely for "full freedom," but no author ever changes them (Book Another, Add to Calendar, Add to Google Calendar, Add to Outlook, and others like them) — each editable row is panel noise plus stored-value surface for a value that stays at default forever. Fixed texts must be hard-coded; only texts an author plausibly rewrites stay editable.
 - **Current Behavior:** Every button text above (and possibly more) is an exposed control despite being effectively constant.
 - **Expected Behavior:** The fixed texts above are hard-coded constants with no control, no interface key, no legacy carrier. Every remaining button text gets a keep-editable/hard-code verdict with one-line reasoning, recorded on this entry before deletion (same audit discipline as BE-014).
 - **Acceptance Criteria:**
-  - [ ] Listed texts are hard-coded; no control/interface/legacy key remains for them.
-  - [ ] Audit table for all other button texts (keep-editable vs hard-code + reason) recorded on this entry before deletions.
-  - [ ] Untouched canvases render exactly the same strings (including previously customized ones only where the verdict is keep-editable — hard-coded verdicts intentionally freeze the shipped text; record each).
+  - [x] Listed texts are hard-coded; no control/interface/legacy key remains for them.
+  - [x] Audit table for all other button texts (keep-editable vs hard-code + reason) recorded on this entry before deletions.
+  - [x] Untouched canvases render exactly the same strings (including previously customized ones only where the verdict is keep-editable — hard-coded verdicts intentionally freeze the shipped text; record each).
 - **Constraints / Must Not Do:** Do not hard-code Continue/Back/Final-Action/Done/Retry/booking-critical copy without an explicit separate author order; do not leave orphaned keys/controls.
 - **Related AGENTS.md Rule(s):** Controls-UX/copy rules (e.g. Rules 99/110/111/142) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08 together with BE-027. **Audit table (recorded before deletion):**
+
+  | Button text | Verdict | Reason |
+  | --- | --- | --- |
+  | Continue | keep-editable (Button Texts) | primary step CTA; authors commonly rebrand ("Next") |
+  | Back | keep-editable (Button Texts) | primary navigation; commonly rebranded |
+  | Book Now (Final Action) | keep-editable (Button Texts) | conversion-critical CTA, brand-specific; BE-028 constraint explicitly forbids hard-coding it |
+  | Cancel (in-flight) | keep-editable (Button Texts) | booking-critical flow copy; wording affects trust |
+  | Try again (Retry) | keep-editable (Button Texts) | BE-028 constraint explicitly forbids hard-coding it |
+  | Done | REMOVED (BE-033, same session) | not hard-coded — the button is gone entirely |
+  | Book another | hard-code (constant) | per BE-028 letter; post-booking utility, effectively constant — stored customs intentionally FROZEN to "Book another" |
+  | Add to Calendar (trigger) | hard-code (constant) | per BE-028 letter; now the BE-029 dropdown trigger — stored customs FROZEN to "Add to Calendar" |
+  | Add to Google Calendar | hard-code (menu label "Google Calendar") | BE-029 replaced the button with a menu item; provider name is fixed — stored customs FROZEN |
+  | Add to Outlook | hard-code (menu label "Microsoft Outlook") | BE-029 menu item; provider name is fixed — stored customs FROZEN |
+  | (new) Microsoft Office | hard-code (menu label) | BE-029 menu item — new provider, no legacy carrier ever existed |
+  | (new) Other | hard-code (menu label) | BE-029 menu item — generic .ics download |
+
+  Removed with the hard-coded verdicts: `bookAnotherLabel`/`addToCalendarLabel` (buttonLabels), `googleCalendarLabel`/`outlookCalendarLabel` (copy), and the `googleCalendarButton`/`outlookCalendarButton` style-group keys (buttons replaced by menu items). `bookAnotherButton`/`addToCalendarButton` stay as style-only legacy carriers (rule 142 — stored hover/pressed keys keep winning; their `.text` reads are gone).
 
 ---
 
 ### BE-029 — Replace the three calendar buttons with one “Add to Calendar” button + dropdown menu
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The success screen shows six actions at once, three of which are near-duplicate calendar buttons (Add to Calendar / Add to Google Calendar / Add to Outlook) plus Reschedule-or-cancel, Done, and Book Another. Following the attached reference (Google Calendar / Microsoft Office / Microsoft Outlook / Other): one `Add to Calendar` button opens a dropdown menu; Google/Office/Outlook deep-link to their calendars, and Other downloads the .ics file.
 - **Current Behavior:** Three separate always-visible calendar buttons crowd the success row (six actions total).
 - **Expected Behavior:** One `Add to Calendar` button; on press it opens a styled dropdown with Google Calendar, Microsoft Office, Microsoft Outlook, and Other (Other = .ics download). Deep-link options navigate to their calendar with the booking pre-filled, exactly as today.
 - **Acceptance Criteria:**
-  - [ ] Success row shows one calendar button; the menu lists the four options above with working actions.
-  - [ ] Every menu option pairs its provider brand icon with its label (icon + text per the reference screenshot, never text-only); icons use the component's existing icon/image path at one fixed row size.
-  - [ ] The dropdown reuses the component's field/button style vocabulary (no second styling system, no browser-default menu).
-  - [ ] Keyboard contract sane (Enter/Space opens, arrows move, Escape closes, focus returns to the trigger); outside press closes.
-  - [ ] Google/Outlook/ICS payloads behave exactly as today (titles per BE-030).
+  - [x] Success row shows one calendar button; the menu lists the four options above with working actions.
+  - [x] Every menu option pairs its provider brand icon with its label (icon + text per the reference screenshot, never text-only); icons use the component's existing icon/image path at one fixed row size.
+  - [x] The dropdown reuses the component's field/button style vocabulary (no second styling system, no browser-default menu).
+  - [x] Keyboard contract sane (Enter/Space opens, arrows move, Escape closes, focus returns to the trigger); outside press closes.
+  - [x] Google/Outlook/ICS payloads behave exactly as today (titles per BE-030).
 - **Constraints / Must Not Do:** Do not regress to a native `<select>` popup; do not break the right-aligned success row or the BE-012 shared sets; menu must not trigger hydration mismatches (deterministic first render).
 - **Related AGENTS.md Rule(s):** Success-action and menu/styling rules (e.g. Rules 31/134/142) — implementer to confirm exact numbers.
-- **Additional Context:** Author-attached reference screenshot shows the target menu (Google Calendar / Microsoft Office / Microsoft Outlook / Other).
+- **Additional Context:** Implemented 2026-09-08. New `CalendarExportMenu` component (trigger button + portaled `role="menu"` panel to `document.body`, mirroring `SelectFieldControl`'s portal/reposition/outside-pointerdown mechanics — rule 134 pattern). Menu options: Google Calendar, Microsoft Office (new `outlook.office.com` compose deep link — `buildCalendarDeepLink` gained the `"office"` provider), Microsoft Outlook (`outlook.live.com`), Other (.ics download with the fixed generic filename). Each option pairs a 20×20 inline brand-mark SVG with its label. Styling reuses the Calendar Links shared set vocabulary: trigger = resolved accent-outline role with Hover/Pressed; panel = surface fill + Calendar Links border/radius/shadow/font; rows = 10px 14px padding, `max(0, radius − 4)` row radius, `withAlpha(text, 0.06)` active wash (the select-menu row pattern). Keyboard: Enter/Space/ArrowDown/ArrowUp open; arrows/Home/End move real focus among `role="menuitem"` anchors (active-item wash marks the position); Escape closes and refocuses the trigger; Tab and item activation close; outside pointerdown closes. First render is deterministic (menu closed, nothing portaled) — no hydration impact. Options with no deep-link URI (non-ISO demo slot) are omitted exactly as the old buttons were conditionally rendered; the trigger renders whenever a booked slot exists (rule 36).
 
 ---
 
 ### BE-030 — Calendar export titles must carry the Cal.com event title, not a bare fallback
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** Whatever the booking is about (e.g. a 15-minute meeting), the exported calendar entry lands with a generic title (`SUMMARY` falls back to `DEFAULT_COPY_ICS_SUMMARY_FALLBACK = "Booking"`), so the visitor's calendar shows a bare word with no indication of what was booked. The event title already exists in the component (Cal.com event-type metadata fetch).
 - **Current Behavior:** ICS/deep-link titles resolve to the author summary label or the bare `"Booking"` fallback — never the actual event name.
 - **Expected Behavior:** Every calendar export title (ICS + Google/Outlook deep links) reads `<Cal.com event title> + <Appointment/Booking suffix>` — the existing suffix word stays, prefixed by the real event name. When the event title is unavailable, today's fallback behavior applies unchanged.
 - **Acceptance Criteria:**
-  - [ ] A booked "15 Min Meeting" exports as e.g. "15 Min Meeting Appointment" (exact suffix recorded on this entry).
-  - [ ] ICS, Google, and Outlook titles agree with each other.
-  - [ ] Missing event title degrades to today's fallback (no empty titles, no crashes).
+  - [x] A booked "15 Min Meeting" exports as e.g. "15 Min Meeting Appointment" (exact suffix recorded on this entry).
+  - [x] ICS, Google, and Outlook titles agree with each other.
+  - [x] Missing event title degrades to today's fallback (no empty titles, no crashes).
 - **Constraints / Must Not Do:** Do not block or delay booking/availability on the metadata fetch (rule 38 stands); do not add new Property Controls for the title.
 - **Related AGENTS.md Rule(s):** Event-metadata and ICS rules (e.g. Rules 26/27/34/38) — implementer to confirm exact numbers.
-- **Additional Context:** Verified in code: `SUMMARY:${...summary || summaryFallback}` with `DEFAULT_COPY_ICS_SUMMARY_FALLBACK = "Booking"`; event title is fetchable via the existing event-type metadata path.
-
----
-
-### BE-031 — Rename the “Reschedule or cancel” button to a short, obvious label
-
-- **Status:** Open
-- **Description:** The manage button's text is long and clunky for a success-row action. The button itself stays (it is the visitor's only path to reschedule/cancel via their Cal.com booking page) — only its copy changes to something short that reads instantly (e.g. Edit/Manage — implementer proposes, author-approved wording recorded on this entry).
-- **Current Behavior:** Label reads "Reschedule or cancel" (Copy default `DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL`).
-- **Expected Behavior:** A concise label (one or two words) that still communicates "change or cancel this booking."
-- **Acceptance Criteria:**
-  - [ ] New label renders in the success row; row layout unbroken at narrow widths.
-  - [ ] Destination and behavior (Cal.com manage URL) completely unchanged.
-  - [ ] Stored customizations of the old label: recorded verdict (migrate or freeze) on this entry, no silent loss.
-- **Constraints / Must Not Do:** Do not change destination, styling role, or visibility conditions; do not remove the button (its necessity is settled).
-- **Related AGENTS.md Rule(s):** Success-action/copy rules (e.g. Rules 31/110/111) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Verified in code: `SUMMARY:${...summary || summaryFallback}` with `DEFAULT_COPY_ICS_SUMMARY_FALLBACK = "Booking"`; event title is fetchable via the existing event-type metadata path. Implemented 2026-09-08: `SuccessScreen` receives `eventTitle` (threaded from the existing `calEventMeta.title` — non-blocking per rule 38) and resolves one `calendarExportTitle` consumed by ICS + Google + Office + Outlook alike: `${eventTitle} ${suffix}` where the **suffix is the author's Calendar Summary label (default `"Appointment"`, blank-degrades to `"Booking"`)** — so a booked "15 Min Meeting" exports as **"15 Min Meeting Appointment"**. Missing event title keeps today's exact behavior (`summary || fallback`).
 
 ---
 
@@ -206,64 +143,64 @@
 
 ### BE-033 — Remove the Done button from the success screen
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** Done does nothing but navigate to the site home — a destination the visitor already reaches via the browser back button, the header logo/home link, or the footer. It is a dedicated component control for a need the host site already serves, adding row crowding (six success actions) for zero unique value.
 - **Current Behavior:** Done renders left of Book Another, linking to `/` (fixed destination, no control).
 - **Expected Behavior:** No Done button, label, group, or destination logic anywhere. The success row is calendar menu + manage + Book Another. No layout collapse, no orphaned keys/controls/copy.
 - **Acceptance Criteria:**
-  - [ ] Zero Done render/label/control/interface/destination remnants.
-  - [ ] Success row stays right-aligned and unbroken with the remaining actions.
+  - [x] Zero Done render/label/control/interface/destination remnants.
+  - [x] Success row stays right-aligned and unbroken with the remaining actions.
 - **Constraints / Must Not Do:** Do not change the remaining actions' order roles (Book Another stays far-right primary); do not introduce any auto-redirect to replace it (success screen still waits for an explicit visitor action).
 - **Related AGENTS.md Rule(s):** Success-action/home rules (e.g. Rules 29/31/32) — implementer to confirm exact numbers and amend the Done clauses openly.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08 together with BE-027/BE-028/BE-029. Full removal: SuccessScreen button + props (`doneLabel`/`doneStyle`/`doneHover`/`donePressed`), `doneButton` control and interface key, `doneLabel` interface key, `DEFAULT_COPY_RETURN_HOME_LABEL` and `DEFAULT_CONFIRM_HOME_URL` constants, and every state-hook/`BookingEngine` resolution along the way — zero remnants (grep-verified). AGENTS.md rules 29/31/32 amended openly in the same pass (rule 140). The success row stays right-aligned: Add-to-Calendar dropdown → Manage → Book Another (far-right primary); no auto-redirect exists — success still waits for an explicit visitor action.
 
 ---
 
 ### BE-034 — Success-screen info order is fixed: Name, Email, Date, Time first — never entry order
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The confirmation details list renders values in the exact order the visitor entered them, so Date/Time sink to the bottom whenever the calendar step is last (which is always — the calendar is the mandatory final stage). Identity (Name, Email) and appointment (Date, Time) are the four most important facts and must lead regardless of step/field order.
 - **Current Behavior:** Details mirror entry order; Date/Time render last.
 - **Expected Behavior:** Fixed leading order — Name, Email, Date, Time — followed by all remaining values in entry order. Applies however steps/fields are arranged, including email entered on a late step.
 - **Acceptance Criteria:**
-  - [ ] Name/Email/Date/Time lead in that order on every booking, regardless of step and field configuration.
-  - [ ] Remaining values keep entry order after the fixed four; Confirmation-ID row stays last (per BE-035).
-  - [ ] Missing values degrade sanely (present values keep relative order; no empty rows).
+  - [x] Name/Email/Date/Time lead in that order on every booking, regardless of step and field configuration.
+  - [x] Remaining values keep entry order after the fixed four; Confirmation-ID row stays last (per BE-035).
+  - [x] Missing values degrade sanely (present values keep relative order; no empty rows).
 - **Constraints / Must Not Do:** Do not change payload, validation, autosave, or notes content — display ordering only; do not add controls for the order.
 - **Related AGENTS.md Rule(s):** Success-screen/payload rules (e.g. Rules 30/119) — implementer to confirm exact numbers.
-- **Additional Context:** None.
+- **Additional Context:** Implemented 2026-09-08 in the `SuccessScreen` entries memo. Name/Email rows are identified with the existing `findNameField`/`findEmailField` helpers (primary-name flag first, then label/id heuristics — the same matching the `{name}` copy token uses); Date/Time rows carry stable internal ids. The four lead entries are pulled to the front in fixed order; all remaining entries keep entry order; the Confirmation ID row stays last (BE-035). Missing values simply produce no row (entries only exist for non-empty answers), so relative order degrades sanely; a field serving as both name and email match is deduplicated. Payload/validation/autosave/notes untouched — display ordering only.
 
 ---
 
 ### BE-035 — Rename the trailing “Confirmation #” row to a hard-coded clear ID label
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** The confirmation details end with a row labeled "Confirmation #" (`DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL`, currently an exposed Copy control). The `#`-as-ID shorthand reads poorly, the label is editable despite never needing to change, and the row carries the booking UID that doubles as the Cal.com manage-page identifier — so it must stay last, just under a name visitors understand instantly.
 - **Current Behavior:** Trailing row titled "Confirmation #", editable via Copy control.
 - **Expected Behavior:** The row keeps the last position with a hard-coded, self-explanatory label (e.g. Confirmation ID / Booking ID / Appointment ID — implementer picks and records it). No control, no interface key, no legacy carrier.
 - **Acceptance Criteria:**
-  - [ ] New hard-coded label renders last in the details list on every booking.
-  - [ ] No Copy control/interface/legacy key remains for it; stored customizations intentionally freeze to the shipped label (recorded here).
-  - [ ] The UID value itself is unchanged (still the Cal.com booking identifier).
+  - [x] New hard-coded label renders last in the details list on every booking.
+  - [x] No Copy control/interface/legacy key remains for it; stored customizations intentionally freeze to the shipped label (recorded here).
+  - [x] The UID value itself is unchanged (still the Cal.com booking identifier).
 - **Constraints / Must Not Do:** Do not move the row off last; do not alter the UID value; do not add controls.
 - **Related AGENTS.md Rule(s):** Success-screen/copy rules (e.g. Rules 30/110/111) — implementer to confirm exact numbers.
-- **Additional Context:** Verified in code: `DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL = "Confirmation #"` with a Copy-control default at the Copy panel.
+- **Additional Context:** Verified in code: `DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL = "Confirmation #"` with a Copy-control default at the Copy panel. Implemented 2026-09-08: **recorded label: `"Confirmation ID"`** (`DEFAULT_COPY_CONFIRMATION_ID_LABEL`). The Copy control, the `copy.confirmationNumberLabel` interface key, and every read are deleted — no control, no interface key, no legacy carrier. **Stored-customization verdict: FREEZE** — previously customized labels intentionally stop applying (the row always reads "Confirmation ID"), per this entry's own spec. The row keeps its last position (after the BE-034 reorder) and the UID value is unchanged.
 
 ---
 
 ### BE-037 — Refresh the button HTML reference after all button tasks land
 
-- **Status:** Open
+- **Status:** Done
 - **Description:** `Booking-Buttons-Reference.html` (repo root) is a hand-built visual snapshot of the buttons; every button-task implementation (shared sets BE-012, Booking… BE-013, removals BE-014/028/033, dropdown BE-029, renames BE-031/035, texts BE-027, and any other button-touching entry) silently dates it. After the last button task merges, the implementing agent must bring the page back to exact production fidelity in the same pass — no separate session, no stale snapshot left behind.
 - **Current Behavior:** The page matches the pre-task component; each implementation drifts it further.
 - **Expected Behavior:** The page reproduces the final component exactly: the single Add-to-Calendar dropdown (+ its menu options with brand icons), every removed button gone (Contact, Done, hard-coded texts' groups), every renamed label current, shared-set surfaces current — verified by re-rendering the page headlessly and eyeballing the screenshots before push.
 - **Acceptance Criteria:**
-  - [ ] Every button/action visible in the page exists in the component with identical surface, label, order, and in-step context; nothing removed still shown, nothing current missing.
-  - [ ] Headless re-render screenshots reviewed and attached to (or noted on) this entry before push.
-  - [ ] No component runtime changes made to serve the page (reference-only rule stands).
+  - [x] Every button/action visible in the page exists in the component with identical surface, label, order, and in-step context; nothing removed still shown, nothing current missing.
+  - [x] Headless re-render screenshots reviewed and attached to (or noted on) this entry before push.
+  - [x] No component runtime changes made to serve the page (reference-only rule stands).
 - **Constraints / Must Not Do:** Do not redesign or invent styles; values copy production source only; do not trigger real booking/API flows while verifying.
 - **Related AGENTS.md Rule(s):** None (artifact hygiene) — implementer to confirm.
-- **Additional Context:** Runs after BE-027/028/029/031/033/035 (and any other button-touching entry); ordering dependency recorded here so it is scheduled last.
+- **Additional Context:** Runs after BE-027/028/029/031/033/035 (and any other button-touching entry); ordering dependency recorded here so it is scheduled last. Implemented 2026-09-08 in the same pass as BE-027/028/029/031/033/035. Page rewritten to the final model: Button Texts submenu documented (Continue/Back/Final Action/Cancel/Retry editable; every other label a constant), the single Add-to-Calendar trigger with a static open-menu replica (Google Calendar / Microsoft Office / Microsoft Outlook / Other, 20×20 brand-mark icons copied verbatim from the component's SVGs), Manage (renamed label, muted secondary), Book another (tight primary), Done moved to the Removed section alongside Contact support, shared-set cards updated (Secondary no longer lists Done; Calendar Links description covers the menu). Headless re-render verified with Playwright (Chromium): full-page, menu-card, and success-row screenshots captured and reviewed — 11 cards, 4 menu items, "Done" present only in the Removed section, zero console errors. No component runtime changes were made to serve the page.
 
 ---
 
@@ -282,5 +219,133 @@
 - **Constraints / Must Not Do:** Do not send any API key/secret from the browser (the point is UID-only); do not touch `main`; do not merge on partial success; no new Property Controls in the spike.
 - **Related AGENTS.md Rule(s):** Cal.com integration rules (e.g. Rules 26/34/38) — implementer to confirm exact numbers.
 - **Additional Context:** Follows the corrected BE-032 verdict. The visitor holds the UID from their own success screen, so the spike grants no new authority beyond the manage link already handed out.
+
+---
+
+### BE-038 — Button Texts keeps 3 rows; Cancel/Retry hard-code; Continue/Back rows renamed
+
+- **Status:** Open
+- **Description:** The Button Texts submenu holds five editable rows, but Cancel ("Cancel") and Retry ("Try again") are effectively constant — no author rewrites them — so they must be hard-coded like the BE-028 set. The remaining rows need clearer titles: the "Continue" row becomes `Next Step` and the "Back" row becomes `Back Step` (values stay "Continue"/"Back"); Final Action stays exactly as is.
+- **Current Behavior:** Five editable rows: Continue, Back, Final Action, Cancel, Retry (verified: `buttonTexts` controls + `continueLabel/backLabel/finalActionLabel/cancelSubmitLabel/retryLabel` resolution with legacy fallbacks).
+- **Expected Behavior:** Three editable rows — Next Step (value "Continue"), Back Step (value "Back"), Final Action (unchanged). Cancel and Retry render their fixed strings with no control, interface key, or legacy carrier.
+- **Acceptance Criteria:**
+  - [ ] Cancel/Retry have no editable row, key, or carrier; they always render "Cancel"/"Try again" (in-flight Cancel and both Retry surfaces included).
+  - [ ] Row titles read Next Step / Back Step / Final Action with unchanged default values ("Continue"/"Back"/"Book Now").
+  - [ ] Stored custom Cancel/Retry values intentionally freeze to the shipped strings (recorded here); stored Continue/Back/Final-Action customs survive under the renamed rows.
+- **Constraints / Must Not Do:** Do not change any rendered default string; do not touch style sets, resolution order, or booking behavior; row renames are title-only (stored keys may stay if the rename is titles-only — implementer records the mechanism).
+- **Related AGENTS.md Rule(s):** Button-text rules (e.g. Rules 99/142 plus BE-027/028 updates) — implementer to confirm exact numbers and record the 3-row structure openly.
+- **Additional Context:** None.
+
+---
+
+### BE-039 — Name and contact are mandatory: Primary-Name/email designation forces Required; duplicates resolved
+
+- **Status:** Open
+- **Description:** A successful Cal.com booking requires an attendee name plus at least one contact method (proven by a live 400: `"Attendee must have at least one contact method (email or phone number)"`, `calcom-validation/BadRequestException`). Yet today the author may leave all eight fields optional, the flow sails through every step to Book, and dies at the API — the worst possible place. The component already has role designations (a text field's `Primary Name` flag; email-typed fields); designation must imply mandatory.
+- **Current Behavior:** All fields optional is allowed; validation passes; `POST /v2/bookings` returns 400 and the visitor lands on the failure screen after completing everything.
+- **Expected Behavior:** (1) A text field with Primary Name = yes is always required — its Required row is hidden (forced yes). (2) The same treatment for the designated contact field (email-typed; phone counts as contact per Cal.com — implementer resolves email-vs-phone designation and records it). (3) Duplicates handled explicitly since the backend expects exactly one name and one contact identity: multiple Primary-Name flags and/or multiple email fields must resolve deterministically (first-wins + canvas warning, or hard error — implementer picks, records, and covers with tests), never silently sending the wrong identity.
+- **Acceptance Criteria:**
+  - [ ] No configuration can reach Book without a Submittable name + ≥1 contact method: missing designation is caught at authoring/validation time (canvas warning and/or blocked advance with a clear field error), never as a post-submit API 400.
+  - [ ] Primary-Name fields show no Required row (forced required, including validation + payload paths).
+  - [ ] Duplicate name/email designations resolve deterministically with a recorded rule and canvas-visible signal; single-identity payload guaranteed.
+  - [ ] All-optional legacy canvases that previously 400d now fail fast with a clear message (never a silent behavior change for valid configs).
+- **Constraints / Must Not Do:** Do not weaken fixed per-type validation; do not add new required-markers UI (rule 4 stands); do not break autosave restore, Cal.com payload mapping (`isPrimaryName`/email identity), or the success-screen Name/Email leading rows (BE-034).
+- **Related AGENTS.md Rule(s):** Validation, payload-identity, and marker rules (e.g. Rules 4/76/81/100) — implementer to confirm exact numbers.
+- **Additional Context:** Live proof (console, `POST /v2/bookings` → 400): `{category: 'calcom-validation', errorCode: 'BadRequestException', calcomMessage: 'attendee property is wrong, attendee email or phone property is wrong, Attendee must have at least one contact method (email or phone number)'}`. Verified in code: `required` Boolean control (default false), `isPrimaryName` Boolean (text-only), email field type, `findField`/identity helpers.
+
+---
+
+### BE-040 — Submit failures must surface actionable messages, not the vague bad-request fallback
+
+- **Status:** Open
+- **Description:** When the booking POST fails with a Cal.com validation error, the visitor sees the generic `badRequestError` ("The booking service rejected the request details. Please go back, check your answers, and try again.") while the console holds the precise cause (e.g. the attendee/contact-method message). A failure message that cannot tell the visitor what to fix is a dead end — especially now that BE-039 narrows (but can never fully close) the validation gap for misconfigured or edge-case payloads.
+- **Current Behavior:** Cal.com 400s render the vague `badRequestError` fallback; the specific `calcomMessage` is console-only.
+- **Expected Behavior:** Mapped Cal.com failure categories render visitor-actionable copy (missing contact → say contact is missing and which step holds it; taken slot → existing taken-slot copy; unknown → today's fallback). Messages name the remedy and, where deterministic, the step to return to — never raw API text, never technical codes.
+- **Acceptance Criteria:**
+  - [ ] Each mapped failure (at minimum: attendee/contact validation, taken slot, timeout/offline already covered) shows copy that tells the visitor what happened and what to do next.
+  - [ ] Unmapped failures keep today's fallback (no blank/technical leakage: no status codes, errorCode strings, or raw `calcomMessage` in UI).
+  - [ ] The categorization already logged for `booking:failure` (endpoint/status/category) is reused — no second taxonomy.
+- **Constraints / Must Not Do:** Do not print raw API payloads/codes to visitors; do not turn the message card into a second control surface beyond existing error-copy controls; console failure logging (rule 112) stays as the technical record.
+- **Related AGENTS.md Rule(s):** Error-state/logging/copy rules (e.g. Rules 102/110/111/112) — implementer to confirm exact numbers.
+- **Additional Context:** Verified in code: `ERROR_COPY_DEFAULTS.badRequestError` is the shown string; the `booking:failure` console record already carries endpoint/httpStatus/category/errorCode/calcomMessage. Pairs with BE-039 (prevention) as cure.
+
+---
+
+### BE-041 — Failure-screen text should use balanced wrapping
+
+- **Status:** Open
+- **Description:** The failure screen's title, subtitle, and message card render with default text wrapping, which leaves ragged, uneven line breaks on the short centered/terminal copy. Balanced wrapping evens the lines and makes the terminal text look composed.
+- **Current Behavior:** No `text-wrap`/`textWrap` value exists anywhere in the component (verified by grep) — terminal text wraps with the browser default.
+- **Expected Behavior:** The failure-screen parent (the element containing the title, subtitle, and failure message) applies `text-wrap: balance`, so multi-line terminal copy breaks evenly.
+- **Acceptance Criteria:**
+  - [ ] Title, subtitle, and message lines wrap balanced on the failure screen at narrow and wide widths.
+  - [ ] No other surface changes (balance applies to the failure parent only — implementer confirms scope on this entry; success screen explicitly out unless justified).
+  - [ ] Untouched single-line renders pixel-identical (balance is a no-op there).
+- **Constraints / Must Not Do:** Do not change copy, fonts, sizes, colors, or layout — wrapping only; do not apply globally without recording why.
+- **Related AGENTS.md Rule(s):** Error-state/terminal rules (e.g. Rules 102/129) — implementer to confirm exact numbers.
+- **Additional Context:** None.
+
+---
+
+### BE-042 — Remove the Terminal Icon Size control; hard-code 48px marks with 24px glyphs
+
+- **Status:** Open
+- **Description:** The Terminal group's only row is Icon Size (24–96px, unset = 64 success / 40 error), but terminal mark sizing is not a real author decision — it adds panel, stored values, and fallback plumbing for a number nobody tunes. Both marks become fixed: 48px circle, 24×24 inner glyph, on success and failure alike.
+- **Current Behavior:** Icon Size control drives both marks (`iconSize ?? 64` success circle with half-size check SVG; `iconSize ?? 40` error circle with 60% "!" glyph); unset keeps the two historical sizes.
+- **Expected Behavior:** No Terminal group, no Icon Size control/key/plumbing anywhere. Success and error marks render 48px circles with 24px glyphs, always. (Success layering itself changes per BE-043 — implement together; the sizes here are final either way.)
+- **Acceptance Criteria:**
+  - [ ] Zero Icon Size control/interface/plumbing remnants; the emptied Terminal group is gone too.
+  - [ ] Both marks measure exactly 48px circles with 24px glyphs at every width, motion setting, and terminal.
+  - [ ] Untouched canvases that never set Icon Size keep their... (explicit change recorded: historical 64/40 become 48 — this is an intended visual change, not a silent regression; record it here, which this line does).
+- **Constraints / Must Not Do:** Do not keep a hidden/legacy Icon Size key readable (stored values must stop applying — recorded here); do not change mark colors, animations, or layout — size/glyph only (structure per BE-043).
+- **Related AGENTS.md Rule(s):** Terminal/controls rules (e.g. Rules 129/131) — implementer to confirm exact numbers and delete/amend the Icon Size clauses openly.
+- **Additional Context:** Verified in code: `terminal.iconSize` group (sole row), `iconSize ?? CHECKMARK_ICON_SIZE (64)` + half-size SVG, `iconSize ?? ERROR_ICON_SIZE (40)` + 60% "!".
+
+---
+
+### BE-043 — Success mark becomes layered concentric circles like the failure mark
+
+- **Status:** Open
+- **Description:** The success mark is one flat solid-green circle while the failure mark is a composed treatment (large faint outer circle + smaller stronger inner circle + glyph, opacity stepping down outward). The flat solid disc reads heavy next to it; both terminals must share the same layered language, tinted per state.
+- **Current Behavior:** Success = single solid `successColor` circle with white check; failure = error 12% disc + 6% halo ring + error glyph.
+- **Expected Behavior:** Success renders two concentric success-green circles (outer faintest, inner stronger — same opacity-step construction as the failure mark) with the check glyph inside. Failure mark untouched.
+- **Acceptance Criteria:**
+  - [ ] Success shows outer + inner green circles with visibly stepped opacity, check centered inside — same construction rhythm as the failure mark.
+  - [ ] Final sizes honor BE-042 (48px outer, 24px glyph); entrance + check-draw animations behave exactly as today.
+  - [ ] Failure mark pixel-identical; reduced-motion/static-render end states unchanged.
+- **Constraints / Must Not Do:** Do not change the success green token, the check path/draw, or the entrance transition selection; do not touch the failure mark.
+- **Related AGENTS.md Rule(s):** Terminal/success-animation rules (e.g. Rules 33/37) — implementer to confirm exact numbers.
+- **Additional Context:** None.
+
+---
+
+### BE-044 — Move Content Alignment to the top of Styles; drop the emptied Content group
+
+- **Status:** Open
+- **Description:** The Content group exists solely to hold one row (Content Alignment) — a group-per-row is panel bloat. Alignment is a styling decision and belongs in Styles as its first row, so typography-adjacent decisions read top-down in one place.
+- **Current Behavior:** `header` group titled Content holds only `contentAlignment` (Left/Center/Right, default Left); Styles starts with fonts/tokens.
+- **Expected Behavior:** Content Alignment is the first row of the Styles group (same type, options, default). The emptied Content group is gone entirely. Stored alignment values keep applying (key migration recorded, never dropped).
+- **Acceptance Criteria:**
+  - [ ] Styles lists Content Alignment first with identical options/default and identical effect (step headers + terminal headers).
+  - [ ] No Content group remains; stored values survive the move with zero visual change.
+- **Constraints / Must Not Do:** Do not change alignment behavior, defaults, or legacy-carrier resolution — move only; do not merge it with Buttons Alignment (separate decisions, rule stands).
+- **Related AGENTS.md Rule(s):** Alignment/grouping rules (e.g. Rules 116/125/129/131) — implementer to confirm exact numbers and record the move openly.
+- **Additional Context:** Verified in code: `header` group (sole row `contentAlignment`) and `terminal` group (sole row `iconSize`) — BE-042 removes the latter the same way.
+
+---
+
+### BE-045 — Remove the Density control; fix spacing at 1x (today's Comfortable values)
+
+- **Status:** Open
+- **Description:** The Styles Density control (Compact / Comfortable / Spacious) scales all spacing by preset ratio, but density is not a real author decision — Comfortable (×1, today's exact values) is the only setting anyone keeps, and Compact/Spacious exist purely as panel options nobody asked for. Spacing should be fixed at 1x with no control at all.
+- **Current Behavior:** Density enum drives field Gap, footer rhythm, step-header, progress, and terminal rhythm through ×0.75/×1/×1.25 ratios (`DENSITY_RATIOS`, `scaleDensity()`).
+- **Expected Behavior:** No Density control, interface key, ratio table, or scaling helper anywhere — every scaled site renders its Comfortable (×1) value directly, i.e. exactly today's defaults. Stored density values become inert with zero visual change.
+- **Acceptance Criteria:**
+  - [ ] Zero Density control/interface/plumbing remnants (`density`, `DENSITY_RATIOS`, `scaleDensity`, `densityRatio` threading — all gone).
+  - [ ] Every previously scaled site renders its exact ×1 value (field Gap default 16, footer 8/24/12, header/progress/terminal rhythm as today) — untouched canvases pixel-identical.
+  - [ ] Rules rewritten in the same pass: rule 145 (DENSITY-PRESET) deleted, plus any other Density mention — implementer verifies the full list against AGENTS.md.
+- **Constraints / Must Not Do:** Do not change a single rendered pixel — removal only; do not reintroduce per-surface spacing controls in its place (spacing stays fixed internals).
+- **Related AGENTS.md Rule(s):** Rule 145 (to be deleted) plus spacing rules (e.g. Rules 82/123) — implementer to confirm exact numbers.
+- **Additional Context:** None.
 
 ---

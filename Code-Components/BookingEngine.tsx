@@ -373,8 +373,8 @@ function pageLocale(): string | undefined {
 		: undefined;
 }
 
-const DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL = "Confirmation #";
-const DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL = "Reschedule or cancel";
+const DEFAULT_COPY_CONFIRMATION_ID_LABEL = "Confirmation ID";
+const DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL = "Manage";
 const DEFAULT_COPY_PICK_DATE_TO_SEE_TIMES_LABEL = "Pick a date to see times";
 const DEFAULT_COPY_NO_TIMES_FALLBACK_LABEL = "No available times";
 const DEFAULT_COPY_STEP_PROGRESS_TEMPLATE = "{pct}% complete";
@@ -404,10 +404,12 @@ const DEFAULT_DEMO_END_TIME = "17:00";
 const DEFAULT_DEMO_INTERVAL = 30;
 const DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE =
 	"{counter}, {percent}% complete";
-const DEFAULT_COPY_RETURN_HOME_LABEL = "Done";
 const DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL = "Book another";
 const DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL = "Add to Calendar";
-const DEFAULT_CONFIRM_HOME_URL = "/";
+const CALENDAR_MENU_GOOGLE_LABEL = "Google Calendar";
+const CALENDAR_MENU_OFFICE_LABEL = "Microsoft Office";
+const CALENDAR_MENU_OUTLOOK_LABEL = "Microsoft Outlook";
+const CALENDAR_MENU_OTHER_LABEL = "Other";
 const DEFAULT_FONT_FAMILY = "Inter, system-ui, sans-serif";
 const DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL = "Cancel";
 const DEFAULT_ARIA_CHOICE_GROUP_LABEL = "Choice group";
@@ -745,6 +747,16 @@ function normalizeStyleOverrides(
 		if (fs[key] === "") {
 			out ??= { ...fs };
 			delete out[key];
+		}
+	}
+	const nestedSelected = (fs as Record<string, unknown>).selected;
+	if (typeof nestedSelected === "object" && nestedSelected !== null) {
+		const normalized = normalizeStyleOverrides(
+			nestedSelected as FieldStyleOverrides,
+		);
+		if (normalized !== nestedSelected) {
+			out ??= { ...fs };
+			out.selected = normalized;
 		}
 	}
 	return out ?? fs;
@@ -1114,6 +1126,13 @@ interface ChoiceGroupInlineProps {
 	selectedBackgroundColor?: string;
 	selectedTextColor?: string;
 	selectedBorderColor?: string;
+	selectedBorderWidth?: number;
+	selectedBorderStyle?: string;
+	selectedRadius?: number | string;
+	selectedPaddingY?: number;
+	selectedPaddingX?: number;
+	selectedFont?: FramerFont;
+	selectedShadow?: string;
 	optionHoverBorderColor?: string;
 	optionBorderWidth?: number;
 	optionRadius?: number | string;
@@ -1197,6 +1216,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		selectedBackgroundColor,
 		selectedTextColor: selectedTextColorOverride,
 		selectedBorderColor,
+		selectedBorderWidth,
+		selectedBorderStyle,
+		selectedRadius,
+		selectedPaddingY,
+		selectedPaddingX,
+		selectedFont,
+		selectedShadow,
 		optionHoverBorderColor,
 		optionBorderWidth,
 		optionRadius,
@@ -1341,6 +1367,17 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 	const selectedRing = selectedBorderColor ?? accentColor;
 	const hoverRing = optionHoverBorderColor ?? selectedRing;
 	const optionBorder = optionBorderWidth ?? 1;
+	// SELECTED-STYLES (BE-024): full-vocabulary overrides apply to the
+	// selected option only; unset keys keep the option's own look.
+	const selectedFontExtraStyle: React.CSSProperties = {
+		...(selectedFont?.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
+		...(selectedFont?.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
+		...(selectedFont?.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
+		...(selectedFont?.letterSpacing != null
+			? { letterSpacing: selectedFont.letterSpacing }
+			: {}),
+		...(selectedFont?.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
+	};
 	const compact = measuredWidth < COMPACT_BREAKPOINT;
 	const effectiveFontSize =
 		optionFont?.fontSize != null
@@ -1432,6 +1469,32 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 		? parsedOptions.findIndex((o) => optionValue(o) === selected)
 		: -1;
 
+	const selectedStyleOverride: React.CSSProperties = {
+		...(selectedRadius != null ? { borderRadius: selectedRadius } : {}),
+		...(selectedPaddingY != null || selectedPaddingX != null
+			? {
+				padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
+			}
+			: {}),
+		...(selectedBorderWidth != null
+			? {
+				border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
+			}
+			: {}),
+		...(selectedFont?.fontSize != null
+			? { fontSize: fontPixelSize(selectedFont.fontSize) ?? effectiveFontSize }
+			: {}),
+		...selectedFontExtraStyle,
+		...(!isNoShadowValue(selectedShadow) && selectedShadow
+			? {
+				boxShadow: [
+					`inset 0 0 0 1px ${selectedRing}`,
+					selectedShadow,
+				].join(", "),
+			}
+			: {}),
+	};
+
 	const renderOptionButton = (
 		option: ChoiceOption,
 		index: number,
@@ -1498,6 +1561,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(
 						? "none"
 						: "border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease",
 					...extraStyle,
+					...(isSelected ? selectedStyleOverride : {}),
 				}}
 			>
 				{variant === "radio" ? (
@@ -4476,6 +4540,7 @@ interface FieldStyleOverrides {
 	selectedBackgroundColor?: string;
 	selectedTextColor?: string;
 	selectedBorderColor?: string;
+	selected?: FieldStyleOverrides;
 	accentColor?: string;
 	checkSize?: number;
 	shadow?: string;
@@ -4497,6 +4562,7 @@ interface FieldConfig {
 	width: "full" | "half";
 	isPrimaryName?: boolean;
 	calFieldId?: string;
+	checkSize?: number;
 	validationRule?:
 	| "type"
 	| "none"
@@ -4598,6 +4664,13 @@ interface BookingEngineCopyProps {
 		primaryButtonStyles?: ButtonStyleGroup;
 		secondaryButtonStyles?: ButtonStyleGroup;
 		calendarLinkStyles?: ButtonStyleGroup;
+		buttonTexts?: {
+			continueLabel?: string;
+			backLabel?: string;
+			finalActionLabel?: string;
+			cancelSubmitLabel?: string;
+			retryLabel?: string;
+		};
 		continueButton?: ButtonStyleGroup;
 		backButton?: ButtonStyleGroup;
 		finalActionButton?: ButtonStyleGroup;
@@ -4616,14 +4689,8 @@ interface BookingEngineCopyProps {
 		groupedNavAlignment?: "left" | "center" | "right";
 		buttonOrder?: "backFirst" | "primaryFirst";
 		buttonWidth?: "fit" | "fill";
-		doneButton?: ButtonStyleGroup;
 		bookAnotherButton?: ButtonStyleGroup;
 		addToCalendarButton?: ButtonStyleGroup;
-		googleCalendarButton?: ButtonStyleGroup;
-		outlookCalendarButton?: ButtonStyleGroup;
-		doneLabel?: string;
-		bookAnotherLabel?: string;
-		addToCalendarLabel?: string;
 		retryButton?: ButtonStyleGroup;
 	};
 	copy: {
@@ -4635,9 +4702,6 @@ interface BookingEngineCopyProps {
 		icsSummaryLabel: string;
 		stepCounterTemplate: string;
 		timeFormatLabel: string;
-		googleCalendarLabel?: string;
-		outlookCalendarLabel?: string;
-		confirmationNumberLabel: string;
 		rescheduleOrCancelLabel: string;
 		stepProgressLabel: string;
 		stepAnnouncementTemplate: string;
@@ -6760,7 +6824,7 @@ function effectiveMaxLength(
 }
 
 function buildCalendarDeepLink(
-	provider: "google" | "outlook",
+	provider: "google" | "office" | "outlook",
 	slot: BookingPayload,
 	summary: string,
 	description?: string,
@@ -6784,7 +6848,9 @@ function buildCalendarDeepLink(
 	if (provider === "google") {
 		return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${toCompact(start)}/${toCompact(end)}&details=${details}`;
 	}
-	return `https://outlook.live.com/calendar/0/action/compose?subject=${text}&startdt=${toExtended(start)}&enddt=${toExtended(end)}&body=${details}`;
+	const host =
+		provider === "office" ? "outlook.office.com" : "outlook.live.com";
+	return `https://${host}/calendar/0/action/compose?subject=${text}&startdt=${toExtended(start)}&enddt=${toExtended(end)}&body=${details}`;
 }
 
 // @framerDisableUnlink prevents unlinking the component (annotations on
@@ -7177,31 +7243,29 @@ function useBookingEngineState(
 	const buttonWidthValue =
 		layoutSrc.buttonWidth ?? buttonLabels.buttonWidth;
 	const bl = buttonLabels ?? {};
-	const continueLabel = resolveButtonText(bl.continueButton?.text, bl.continueLabel, "Continue");
-	const backLabel = resolveButtonText(bl.backButton?.text, bl.backLabel, "Back");
-	const finalActionLabel = resolveButtonText(bl.finalActionButton?.text, bl.finalActionLabel, "Book Now");
-	const doneLabel = resolveButtonText(bl.doneButton?.text, bl.doneLabel, DEFAULT_COPY_RETURN_HOME_LABEL);
-	const bookAnotherLabel = resolveButtonText(
-		bl.bookAnotherButton?.text,
-		bl.bookAnotherLabel,
-		DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL,
+	const buttonTexts = bl.buttonTexts ?? {};
+	const continueLabel = resolveButtonText(
+		buttonTexts.continueLabel,
+		bl.continueButton?.text,
+		bl.continueLabel,
+		"Continue",
 	);
-	const addToCalendarButtonLabel = resolveButtonText(
-		bl.addToCalendarButton?.text,
-		bl.addToCalendarLabel,
-		DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL,
+	const backLabel = resolveButtonText(
+		buttonTexts.backLabel,
+		bl.backButton?.text,
+		bl.backLabel,
+		"Back",
 	);
-	const googleCalendarButtonLabel = resolveButtonText(
-		bl.googleCalendarButton?.text,
-		copy?.googleCalendarLabel,
-		"Add to Google Calendar",
+	const finalActionLabel = resolveButtonText(
+		buttonTexts.finalActionLabel,
+		bl.finalActionButton?.text,
+		bl.finalActionLabel,
+		"Book Now",
 	);
-	const outlookCalendarButtonLabel = resolveButtonText(
-		bl.outlookCalendarButton?.text,
-		copy?.outlookCalendarLabel,
-		"Add to Outlook",
-	);
+	const bookAnotherLabel = DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL;
+	const addToCalendarButtonLabel = DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL;
 	const retryLabel = resolveButtonText(
+		buttonTexts.retryLabel,
 		bl.retryButton?.text,
 		copy?.retryLabel,
 		DEFAULT_COPY_RETRY_LABEL,
@@ -8723,11 +8787,8 @@ function useBookingEngineState(
 		values,
 		valuesRef,
 		visibleMonth,
-		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		googleCalendarButtonLabel,
-		outlookCalendarButtonLabel,
 		retryLabel,
 		errorCopy,
 		calApiBaseUrl,
@@ -8830,11 +8891,8 @@ export default function BookingEngine(props: BookingEngineProps) {
 		touched,
 		values,
 		visibleMonth,
-		doneLabel,
 		bookAnotherLabel,
 		addToCalendarButtonLabel,
-		googleCalendarButtonLabel,
-		outlookCalendarButtonLabel,
 		retryLabel,
 		errorCopy,
 		meetingDurationMs,
@@ -8844,6 +8902,7 @@ export default function BookingEngine(props: BookingEngineProps) {
 	} = useBookingEngineState(props, engineRootRef);
 
 	const cancelSubmitLabel = resolveButtonText(
+		buttonLabels?.buttonTexts?.cancelSubmitLabel,
 		buttonLabels?.cancelButton?.text,
 		buttonLabels?.cancelSubmitLabel,
 		DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
@@ -8896,12 +8955,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 		accentOutlineRole,
 		borderRadius,
 	);
-	const doneButtonGroup = mergeButtonStyleGroups(secondarySharedSet, blGroups.doneButton);
-	const doneButtonStyle = resolveButtonStyle(
-		doneButtonGroup,
-		{ ...ghostButtonRole, color: theme.textSecondaryColor },
-		borderRadius,
-	);
 	const bookAnotherButtonGroup = mergeButtonStyleGroups(
 		primarySharedSet,
 		blGroups.bookAnotherButton,
@@ -8920,24 +8973,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 	const rescheduleLinkButtonStyle = resolveButtonStyle(
 		secondarySharedSet,
 		{ ...ghostButtonRole, color: theme.textSecondaryColor },
-		borderRadius,
-	);
-	const googleCalendarButtonGroup = mergeButtonStyleGroups(
-		calendarLinkSharedSet,
-		blGroups.googleCalendarButton,
-	);
-	const googleCalendarButtonStyle = resolveButtonStyle(
-		googleCalendarButtonGroup,
-		accentOutlineRole,
-		borderRadius,
-	);
-	const outlookCalendarButtonGroup = mergeButtonStyleGroups(
-		calendarLinkSharedSet,
-		blGroups.outlookCalendarButton,
-	);
-	const outlookCalendarButtonStyle = resolveButtonStyle(
-		outlookCalendarButtonGroup,
-		accentOutlineRole,
 		borderRadius,
 	);
 	const slotPrimarySurface =
@@ -9119,29 +9154,18 @@ export default function BookingEngine(props: BookingEngineProps) {
 					bodySubtitleLineHeight={bodySubtitleLineHeight}
 					addToCalendarLabel={addToCalendarButtonLabel}
 					bookAnotherLabel={bookAnotherLabel}
-					doneLabel={doneLabel}
 					addToCalendarStyle={addToCalendarButtonStyle}
 					bookAnotherStyle={bookAnotherButtonStyle}
-					doneStyle={doneButtonStyle}
-					googleCalendarStyle={googleCalendarButtonStyle}
-					outlookCalendarStyle={outlookCalendarButtonStyle}
 					rescheduleLinkStyle={rescheduleLinkButtonStyle}
+					calendarLinkSet={calendarLinkSharedSet}
 					addToCalendarHover={addToCalendarButtonGroup?.hover}
 					addToCalendarPressed={addToCalendarButtonGroup?.pressed}
-					googleCalendarHover={googleCalendarButtonGroup?.hover}
-					googleCalendarPressed={googleCalendarButtonGroup?.pressed}
-					outlookCalendarHover={outlookCalendarButtonGroup?.hover}
-					outlookCalendarPressed={outlookCalendarButtonGroup?.pressed}
-					doneHover={doneButtonGroup?.hover}
-					donePressed={doneButtonGroup?.pressed}
 					bookAnotherHover={bookAnotherButtonGroup?.hover}
 					bookAnotherPressed={bookAnotherButtonGroup?.pressed}
 					animateInteractions={animateIx}
 					timeZone={timeZone}
 					icsSummaryLabel={copy.icsSummaryLabel}
-					googleCalendarLabel={googleCalendarButtonLabel}
-					outlookCalendarLabel={outlookCalendarButtonLabel}
-					confirmationNumberLabel={copy.confirmationNumberLabel}
+					eventTitle={calEventMeta?.title}
 					rescheduleOrCancelLabel={copy.rescheduleOrCancelLabel}
 					notesSelectedTimeLabel={copy.notesSelectedTimeLabel}
 					notesDatePrefix={copy.notesDatePrefix}
@@ -9529,7 +9553,10 @@ export default function BookingEngine(props: BookingEngineProps) {
 				style={{
 					position: "relative",
 					minHeight: 320,
-					overflow: "hidden",
+					// SHADOW-CLIP (BE-026): paint-only clip with a
+					// 24px outer margin — field shadows render whole
+					// while transitioning steps stay bounded.
+					clipPath: "inset(-24px)",
 				}}
 			>
 				{activeSteps.map((step, idx) => {
@@ -10580,8 +10607,15 @@ const SelectFieldControl = React.memo(function SelectFieldControl(
 
 	const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4);
 	const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0;
-	const selectedRowText = fs?.selectedTextColor ?? theme.accentForegroundColor ?? TEXT_ON_ACCENT;
-	const selectedRowSurface = fs?.selectedBackgroundColor ?? theme.accentColor;
+	// SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
+	// keep winning for stored canvases, engine defaults last.
+	const selectedRowText =
+		fs?.selected?.textColor ??
+		fs?.selectedTextColor ??
+		theme.accentForegroundColor ??
+		TEXT_ON_ACCENT;
+	const selectedRowSurface =
+		fs?.selected?.backgroundColor ?? fs?.selectedBackgroundColor ?? theme.accentColor;
 	const optionTextColor = fs?.textColor ?? theme.textPrimaryColor;
 	const hoverRowWash = withAlpha(optionTextColor, 0.06);
 
@@ -10837,6 +10871,32 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		globalFieldStyles,
 		normalizeStyleOverrides(fieldStyleOverrides),
 	);
+	// SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
+	// keep winning for stored canvases, engine defaults last.
+	const fsSelected = normalizeStyleOverrides(fs?.selected);
+	const fsSelectedPaddingAxes = paddingAxesFrom(fsSelected?.padding ?? "");
+	const firstSetColor = (
+		...values: Array<string | undefined>
+	): string | undefined => {
+		for (const value of values) {
+			if (typeof value === "string" && value.trim()) return value;
+		}
+		return undefined;
+	};
+	const fsSelectedBg = firstSetColor(
+		fsSelected?.backgroundColor,
+		fs?.selectedBackgroundColor,
+	);
+	const fsSelectedText = firstSetColor(
+		fsSelected?.textColor,
+		fs?.selectedTextColor,
+	);
+	const fsSelectedBorderColor = firstSetColor(
+		fsSelected?.borderColor,
+		fsSelected?.border?.borderColor,
+		fs?.selectedBorderColor,
+	);
+	const fsSelectedShadow = fsSelected?.shadow;
 	const fsOptionMuted = fs?.textColor
 		? withAlpha(fs.textColor, 0.6)
 		: theme.textSecondaryColor;
@@ -11022,11 +11082,18 @@ const FieldRenderer = React.memo(function FieldRenderer(
 						borderColor={fsBorder.color ?? theme.borderColor}
 						radius={resolveFieldRadius(fs, borderRadius, field.fieldType)}
 						fontSize={fontPixelSize(fs?.font?.fontSize) ?? 14}
-						selectedBackgroundColor={fs?.selectedBackgroundColor}
-						selectedTextColor={fs?.selectedTextColor}
-						selectedBorderColor={fs?.selectedBorderColor}
+						selectedBackgroundColor={fsSelectedBg}
+						selectedTextColor={fsSelectedText}
+						selectedBorderColor={fsSelectedBorderColor}
+						selectedBorderWidth={fsSelected?.border?.borderWidth}
+						selectedBorderStyle={fsSelected?.border?.borderStyle}
+						selectedRadius={fsSelected?.radius}
+						selectedPaddingY={fsSelectedPaddingAxes?.y}
+						selectedPaddingX={fsSelectedPaddingAxes?.x}
+						selectedFont={fsSelected?.font}
+						selectedShadow={fsSelectedShadow}
 						optionHoverBorderColor={
-							fs?.selectedBorderColor ?? fs?.selectedBackgroundColor
+							fsSelectedBorderColor ?? fsSelectedBg
 						}
 						optionBorderWidth={fsAuthorBorderWidth}
 						optionRadius={fsAuthorRadius}
@@ -11053,7 +11120,9 @@ const FieldRenderer = React.memo(function FieldRenderer(
 		case "checkbox": {
 			const checked = Boolean(value);
 			const checkAccent = fs?.accentColor ?? theme.accentColor;
-			const checkSize = fs?.checkSize ?? 18;
+			// CHECK-SIZE (BE-025): field-level control first, legacy
+			// carriers keep winning for stored canvases.
+			const checkSize = field.checkSize ?? fs?.checkSize ?? FIELD_STYLES_CHECK_SIZE;
 			const checkLabelStyle: React.CSSProperties = {
 				fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 14,
 				fontWeight: fs?.labelFont?.fontWeight ?? 400,
@@ -11159,6 +11228,446 @@ const FieldRenderer = React.memo(function FieldRenderer(
 	}
 });
 
+const CALENDAR_MENU_MIN_WIDTH = 224;
+const CALENDAR_MENU_Z_INDEX = SELECT_MENU_Z_INDEX;
+
+interface CalendarExportOption {
+	id: "google" | "office" | "outlook" | "other";
+	label: string;
+	href: string;
+	download?: string;
+}
+
+function CalendarProviderIcon(props: { id: CalendarExportOption["id"] }) {
+	const { id } = props;
+	const common = {
+		width: 20,
+		height: 20,
+		viewBox: "0 0 20 20",
+		"aria-hidden": true,
+		focusable: "false" as const,
+		style: { flexShrink: 0, display: "block" as const },
+	};
+	if (id === "google") {
+		return (
+			<svg {...common}>
+				<rect x="1.5" y="1.5" width="17" height="17" rx="3.5" fill="#1A73E8" />
+				<path d="M1.5 5A3.5 3.5 0 0 1 5 1.5h4v5.5H1.5z" fill="#FBBC04" />
+				<path d="M1.5 13.5h7.5V19H5a3.5 3.5 0 0 1-3.5-3.5z" fill="#34A853" />
+				<path d="M13.5 1.5h2A3.5 3.5 0 0 1 19 5v2h-5.5z" fill="#EA4335" />
+				<text
+					x="10"
+					y="13.5"
+					textAnchor="middle"
+					fontSize="7.5"
+					fontWeight="700"
+					fill="#FFFFFF"
+					fontFamily="Arial, sans-serif"
+				>
+					31
+				</text>
+			</svg>
+		);
+	}
+	if (id === "office") {
+		return (
+			<svg {...common}>
+				<path
+					d="M2.5 4.2a1.2 1.2 0 0 1 1.7-1.08l11 3.55a1.2 1.2 0 0 1 .3 2.13l-11 5.6A1.2 1.2 0 0 1 2.5 13.3z"
+					fill="#D83B01"
+				/>
+				<rect x="2.5" y="13.6" width="3" height="3.9" rx="0.4" fill="#D83B01" />
+			</svg>
+		);
+	}
+	if (id === "outlook") {
+		return (
+			<svg {...common}>
+				<rect x="1.5" y="1.5" width="17" height="17" rx="3.5" fill="#0F6CBD" />
+				<path
+					d="M5 6.5h7.5v7H5z"
+					fill="#FFFFFF"
+					opacity="0.9"
+				/>
+				<path d="M5 6.5l3.75 2.8L12.5 6.5z" fill="#0F6CBD" />
+				<rect x="12" y="5.5" width="4.5" height="9" rx="0.6" fill="#FFFFFF" />
+				<circle cx="14.25" cy="10" r="1.4" fill="#0F6CBD" />
+			</svg>
+		);
+	}
+	return (
+		<svg {...common}>
+			<rect
+				x="2"
+				y="4.5"
+				width="16"
+				height="13.5"
+				rx="2"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.6"
+			/>
+			<path
+				d="M2 8.25h16M6.5 3v3M13.5 3v3"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+			/>
+			<path
+				d="M10 10.2v4.6M8.1 13l1.9 1.9 1.9-1.9"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				fill="none"
+			/>
+		</svg>
+	);
+}
+
+interface CalendarExportMenuProps {
+	triggerLabel: string;
+	triggerStyle: React.CSSProperties;
+	triggerHover?: ButtonInteractionState;
+	triggerPressed?: ButtonInteractionState;
+	animateInteractions: boolean;
+	options: CalendarExportOption[];
+	calendarLinkSet: ButtonStyleGroup | undefined;
+	surfaceColor: string;
+	textPrimaryColor: string;
+	textSecondaryColor: string;
+	borderColor: string;
+	borderRadius: string | number;
+	reducedMotion: boolean;
+}
+
+const CalendarExportMenu = React.memo(function CalendarExportMenu(
+	props: CalendarExportMenuProps,
+) {
+	const {
+		triggerLabel,
+		triggerStyle,
+		triggerHover,
+		triggerPressed,
+		animateInteractions,
+		options,
+		calendarLinkSet,
+		surfaceColor,
+		textPrimaryColor,
+		textSecondaryColor,
+		borderColor,
+		borderRadius,
+		reducedMotion,
+	} = props;
+
+	const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+	const menuRef = React.useRef<HTMLDivElement | null>(null);
+	const itemRefs = React.useRef<Array<HTMLAnchorElement | null>>([]);
+	const [open, setOpen] = React.useState(false);
+	const [activeIndex, setActiveIndex] = React.useState(0);
+	const [menuRect, setMenuRect] = React.useState<{
+		left: number;
+		top: number;
+	} | null>(null);
+	const ix = useButtonInteraction();
+
+	const computePlacement = React.useCallback(() => {
+		const el = triggerRef.current;
+		if (!el || typeof window === "undefined") return null;
+		const r = el.getBoundingClientRect();
+		const viewportW = window.innerWidth || 0;
+		const viewportH = window.innerHeight || 0;
+		const width = Math.max(r.width, CALENDAR_MENU_MIN_WIDTH);
+		const left = Math.min(
+			Math.max(8, r.left),
+			Math.max(8, viewportW - width - 8),
+		);
+		const est = options.length * 44 + 8;
+		const spaceBelow = viewportH - r.bottom - 8;
+		const openBelow = spaceBelow >= est || spaceBelow >= r.top - 8;
+		const top = openBelow ? r.bottom + 4 : Math.max(8, r.top - est - 4);
+		return { left, top };
+	}, [options.length]);
+
+	const updatePlacement = React.useCallback(() => {
+		const next = computePlacement();
+		if (!next) return;
+		setMenuRect((prev) =>
+			prev && prev.left === next.left && prev.top === next.top
+				? prev
+				: next,
+		);
+	}, [computePlacement]);
+
+	const closeMenu = React.useCallback((refocus: boolean) => {
+		setOpen(false);
+		if (refocus) {
+			requestAnimationFrame(() => {
+				triggerRef.current?.focus();
+			});
+		}
+	}, []);
+
+	const openMenu = React.useCallback(
+		(focus?: "start" | "end") => {
+			const placement = computePlacement();
+			if (!placement) return;
+			setMenuRect(placement);
+			setActiveIndex(
+				focus === "end"
+					? Math.max(0, options.length - 1)
+					: 0,
+			);
+			setOpen(true);
+		},
+		[computePlacement, options.length],
+	);
+
+	React.useEffect(() => {
+		if (!open) return;
+		if (typeof document === "undefined") return;
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as Node | null;
+			if (!target) return;
+			if (triggerRef.current?.contains(target)) return;
+			if (menuRef.current?.contains(target)) return;
+			setOpen(false);
+		};
+		document.addEventListener("pointerdown", onPointerDown);
+		return () => document.removeEventListener("pointerdown", onPointerDown);
+	}, [open]);
+
+	React.useEffect(() => {
+		if (!open) return;
+		if (typeof window === "undefined") return;
+		let raf = 0;
+		const reposition = () => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(() => {
+				updatePlacement();
+			});
+		};
+		window.addEventListener("scroll", reposition, true);
+		window.addEventListener("resize", reposition);
+		return () => {
+			cancelAnimationFrame(raf);
+			window.removeEventListener("scroll", reposition, true);
+			window.removeEventListener("resize", reposition);
+		};
+	}, [open, updatePlacement]);
+
+	const focusItem = (index: number) => {
+		const count = options.length;
+		if (count === 0) return;
+		const next = index < 0 ? count - 1 : index >= count ? 0 : index;
+		setActiveIndex(next);
+		itemRefs.current[next]?.focus();
+	};
+
+	const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+		switch (event.key) {
+			case "Escape":
+				if (open) {
+					event.preventDefault();
+					closeMenu(false);
+				}
+				return;
+			case " ":
+			case "Enter":
+				event.preventDefault();
+				if (open) closeMenu(false);
+				else openMenu();
+				return;
+			case "ArrowDown":
+				event.preventDefault();
+				if (!open) openMenu("start");
+				else focusItem(activeIndex + 1);
+				return;
+			case "ArrowUp":
+				event.preventDefault();
+				if (!open) openMenu("end");
+				else focusItem(activeIndex - 1);
+				return;
+			case "Home":
+				if (open) {
+					event.preventDefault();
+					focusItem(0);
+				}
+				return;
+			case "End":
+				if (open) {
+					event.preventDefault();
+					focusItem(options.length - 1);
+				}
+				return;
+			default:
+				return;
+		}
+	};
+
+	const menuRowRadius = Math.max(0, parseRadiusNumber(borderRadius) - 4);
+	const optionTextColor = calendarLinkSet?.textColor ?? textPrimaryColor;
+	const hoverRowWash = withAlpha(optionTextColor, 0.06);
+
+	const menuSurfaceStyle: React.CSSProperties = {
+		position: "fixed",
+		left: menuRect?.left,
+		top: menuRect?.top,
+		minWidth: CALENDAR_MENU_MIN_WIDTH,
+		margin: 0,
+		padding: 4,
+		boxSizing: "border-box",
+		zIndex: CALENDAR_MENU_Z_INDEX,
+		background: surfaceColor,
+		border: `1px solid ${
+			calendarLinkSet?.border?.borderColor ?? borderColor
+		}`,
+		borderRadius: borderRadius,
+		...shadowStyle(calendarLinkSet?.shadow),
+	};
+
+	return (
+		<div style={{ position: "relative", display: "inline-flex" }}>
+			<button
+				ref={triggerRef}
+				type="button"
+				aria-haspopup="menu"
+				aria-expanded={open}
+				{...ix.bind}
+				onClick={() => {
+					if (open) closeMenu(false);
+					else openMenu();
+				}}
+				onKeyDown={handleTriggerKeyDown}
+				style={{
+					minHeight: TOUCH_TARGET_MIN,
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 8,
+					...applyButtonInteraction(
+						triggerStyle,
+						triggerHover,
+						triggerPressed,
+						ix,
+						animateInteractions,
+					),
+					cursor: "pointer",
+				}}
+			>
+				{triggerLabel}
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 16 16"
+					fill="none"
+					aria-hidden="true"
+					style={{
+						transform: open ? "rotate(180deg)" : "none",
+						transition: reducedMotion
+							? "none"
+							: "transform 0.15s ease",
+					}}
+				>
+					<path
+						d="M4 6L8 10L12 6"
+						stroke={
+							typeof triggerStyle.color === "string"
+								? triggerStyle.color
+								: textSecondaryColor
+						}
+						strokeWidth="1.5"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</svg>
+			</button>
+			{open && menuRect && typeof document !== "undefined"
+				? (ReactDOM.createPortal(
+					<div
+						ref={menuRef}
+						role="menu"
+						aria-label={triggerLabel}
+						style={menuSurfaceStyle}
+						onKeyDown={(event) => {
+							if (event.key === "Escape") {
+								event.preventDefault();
+								closeMenu(true);
+							} else if (event.key === "ArrowDown") {
+								event.preventDefault();
+								focusItem(activeIndex + 1);
+							} else if (event.key === "ArrowUp") {
+								event.preventDefault();
+								focusItem(activeIndex - 1);
+							} else if (event.key === "Home") {
+								event.preventDefault();
+								focusItem(0);
+							} else if (event.key === "End") {
+								event.preventDefault();
+								focusItem(options.length - 1);
+							} else if (event.key === "Tab") {
+								closeMenu(false);
+							}
+						}}
+					>
+						{options.map((option, index) => {
+							const isActiveRow = index === activeIndex;
+							return (
+								<a
+									key={option.id}
+									ref={(node) => {
+										itemRefs.current[index] = node;
+									}}
+									role="menuitem"
+									href={option.href}
+									target={option.id === "other" ? undefined : "_blank"}
+									rel={option.id === "other" ? undefined : "noopener noreferrer"}
+									download={option.download}
+									onClick={() => {
+										setOpen(false);
+									}}
+									onMouseEnter={() => setActiveIndex(index)}
+									onFocus={() => setActiveIndex(index)}
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 10,
+										padding: "10px 14px",
+										borderRadius: menuRowRadius,
+										color: optionTextColor,
+										textDecoration: "none",
+										cursor: "pointer",
+										background: isActiveRow
+											? hoverRowWash
+											: "transparent",
+										transition: reducedMotion
+											? "none"
+											: "background-color 0.12s ease",
+										touchAction: "manipulation",
+										userSelect: "none",
+										WebkitUserSelect: "none",
+										WebkitTapHighlightColor: "transparent",
+										fontFamily:
+											calendarLinkSet?.font?.fontFamily ?? "inherit",
+										fontSize:
+											fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
+										...(calendarLinkSet?.font?.fontWeight != null
+											? { fontWeight: calendarLinkSet.font.fontWeight }
+											: {}),
+									}}
+								>
+									<CalendarProviderIcon id={option.id} />
+									<span>{option.label}</span>
+								</a>
+									);
+						})}
+					</div>,
+					document.body,
+				) as unknown as React.ReactNode)
+				: null}
+		</div>
+	);
+});
+
 const SuccessScreen = React.memo(function SuccessScreen(props: {
 	steps: NormalizedStep[];
 	values: BookingValues;
@@ -11182,21 +11691,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	densityRatio: number;
 	addToCalendarLabel: string;
 	bookAnotherLabel: string;
-	doneLabel: string;
 	addToCalendarStyle: React.CSSProperties;
 	bookAnotherStyle: React.CSSProperties;
-	doneStyle: React.CSSProperties;
-	googleCalendarStyle: React.CSSProperties;
-	outlookCalendarStyle: React.CSSProperties;
 	rescheduleLinkStyle: React.CSSProperties;
+	calendarLinkSet: ButtonStyleGroup | undefined;
 	addToCalendarHover?: ButtonInteractionState;
 	addToCalendarPressed?: ButtonInteractionState;
-	googleCalendarHover?: ButtonInteractionState;
-	googleCalendarPressed?: ButtonInteractionState;
-	outlookCalendarHover?: ButtonInteractionState;
-	outlookCalendarPressed?: ButtonInteractionState;
-	doneHover?: ButtonInteractionState;
-	donePressed?: ButtonInteractionState;
 	bookAnotherHover?: ButtonInteractionState;
 	bookAnotherPressed?: ButtonInteractionState;
 	animateInteractions: boolean;
@@ -11204,9 +11704,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	baseTransition: Transition;
 	timeZone: string;
 	icsSummaryLabel: string;
-	googleCalendarLabel: string;
-	outlookCalendarLabel: string;
-	confirmationNumberLabel: string;
+	eventTitle?: string;
 	rescheduleOrCancelLabel: string;
 	notesSelectedTimeLabel: string;
 	notesDatePrefix: string;
@@ -11237,21 +11735,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		bodySubtitleLineHeight,
 		addToCalendarLabel,
 		bookAnotherLabel,
-		doneLabel,
 		addToCalendarStyle,
 		bookAnotherStyle,
-		doneStyle,
-		googleCalendarStyle,
-		outlookCalendarStyle,
 		rescheduleLinkStyle,
+		calendarLinkSet,
 		addToCalendarHover,
 		addToCalendarPressed,
-		googleCalendarHover,
-		googleCalendarPressed,
-		outlookCalendarHover,
-		outlookCalendarPressed,
-		doneHover,
-		donePressed,
 		bookAnotherHover,
 		bookAnotherPressed,
 		animateInteractions,
@@ -11259,9 +11748,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		baseTransition,
 		timeZone,
 		icsSummaryLabel,
-		googleCalendarLabel,
-		outlookCalendarLabel,
-		confirmationNumberLabel,
+		eventTitle,
 		rescheduleOrCancelLabel,
 		notesSelectedTimeLabel,
 		notesDatePrefix,
@@ -11274,10 +11761,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 	React.useEffect(() => {
 		headingRef.current?.focus();
 	}, []);
-	const icsIx = useButtonInteraction();
-	const googleIx = useButtonInteraction();
-	const outlookIx = useButtonInteraction();
-	const doneIx = useButtonInteraction();
 	const bookAnotherIx = useButtonInteraction();
 
 	const isStaticRender = useIsStaticRenderer();
@@ -11345,20 +11828,48 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						day: "numeric",
 					}).format(slot.date);
 				}
-				list.push({ label: DEFAULT_COPY_DATE_LABEL, value: dateStr });
+				list.push({ id: "__be_date", label: DEFAULT_COPY_DATE_LABEL, value: dateStr });
 				list.push({
+					id: "__be_time",
 					label: DEFAULT_COPY_TIME_LABEL,
 					value: slot.timeLabel,
 				});
 			}
-			if (bookingResult?.uid) {
-				list.push({
-					label: confirmationNumberLabel,
+			const confirmationEntry = bookingResult?.uid
+				? {
+					id: "__be_confirmation",
+					label: DEFAULT_COPY_CONFIRMATION_ID_LABEL,
 					value: bookingResult.uid,
-				});
-			}
-			return list;
-		}, [steps, values, timeZone, bookingResult?.uid, confirmationNumberLabel]);
+				}
+				: undefined;
+			// SUCCESS-ORDER (BE-034): Name, Email, Date, Time lead;
+			// remaining values keep entry order; Confirmation ID stays last.
+			const nameField = findNameField(steps);
+			const emailField = findEmailField(steps);
+			const nameEntry = nameField?.id
+				? list.find((entry) => entry.id === nameField.id)
+				: undefined;
+			const emailEntry =
+				emailField?.id && emailField.id !== nameField?.id
+					? list.find((entry) => entry.id === emailField.id)
+					: undefined;
+			const dateEntry = list.find((entry) => entry.id === "__be_date");
+			const timeEntry = list.find((entry) => entry.id === "__be_time");
+			const lead = [nameEntry, emailEntry, dateEntry, timeEntry].filter(
+				(entry): entry is { id?: string; label: string; value: string } =>
+					Boolean(entry),
+			);
+			const rest = list.filter(
+				(entry) =>
+					entry !== nameEntry &&
+					entry !== emailEntry &&
+					entry !== dateEntry &&
+					entry !== timeEntry,
+			);
+			return confirmationEntry
+				? [...lead, ...rest, confirmationEntry]
+				: [...lead, ...rest];
+		}, [steps, values, timeZone, bookingResult?.uid]);
 
 	const icsDescription = React.useMemo(() => {
 		const raw = buildNotesPayload(
@@ -11373,13 +11884,24 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		return cut > 0 ? raw.slice(0, cut).trim() : raw;
 	}, [steps, values, notesSelectedTimeLabel, notesDatePrefix, notesTimePrefix, timeZone]);
 
+	// EXPORT-TITLE (BE-030): "<event title> <summary suffix>" — the
+	// author summary label stays the suffix; missing title keeps today's
+	// summary/fallback behavior.
+	const calendarExportTitle = React.useMemo(() => {
+		const suffix =
+			(icsSummaryLabel && icsSummaryLabel.trim()) ||
+			DEFAULT_COPY_ICS_SUMMARY_FALLBACK;
+		const title = eventTitle?.trim();
+		return title ? `${title} ${suffix}` : suffix;
+	}, [eventTitle, icsSummaryLabel]);
+
 	const icsUri = React.useMemo(
 		() =>
 			values[SELECTED_SLOT_KEY]
 				? buildIcsDataUri(
 					values[SELECTED_SLOT_KEY],
 					icsDescription || undefined,
-					icsSummaryLabel,
+					calendarExportTitle,
 					undefined,
 					undefined,
 					meetingDurationMs,
@@ -11390,7 +11912,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 		[
 			values,
 			icsDescription,
-			icsSummaryLabel,
+			calendarExportTitle,
 			meetingDurationMs,
 			icsLocationLabel,
 			bookingResult,
@@ -11407,7 +11929,17 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			? buildCalendarDeepLink(
 				"google",
 				slot,
-				icsSummaryLabel,
+				calendarExportTitle,
+				icsDescription || undefined,
+				meetingDurationMs,
+			)
+			: "";
+	const officeCalUri =
+		hasIsoSlotTime && slot
+			? buildCalendarDeepLink(
+				"office",
+				slot,
+				calendarExportTitle,
 				icsDescription || undefined,
 				meetingDurationMs,
 			)
@@ -11417,7 +11949,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 			? buildCalendarDeepLink(
 				"outlook",
 				slot,
-				icsSummaryLabel,
+				calendarExportTitle,
 				icsDescription || undefined,
 				meetingDurationMs,
 			)
@@ -11589,75 +12121,55 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 				}}
 			>
 				{icsUri ? (
-					<a
-						href={icsUri}
-						download={DEFAULT_ICS_FILENAME}
-						{...icsIx.bind}
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							minHeight: TOUCH_TARGET_MIN,
-							...applyButtonInteraction(
-								addToCalendarStyle,
-								addToCalendarHover,
-								addToCalendarPressed,
-								icsIx,
-								animateInteractions,
-							),
-							textDecoration: "none",
-							cursor: "pointer",
-						}}
-					>
-						{addToCalendarLabel}
-					</a>
-				) : null}
-				{googleCalUri ? (
-					<a
-						href={googleCalUri}
-						target="_blank"
-						rel="noopener noreferrer"
-						{...googleIx.bind}
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							minHeight: TOUCH_TARGET_MIN,
-							...applyButtonInteraction(
-								googleCalendarStyle,
-								googleCalendarHover,
-								googleCalendarPressed,
-								googleIx,
-								animateInteractions,
-							),
-							textDecoration: "none",
-							cursor: "pointer",
-						}}
-					>
-						{googleCalendarLabel}
-					</a>
-				) : null}
-				{outlookCalUri ? (
-					<a
-						href={outlookCalUri}
-						target="_blank"
-						rel="noopener noreferrer"
-						{...outlookIx.bind}
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							minHeight: TOUCH_TARGET_MIN,
-							...applyButtonInteraction(
-								outlookCalendarStyle,
-								outlookCalendarHover,
-								outlookCalendarPressed,
-								outlookIx,
-								animateInteractions,
-							),
-							textDecoration: "none",
-							cursor: "pointer",
-						}}
-					>
-						{outlookCalendarLabel}
-					</a>
+					<CalendarExportMenu
+						triggerLabel={addToCalendarLabel}
+						triggerStyle={addToCalendarStyle}
+						triggerHover={addToCalendarHover}
+						triggerPressed={addToCalendarPressed}
+						animateInteractions={animateInteractions}
+						options={[
+							...(googleCalUri
+								? [
+									{
+										id: "google" as const,
+										label: CALENDAR_MENU_GOOGLE_LABEL,
+										href: googleCalUri,
+									},
+								]
+								: []),
+							...(officeCalUri
+								? [
+									{
+										id: "office" as const,
+										label: CALENDAR_MENU_OFFICE_LABEL,
+										href: officeCalUri,
+									},
+								]
+								: []),
+							...(outlookCalUri
+								? [
+									{
+										id: "outlook" as const,
+										label: CALENDAR_MENU_OUTLOOK_LABEL,
+										href: outlookCalUri,
+									},
+								]
+								: []),
+							{
+								id: "other" as const,
+								label: CALENDAR_MENU_OTHER_LABEL,
+								href: icsUri,
+								download: DEFAULT_ICS_FILENAME,
+							},
+						]}
+						calendarLinkSet={calendarLinkSet}
+						surfaceColor={surfaceColor}
+						textPrimaryColor={textPrimaryColor}
+						textSecondaryColor={textSecondaryColor}
+						borderColor={borderColor}
+						borderRadius={borderRadius}
+						reducedMotion={!!reducedMotion}
+					/>
 				) : null}
 				{bookingResult?.manageUrl ? (
 					<a
@@ -11680,27 +12192,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
 						{rescheduleOrCancelLabel}
 					</a>
 				) : null}
-
-				<a
-					href={DEFAULT_CONFIRM_HOME_URL}
-					{...doneIx.bind}
-					style={{
-						display: "inline-flex",
-						alignItems: "center",
-						minHeight: TOUCH_TARGET_MIN,
-						...applyButtonInteraction(
-							doneStyle,
-							doneHover,
-							donePressed,
-							doneIx,
-							animateInteractions,
-						),
-						textDecoration: "none",
-						cursor: "pointer",
-					}}
-				>
-					{doneLabel}
-				</a>
 				<button
 					type="button"
 					onClick={onRestart}
@@ -12044,17 +12535,42 @@ function makeInputFieldStylesControls() {
 	};
 }
 
+function makeSelectedStylesControls() {
+	// SELECTED-STYLES (BE-024): one full-vocabulary subgroup for the
+	// selected/active state of choice fields. Colors stay default-free so
+	// they track the live theme tokens (accent / accent foreground).
+	return {
+		font: fieldStylesFontControl("Font", {
+			fontSize: "14px",
+			variant: "Regular",
+		}),
+		textColor: fieldStylesColorControl("Color"),
+		backgroundColor: fieldStylesColorControl("Fill"),
+		radius: fieldStylesRadiusControl(FIELD_STYLES_FIELD_RADIUS),
+		padding: fieldStylesPaddingControl(FIELD_STYLES_SELECT_PADDING),
+		border: fieldStylesBorderControl({
+			borderWidth: FIELD_STYLES_BORDER_WIDTH,
+			borderStyle: "solid",
+			borderColor: "#0066BB",
+		}),
+		shadow: fieldStylesShadowControl(),
+	};
+}
+
 function makeGlobalFieldStylesControls() {
-	const checkEff = getFieldStylesEffectiveDefaults("checkbox");
 	// STYLES-ORDER: Shadows closes the set (BE-023) — after the
 	// Selected/Check rows, not with the base rows.
 	return {
 		...makeInputFieldStylesControls(),
-		selectedBackgroundColor: fieldStylesColorControl("Selected BG"),
-		selectedTextColor: fieldStylesColorControl("Selected Text"),
-		selectedBorderColor: fieldStylesColorControl("Selected Border"),
+		selected: {
+			type: ControlType.Object,
+			title: "Selected Styles",
+			buttonTitle: "Selected Styles",
+			icon: "effect",
+			optional: true,
+			controls: makeSelectedStylesControls(),
+		},
 		accentColor: fieldStylesColorControl("Check Accent"),
-		checkSize: fieldStylesNumberControl("Check Size", 12, 32, checkEff.minHeight),
 		shadow: fieldStylesShadowControl("Shadows"),
 	};
 }
@@ -12158,15 +12674,6 @@ function makeSharedButtonStylesControls(defaults: {
 			icon: "interaction",
 			optional: true,
 			controls: makeButtonInteractionControls(defaults.borderColor),
-		},
-	};
-}
-function makeButtonTextControls(text: string) {
-	return {
-		text: {
-			type: ControlType.String,
-			title: "Text",
-			defaultValue: text,
 		},
 	};
 }
@@ -12351,11 +12858,12 @@ function useButtonInteraction() {
 }
 
 function resolveButtonText(
-	groupText: string | undefined,
-	legacyLabel: string | undefined,
-	fallback: string,
+	...candidates: Array<string | undefined>
 ): string {
-	return groupText || legacyLabel || fallback;
+	for (const candidate of candidates) {
+		if (candidate) return candidate;
+	}
+	return "";
 }
 
 function makeFieldObjectControls() {
@@ -12484,6 +12992,16 @@ function makeFieldObjectControls() {
 			defaultValue: "full",
 			displaySegmentedControl: true,
 			hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
+		},
+		checkSize: {
+			type: ControlType.Number,
+			title: "Check Size",
+			min: 12,
+			max: 32,
+			step: 1,
+			unit: "px",
+			defaultValue: FIELD_STYLES_CHECK_SIZE,
+			hidden: (p: FieldControlProps) => p?.fieldType !== "checkbox",
 		},
 		calFieldId: {
 			type: ControlType.String,
@@ -12631,8 +13149,8 @@ addPropertyControls(BookingEngine, {
 		controls: {
 			buttonsLayout: {
 				type: ControlType.Object,
-				title: "Buttons Layout",
-				buttonTitle: "Buttons Layout",
+				title: "Layout",
+				buttonTitle: "Layout",
 				icon: "object",
 				controls: {
 					groupNavButtons: {
@@ -12708,88 +13226,45 @@ addPropertyControls(BookingEngine, {
 					borderColor: "#0066BB",
 				}),
 			},
-			continueButton: {
+			// BUTTON-TEXTS (BE-027): one submenu for every editable
+			// label. Hard-coded verdicts (BE-028) are constants, not rows.
+			buttonTexts: {
 				type: ControlType.Object,
-				title: "Continue",
-				buttonTitle: "Continue",
+				title: "Button Texts",
+				buttonTitle: "Button Texts",
 				icon: "object",
 				optional: true,
-				controls: makeButtonTextControls("Continue"),
+				controls: {
+					continueLabel: {
+						type: ControlType.String,
+						title: "Continue",
+						defaultValue: "Continue",
+					},
+					backLabel: {
+						type: ControlType.String,
+						title: "Back",
+						defaultValue: "Back",
+					},
+					finalActionLabel: {
+						type: ControlType.String,
+						title: "Final Action",
+						defaultValue: "Book Now",
+					},
+					cancelSubmitLabel: {
+						type: ControlType.String,
+						title: "Cancel",
+						defaultValue: DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL,
+					},
+					retryLabel: {
+						type: ControlType.String,
+						title: "Retry",
+						defaultValue: DEFAULT_COPY_RETRY_LABEL,
+					},
+				},
 			},
-			backButton: {
-				type: ControlType.Object,
-				title: "Back",
-				buttonTitle: "Back",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls("Back"),
-			},
-			finalActionButton: {
-				type: ControlType.Object,
-				title: "Final Action",
-				buttonTitle: "Final Action",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls("Book Now"),
-			},
-			cancelButton: {
-				type: ControlType.Object,
-				title: "Cancel",
-				buttonTitle: "Cancel",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls(DEFAULT_BUTTON_CANCEL_SUBMIT_LABEL),
-			},
-			doneButton: {
-				type: ControlType.Object,
-				title: "Done",
-				buttonTitle: "Done",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls(DEFAULT_COPY_RETURN_HOME_LABEL),
-			},
-			bookAnotherButton: {
-				type: ControlType.Object,
-				title: "Book Another",
-				buttonTitle: "Book Another",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls(DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL),
-			},
-			addToCalendarButton: {
-				type: ControlType.Object,
-				title: "Add to Calendar",
-				buttonTitle: "Add to Calendar",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls(DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL),
-			},
-			googleCalendarButton: {
-				type: ControlType.Object,
-				title: "Google Calendar",
-				buttonTitle: "Google Calendar",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls("Add to Google Calendar"),
-			},
-			outlookCalendarButton: {
-				type: ControlType.Object,
-				title: "Outlook",
-				buttonTitle: "Outlook",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls("Add to Outlook"),
-			},
-			retryButton: {
-				type: ControlType.Object,
-				title: "Retry",
-				buttonTitle: "Retry",
-				icon: "object",
-				optional: true,
-				controls: makeButtonTextControls(DEFAULT_COPY_RETRY_LABEL),
-			},
-			// HOME-URL-REMOVED: no destination control — "Done" always
-			// navigates to the website root (DEFAULT_CONFIRM_HOME_URL).
+			// BUTTON-GROUPS-REMOVED (BE-027/BE-028): per-button
+			// Text-only groups are gone; stored objects remain
+			// readable as legacy style carriers (rule 142).
 		},
 	},
 
@@ -12996,14 +13471,9 @@ addPropertyControls(BookingEngine, {
 				title: "Time Format Toggle Label",
 				defaultValue: DEFAULT_COPY_TIMEFORMAT_LABEL,
 			},
-			confirmationNumberLabel: {
-				type: ControlType.String,
-				title: "Confirmation Number",
-				defaultValue: DEFAULT_COPY_CONFIRMATION_NUMBER_LABEL,
-			},
 			rescheduleOrCancelLabel: {
 				type: ControlType.String,
-				title: "Reschedule / Cancel Link",
+				title: "Manage Link",
 				defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
 			},
 			stepProgressLabel: {
