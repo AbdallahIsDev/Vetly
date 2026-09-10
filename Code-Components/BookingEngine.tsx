@@ -3,6 +3,7 @@ import {
     AnimatePresence,
     MotionConfig,
     motion,
+    type TargetAndTransition,
     type Transition,
     useReducedMotion,
     type Variants,
@@ -969,7 +970,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         selectedBorderStyle,
     } = props
     const isStaticRender = useIsStaticRenderer()
-    const prefersReducedMotion = useReducedMotion()
+    const prefersReducedMotion = useReducedMotion() ?? false
     const count = options.length
     const selectedIndex = Math.max(
         0,
@@ -995,17 +996,17 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         optionFont?.fontSize != null ? (fontPixelSize(optionFont.fontSize) ?? 13) : 13
     const activeFontStyle: React.CSSProperties = selectedFont
         ? {
-            ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
-            ...(selectedFont.fontSize != null
-                ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
-                : {}),
-            ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
-            ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
-            ...(selectedFont.letterSpacing != null
-                ? { letterSpacing: selectedFont.letterSpacing }
-                : {}),
-            ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
-        }
+              ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
+              ...(selectedFont.fontSize != null
+                  ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
+                  : {}),
+              ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
+              ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
+              ...(selectedFont.letterSpacing != null
+                  ? { letterSpacing: selectedFont.letterSpacing }
+                  : {}),
+              ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
+          }
         : {}
     const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([])
     return (
@@ -1130,7 +1131,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 })
 
 if (typeof window !== "undefined") {
-    ; (window as unknown as Record<string, unknown>).__BE_SEGMENTED_SHARED__ = true
+    ;(window as unknown as Record<string, unknown>).__BE_SEGMENTED_SHARED__ = true
 }
 
 interface OptionImageSource {
@@ -1290,7 +1291,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         fillRow = false,
     } = props
 
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
 
     const rootRef = React.useRef<HTMLDivElement | null>(null)
     const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([])
@@ -1304,7 +1305,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
     const beInteractive = useBeInteractive()
     const [internalSelected, setInternalSelected] = React.useState<string>(() =>
         controlledValue !== undefined &&
-            parsedOptions.some((option) => optionValue(option) === controlledValue)
+        parsedOptions.some((option) => optionValue(option) === controlledValue)
             ? controlledValue
             : getFirstNonEmptyOption(parsedOptions)
     )
@@ -1318,8 +1319,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
             ? parsedOptions.some((option) => optionValue(option) === controlledValue)
                 ? controlledValue
                 : parsedOptions[0]
-                    ? optionValue(parsedOptions[0])
-                    : controlledValue
+                  ? optionValue(parsedOptions[0])
+                  : controlledValue
             : internalSelected
     const formValue = controlledValue !== undefined ? controlledValue : internalSelected
     const tabbableOptionIndex = (() => {
@@ -1524,13 +1525,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...(selectedRadius != null ? { borderRadius: selectedRadius } : {}),
         ...(selectedPaddingY != null || selectedPaddingX != null
             ? {
-                padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
-            }
+                  padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
+              }
             : {}),
         ...(selectedBorderWidth != null
             ? {
-                border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
-            }
+                  border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
+              }
             : {}),
         ...(selectedFont?.fontSize != null
             ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? effectiveFontSize }
@@ -1538,8 +1539,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...selectedFontExtraStyle,
         ...(!isNoShadowValue(selectedShadow) && selectedShadow
             ? {
-                boxShadow: [`inset 0 0 0 1px ${selectedRing}`, selectedShadow].join(", "),
-            }
+                  boxShadow: [`inset 0 0 0 1px ${selectedRing}`, selectedShadow].join(", "),
+              }
             : {}),
     }
 
@@ -1581,14 +1582,15 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                     minHeight: optionMinHeight ?? 23,
                     minWidth: TOUCH_TARGET_MIN,
                     borderRadius: optionRadius ?? radius,
-                    border: `${optionBorder}px solid ${isSelected ? selectedRing : isHovered ? hoverRing : borderColor
-                        }`,
+                    border: `${optionBorder}px solid ${
+                        isSelected ? selectedRing : isHovered ? hoverRing : borderColor
+                    }`,
                     background: isSelected ? selectedSurface : backgroundColor,
                     color: option.disabled
                         ? mutedTextColor
                         : isSelected
-                            ? selectedTextColor
-                            : textColor,
+                          ? selectedTextColor
+                          : textColor,
                     cursor: isSubmitting || option.disabled ? "not-allowed" : "pointer",
                     opacity: isSubmitting || option.disabled ? 0.5 : 1,
                     boxShadow:
@@ -1968,7 +1970,7 @@ const CalendarCell = React.memo(function CalendarCell({
     onHoverChange,
     onFocusChange,
 }: CalendarCellProps) {
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
     return (
         /* biome-ignore lint/a11y/useSemanticElements lint/a11y/useFocusableInteractive: CSS-grid datepicker cell, roving tabindex (rules 63/64); native td cannot do display:grid. */
         <div
@@ -2054,13 +2056,13 @@ const CalendarCell = React.memo(function CalendarCell({
                     background: isSelected
                         ? accentColor
                         : isUnavailable
-                            ? "transparent"
-                            : subtleFill,
+                          ? "transparent"
+                          : subtleFill,
                     color: isSelected
                         ? selectedAccentText
                         : isUnavailable
-                            ? mutedSoftText
-                            : textColor,
+                          ? mutedSoftText
+                          : textColor,
                     cursor: isUnavailable ? "default" : "pointer",
                     fontFamily: tileFont?.fontFamily ?? "inherit",
                     fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
@@ -2309,7 +2311,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
                             fontSize: 16,
                         }}
                     >
-                        <span role="status" aria-live="polite" aria-atomic="true">
+                        <output aria-live="polite" aria-atomic="true">
                             {clockReady ? (
                                 monthName
                             ) : (
@@ -2349,7 +2351,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
                                     />
                                 )}
                             </span>
-                        </span>
+                        </output>
                     </h3>
                 </div>
                 <div
@@ -2564,13 +2566,13 @@ interface TimeSlotListProps {
         minutes: number
     }>
     availableTimes:
-    | Array<{
-        value: string
-        label: string
-        end?: string
-        minutes: number
-    }>
-    | undefined
+        | Array<{
+              value: string
+              label: string
+              end?: string
+              minutes: number
+          }>
+        | undefined
     selectedTime: string | null
     hoveredTime: string | null
     setHoveredTime: (time: string | null) => void
@@ -2634,7 +2636,7 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
         timeZone,
         slotDateLabel,
     } = props
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
     return (
         /* biome-ignore lint/a11y/useSemanticElements: intentional custom radio
            button — a native <input type="radio"> cannot host the styled slot
@@ -2667,8 +2669,8 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
                 color: elapsed
                     ? mutedSoftText
                     : selected
-                        ? selectedText
-                        : withAlpha(textColor, 0.75),
+                      ? selectedText
+                      : withAlpha(textColor, 0.75),
                 fontSize: 14,
                 fontWeight: 600,
                 cursor: elapsed ? "not-allowed" : "pointer",
@@ -2754,12 +2756,12 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
         () =>
             selectedDate
                 ? // TZ-HEADER fix: SR date in the visitor zone too (was
-                getCachedDateTimeFormat(pageLocale(), {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    ...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-                }).format(selectedDate)
+                  getCachedDateTimeFormat(pageLocale(), {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      ...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+                  }).format(selectedDate)
                 : "",
         [selectedDate, timeZone]
     )
@@ -2918,27 +2920,27 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                     style={
                         isNarrow
                             ? {
-                                minWidth: 0,
-                                maxHeight: "40vh",
-                                overflowY: "auto",
-                                overscrollBehavior: "contain",
-                                paddingBottom: 16,
-                            }
+                                  minWidth: 0,
+                                  maxHeight: "40vh",
+                                  overflowY: "auto",
+                                  overscrollBehavior: "contain",
+                                  paddingBottom: 16,
+                              }
                             : {
-                                position: "absolute",
-                                inset: 0,
-                                overflowY: "auto",
-                                minWidth: 0,
-                                paddingBottom: 16,
-                            }
+                                  position: "absolute",
+                                  inset: 0,
+                                  overflowY: "auto",
+                                  minWidth: 0,
+                                  paddingBottom: 16,
+                              }
                     }
                 >
                     {slotsLoading || selectionPending ? (
-                        <div
-                            role="status"
+                        <output
                             aria-live="polite"
                             aria-atomic="true"
                             style={{
+                                display: "block",
                                 padding: "16px 8px",
                                 boxSizing: "border-box",
                             }}
@@ -2975,7 +2977,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                     />
                                 ))}
                             </div>
-                        </div>
+                        </output>
                     ) : !selectedDate && !showTimesWithoutDate ? (
                         <div
                             style={{
@@ -2985,25 +2987,25 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                 fontSize: 13,
                                 fontFamily: "inherit",
                             }}
-                        // W1-10-A14: static guidance, never a live region (rule 103).
+                            // W1-10-A14: static guidance, never a live region (rule 103).
                         >
                             {pickDateToSeeTimesLabel}
                         </div>
                     ) : timeOptions.length === 0 && availableTimes === undefined ? (
-                        <div
+                        <output
                             style={{
+                                display: "block",
                                 padding: "16px 8px",
                                 textAlign: "center",
                                 color: mutedText,
                                 fontSize: 13,
                                 fontFamily: "inherit",
                             }}
-                            role="status"
                             aria-live="polite"
                             aria-atomic="true"
                         >
                             {noTimesFallbackLabel}
-                        </div>
+                        </output>
                     ) : timeOptions.length === 0 ? (
                         <div style={{ padding: "8px 0" }} />
                     ) : (
@@ -3060,9 +3062,9 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                 if (!buttons.length) return
                                 const idx = selectedTime
                                     ? Math.max(
-                                        0,
-                                        timeOptions.findIndex((t) => t.value === selectedTime)
-                                    )
+                                          0,
+                                          timeOptions.findIndex((t) => t.value === selectedTime)
+                                      )
                                     : 0
                                 const move =
                                     e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1
@@ -3520,14 +3522,14 @@ function useTimeGrid(options: UseTimeGridOptions): {
             const slotMoment = time.value.includes("T")
                 ? new Date(time.value)
                 : (() => {
-                    const d = new Date(
-                        selectedDate.getFullYear(),
-                        selectedDate.getMonth(),
-                        selectedDate.getDate()
-                    )
-                    d.setMinutes(time.minutes)
-                    return d
-                })()
+                      const d = new Date(
+                          selectedDate.getFullYear(),
+                          selectedDate.getMonth(),
+                          selectedDate.getDate()
+                      )
+                      d.setMinutes(time.minutes)
+                      return d
+                  })()
             return slotMoment.getTime() <= now.getTime()
         },
         [selectedDate, today, now]
@@ -3575,8 +3577,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
         typeof meta.durationMinutes === "number" && meta.durationMinutes > 0
             ? meta.durationMinutes
             : typeof fallbackDurationMinutes === "number" && fallbackDurationMinutes > 0
-                ? fallbackDurationMinutes
-                : undefined
+              ? fallbackDurationMinutes
+              : undefined
     const initial = meta.organizerName?.trim().charAt(0).toUpperCase()
     return (
         <div style={{ fontSize: 14, lineHeight: 1.45 }}>
@@ -3887,7 +3889,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
             if (intervalId) window.clearInterval(intervalId)
         }
     }, [timeZone, clockReady])
-    const prefersReducedMotion = useReducedMotion()
+    const prefersReducedMotion = useReducedMotion() ?? false
 
     const [measuredWidth, setMeasuredWidth] = React.useState<number>(560)
     const rootRef = React.useRef<HTMLDivElement | null>(null)
@@ -4034,11 +4036,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
     const surfaceBorder = !tileBorder
         ? subtleBorder
         : tileBorderWidth > 0
-            ? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
-            : "none"
+          ? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
+          : "none"
     const surfacePadding =
         typeof normalizedCalendarStyles?.padding === "string" &&
-            normalizedCalendarStyles.padding.trim()
+        normalizedCalendarStyles.padding.trim()
             ? normalizedCalendarStyles.padding
             : undefined
 
@@ -4300,20 +4302,20 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                 style={
                     isNarrow
                         ? {
-                            display: "flex",
-                            flexDirection: "column",
-                            minHeight: 0,
-                            flex: 1,
-                        }
+                              display: "flex",
+                              flexDirection: "column",
+                              minHeight: 0,
+                              flex: 1,
+                          }
                         : {
-                            display: "grid",
-                            minHeight: 0,
-                            flex: 1,
-                            gridTemplateColumns:
-                                eventMetaStatus !== "disabled"
-                                    ? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
-                                    : "minmax(0, 2fr) minmax(0, 1fr)",
-                        }
+                              display: "grid",
+                              minHeight: 0,
+                              flex: 1,
+                              gridTemplateColumns:
+                                  eventMetaStatus !== "disabled"
+                                      ? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
+                                      : "minmax(0, 2fr) minmax(0, 1fr)",
+                          }
                 }
             >
                 {eventMetaStatus !== "disabled" ? (
@@ -4780,8 +4782,8 @@ interface BookingEngineConfigProps {
 
 interface BookingEngineProps
     extends BookingEngineStyleProps,
-    BookingEngineConfigProps,
-    BookingEngineCopyProps { }
+        BookingEngineConfigProps,
+        BookingEngineCopyProps {}
 
 const EMAIL_REGEX = /^[^\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$/
 const PHONE_REGEX = /^\+?[(]?\d{1,4}[)]?(?:[-\s.]?[(]?\d{1,4}[)]?){2,5}[-\s.]?\d{1,9}$/
@@ -4916,7 +4918,7 @@ function useCoarsePointer(): boolean {
         if (typeof window === "undefined" || typeof window.matchMedia !== "function") return
         try {
             setCoarse(window.matchMedia("(pointer: coarse)").matches)
-        } catch { }
+        } catch {}
     }, [beInteractive])
     return coarse
 }
@@ -5106,8 +5108,8 @@ function migrateLegacyCalendar(slots: StepConfig[]): {
         surface: configuredMarker
             ? configuredMarker.calendarStyles
             : srcMarkers.length > 0
-                ? srcMarkers[0].calendarStyles
-                : undefined,
+              ? srcMarkers[0].calendarStyles
+              : undefined,
     }
     const steps = (slots || []).map((slot) => {
         const fields = (slot?.fields || []).filter(
@@ -5387,7 +5389,7 @@ function beSetInteractive(): void {
     for (const listener of Array.from(BE_INTERACTIVE_LISTENERS)) {
         try {
             listener()
-        } catch { }
+        } catch {}
     }
 }
 
@@ -5634,10 +5636,10 @@ function useCalcomSlots(
                     const json = await readJson<
                         | { data?: unknown[] }
                         | {
-                            data?: {
-                                slots?: Record<string, unknown[]>
-                            }
-                        }
+                              data?: {
+                                  slots?: Record<string, unknown[]>
+                              }
+                          }
                         | { slots?: unknown[] }
                         | unknown[]
                     >(res)
@@ -5720,9 +5722,9 @@ function useCalcomSlots(
                         message =
                             waitSeconds !== undefined && waitSeconds > 0
                                 ? copy.slotsRateLimitTemplate.replace(
-                                    "{seconds}",
-                                    String(Math.min(waitSeconds, 90))
-                                )
+                                      "{seconds}",
+                                      String(Math.min(waitSeconds, 90))
+                                  )
                                 : copy.slotsRateLimitGenericError
                     } else if (status && status >= 500) {
                         message = copy.slotsUnavailableError
@@ -5731,10 +5733,10 @@ function useCalcomSlots(
                             plainErr?.message === MALFORMED_JSON_ERROR
                                 ? copy.slotsFallbackError
                                 : plainErr instanceof TypeError || plainErr?.name === "TypeError"
-                                    ? recentCalRateLimit()
-                                        ? copy.slotsRateLimitGenericError
-                                        : copy.networkError
-                                    : fallbackErrorLabel || copy.slotsFallbackError
+                                  ? recentCalRateLimit()
+                                      ? copy.slotsRateLimitGenericError
+                                      : copy.networkError
+                                  : fallbackErrorLabel || copy.slotsFallbackError
                     }
                     setError(message)
                     settleInflight({ error: message })
@@ -6326,10 +6328,10 @@ async function submitCalcomBooking(params: {
                         res.status === 429
                             ? "rate-limit"
                             : res.status >= 500
-                                ? "server"
-                                : res.status === 401 || res.status === 403
-                                    ? "credentials"
-                                    : "calcom-validation",
+                              ? "server"
+                              : res.status === 401 || res.status === 403
+                                ? "credentials"
+                                : "calcom-validation",
                     errorCode: code || undefined,
                     calcomMessage: String(apiError),
                 })
@@ -6353,10 +6355,10 @@ async function submitCalcomBooking(params: {
                     res.status === 429
                         ? "rate-limit"
                         : res.status >= 500
-                            ? "server"
-                            : res.status === 401 || res.status === 403
-                                ? "credentials"
-                                : "calcom-validation",
+                          ? "server"
+                          : res.status === 401 || res.status === 403
+                            ? "credentials"
+                            : "calcom-validation",
                 errorCode: code || undefined,
                 calcomMessage: null,
             })
@@ -6414,26 +6416,26 @@ async function submitCalcomBooking(params: {
         const mappedError = timedOut
             ? copy.submitTimeoutError
             : malformed
-                ? copy.malformedResponseError
-                : opaqueAfterRateLimit
-                    ? copy.slotsRateLimitGenericError
-                    : mapCalcomError(errObj?.message || "", errObj?.code || errObj?.errorCode, copy)
+              ? copy.malformedResponseError
+              : opaqueAfterRateLimit
+                ? copy.slotsRateLimitGenericError
+                : mapCalcomError(errObj?.message || "", errObj?.code || errObj?.errorCode, copy)
         console.error("[BookingEngine] booking:failure", {
             endpoint: "POST /v2/bookings",
             category: timedOut
                 ? "timeout"
                 : malformed
-                    ? "malformed-response"
-                    : opaqueAfterRateLimit
-                        ? "rate-limit"
-                        : "network",
+                  ? "malformed-response"
+                  : opaqueAfterRateLimit
+                    ? "rate-limit"
+                    : "network",
             errorCode: timedOut
                 ? "TIMEOUT"
                 : malformed
-                    ? MALFORMED_JSON_ERROR
-                    : opaqueAfterRateLimit
-                        ? "RATE_LIMIT_EXCEEDED"
-                        : errObj?.code || errObj?.errorCode || undefined,
+                  ? MALFORMED_JSON_ERROR
+                  : opaqueAfterRateLimit
+                    ? "RATE_LIMIT_EXCEEDED"
+                    : errObj?.code || errObj?.errorCode || undefined,
             rawError: errObj?.message,
             recentRateLimit: recentCalRateLimit(),
         })
@@ -6443,10 +6445,10 @@ async function submitCalcomBooking(params: {
             errorCode: timedOut
                 ? "TIMEOUT"
                 : malformed
-                    ? MALFORMED_JSON_ERROR
-                    : opaqueAfterRateLimit
-                        ? "RATE_LIMIT_EXCEEDED"
-                        : errObj?.code || errObj?.errorCode || "",
+                  ? MALFORMED_JSON_ERROR
+                  : opaqueAfterRateLimit
+                    ? "RATE_LIMIT_EXCEEDED"
+                    : errObj?.code || errObj?.errorCode || "",
             alreadyMapped: true,
         }
     } finally {
@@ -6663,8 +6665,8 @@ function buildBookingFieldsResponses(
                 field.fieldType === "phone"
                     ? sanitizePhoneInput(String(value))
                     : Array.isArray(value)
-                        ? [...value]
-                        : String(value)
+                      ? [...value]
+                      : String(value)
         }
     }
     return out
@@ -6688,8 +6690,8 @@ function buildNotesPayload(
                 field.fieldType === "phone"
                     ? sanitizePhoneInput(String(value))
                     : Array.isArray(value)
-                        ? value.join(", ")
-                        : String(value)
+                      ? value.join(", ")
+                      : String(value)
             stepLines.push(`${field.label}: ${shown}`)
         }
         if (!stepLines.length) continue
@@ -6977,7 +6979,7 @@ function StepVisibilityWrapper(props: {
     variant: TransitionVariantId
     direction: number
 }) {
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
     const isStatic = useIsStaticRenderer()
     const def = TRANSITION_VARIANT_DEFS[props.variant]
     const stepNodeRef = React.useRef<HTMLDivElement | null>(null)
@@ -7240,18 +7242,9 @@ function useBookingEngineState(
     // Pure functions of props, so hydration stays byte-identical.
     const sectionSpacing = React.useMemo(
         () => ({
-            progress: clampSectionSpacing(
-                styles?.progressGap,
-                SECTION_SPACING_DEFAULTS.progress
-            ),
-            heading: clampSectionSpacing(
-                styles?.headingGap,
-                SECTION_SPACING_DEFAULTS.heading
-            ),
-            footer: clampSectionSpacing(
-                styles?.footerGap,
-                SECTION_SPACING_DEFAULTS.footer
-            ),
+            progress: clampSectionSpacing(styles?.progressGap, SECTION_SPACING_DEFAULTS.progress),
+            heading: clampSectionSpacing(styles?.headingGap, SECTION_SPACING_DEFAULTS.heading),
+            footer: clampSectionSpacing(styles?.footerGap, SECTION_SPACING_DEFAULTS.footer),
         }),
         [styles?.progressGap, styles?.headingGap, styles?.footerGap]
     )
@@ -7310,7 +7303,7 @@ function useBookingEngineState(
         DEFAULT_CAL_API_BASE_URL
     ).replace(/\/+$/, "")
 
-    const prefersReducedMotion = useReducedMotion()
+    const prefersReducedMotion = useReducedMotion() ?? false
 
     const stepTransition: Transition = prefersReducedMotion
         ? ({ type: "tween", duration: 0 } as const)
@@ -7535,7 +7528,7 @@ function useBookingEngineState(
             beCollisionWarnedKeys.add(persistenceKey)
             console.warn(
                 `[BE persist] COLLISION key=${persistenceKey} is claimed by ${claimed} mounted engines — ` +
-                `they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`
+                    `they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`
             )
         }
         const snap = inSessionFormSnapshots.get(instanceKeyRef.current)
@@ -7712,7 +7705,7 @@ function useBookingEngineState(
                     if (migratedLegacy) {
                         try {
                             window.sessionStorage.removeItem(LEGACY_SESSION_KEY)
-                        } catch { }
+                        } catch {}
                     }
                 }
             }
@@ -8131,7 +8124,7 @@ function useBookingEngineState(
                 `Cal.com event has ${missingCalFields.length === 1 ? "a field" : "fields"} your Engine has no matching field for: ${labels}. Add ${missingCalFields.length === 1 ? "a field" : "fields"} with ${missingCalFields.length === 1 ? "that label" : "those labels"} (or matching Cal Field IDs) to style and position ${missingCalFields.length === 1 ? "it" : "them"} yourself, or remove ${missingCalFields.length === 1 ? "it" : "them"} in Cal.com. Visitors will see ${missingCalFields.length === 1 ? "it" : "them"} as an auto-generated Additional Details step before the calendar (required state honored as configured).`
             )
         }
-        ; (effectiveStepsConfig || []).forEach((step, stepIdx) => {
+        ;(effectiveStepsConfig || []).forEach((step, stepIdx) => {
             const n = stepIdx + 1
             if (step.showHeader === false) return
             const hasTitle = Boolean(step.title && String(step.title).trim())
@@ -8246,7 +8239,7 @@ function useBookingEngineState(
         try {
             el.focus({ preventScroll: true })
             el.scrollIntoView({ block: "nearest" })
-        } catch { }
+        } catch {}
     }, [])
     const submitButtonRef = React.useRef<HTMLButtonElement | null>(null)
     const hasMountedStepRef = React.useRef(false)
@@ -8330,7 +8323,7 @@ function useBookingEngineState(
                         try {
                             target.focus({ preventScroll: true })
                             target.scrollIntoView({ behavior: "smooth", block: "nearest" })
-                        } catch { }
+                        } catch {}
                         break
                     }
                 }
@@ -8447,12 +8440,12 @@ function useBookingEngineState(
             const errorMessage = result.alreadyMapped
                 ? result.error || copy.errorFallbackMessage
                 : mapCalcomError(
-                    result.error || copy.unknownErrorLabel,
-                    result.errorCode,
-                    errorCopy,
-                    copy.errorFallbackMessage,
-                    result.httpStatus
-                )
+                      result.error || copy.unknownErrorLabel,
+                      result.errorCode,
+                      errorCopy,
+                      copy.errorFallbackMessage,
+                      result.httpStatus
+                  )
             setSubmitError(errorMessage)
             submitErrorCodeRef.current =
                 result.errorCode ||
@@ -8705,9 +8698,9 @@ function useBookingEngineState(
     )
     const stepAnnouncementText = currentStep
         ? (copy.stepAnnouncementTemplate ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE)
-            .replace("{counter}", counterText)
-            .replace("{percent}", String(completePct))
-            .replace("{title}", currentStep.title)
+              .replace("{counter}", counterText)
+              .replace("{percent}", String(completePct))
+              .replace("{title}", currentStep.title)
         : ""
     const announcedStepRef = React.useRef(safeCurrentIndex)
     const [stepAnnouncement, setStepAnnouncement] = React.useState("")
@@ -8725,17 +8718,17 @@ function useBookingEngineState(
         ? groupedNavAlignment === "left"
             ? "flex-start"
             : groupedNavAlignment === "center"
-                ? "center"
-                : "flex-end"
+              ? "center"
+              : "flex-end"
         : isFirst
-            ? "flex-end"
-            : "space-between"
+          ? "flex-end"
+          : "space-between"
     const terminalActionJustify: "flex-start" | "center" | "flex-end" | undefined = navGrouped
         ? groupedNavAlignment === "left"
             ? "flex-start"
             : groupedNavAlignment === "center"
-                ? "center"
-                : "flex-end"
+              ? "center"
+              : "flex-end"
         : undefined
     const contentAlignmentRaw =
         styles?.contentAlignment ?? header?.contentAlignment ?? header?.terminalAlignment
@@ -9143,8 +9136,8 @@ export default function BookingEngine(props: BookingEngineProps) {
         safeCurrentIndex > prevNavDirectionRef.current
             ? 1
             : safeCurrentIndex < prevNavDirectionRef.current
-                ? -1
-                : 0
+              ? -1
+              : 0
     React.useEffect(() => {
         prevNavDirectionRef.current = safeCurrentIndex
     }, [safeCurrentIndex])
@@ -9179,11 +9172,11 @@ export default function BookingEngine(props: BookingEngineProps) {
         if (!isCanvas) return null
         return (
             <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
-                <div
-                    role="status"
+                <output
                     aria-live="polite"
                     aria-atomic="true"
                     style={{
+                        display: "block",
                         padding: 24,
                         color: theme.textPrimaryColor,
                         fontSize: 14,
@@ -9204,7 +9197,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                     <div style={{ color: theme.textSecondaryColor }}>
                         Enable at least one step in the Steps property to display the booking flow.
                     </div>
-                </div>
+                </output>
             </RootShell>
         )
     }
@@ -9414,11 +9407,11 @@ export default function BookingEngine(props: BookingEngineProps) {
                 {stepAnnouncement}
             </output>
             {isCanvas && needsCalSetup ? (
-                <div
-                    role="status"
+                <output
                     aria-live="polite"
                     aria-atomic="true"
                     style={{
+                        display: "block",
                         padding: "10px 14px",
                         marginBottom: 12,
                         borderRadius: borderRadius,
@@ -9433,16 +9426,16 @@ export default function BookingEngine(props: BookingEngineProps) {
                     real availability and booking submission. Add your API key and Event Type ID in
                     the properties panel. Until then, the date/time step shows a demo grid and the
                     final "Book Now" button will skip the network call.
-                </div>
+                </output>
             ) : null}
 
             {/* Canvas-only guardrail for missing name/email fields. */}
             {isCanvas && needsNameEmailGuardrail ? (
-                <div
-                    role="status"
+                <output
                     aria-live="polite"
                     aria-atomic="true"
                     style={{
+                        display: "block",
                         padding: "10px 14px",
                         marginBottom: 12,
                         borderRadius: borderRadius,
@@ -9456,31 +9449,31 @@ export default function BookingEngine(props: BookingEngineProps) {
                     Cal.com requires a name and email field somewhere in this flow. Add a required
                     text field (and tick "Primary Name") and an email-typed field to enable booking
                     submission.
-                </div>
+                </output>
             ) : null}
 
             {/* Canvas-only warnings for empty steps / empty choice options. */}
             {isCanvas && emptyStepWarnings.length > 0
                 ? emptyStepWarnings.map((msg) => (
-                    <div
-                        key={msg}
-                        role="status"
-                        aria-live="polite"
-                        aria-atomic="true"
-                        style={{
-                            padding: "10px 14px",
-                            marginBottom: 8,
-                            borderRadius: borderRadius,
-                            background: withAlpha(theme.errorColor, 0.1),
-                            border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
-                            color: theme.errorColor,
-                            fontSize: 12,
-                            lineHeight: 1.4,
-                        }}
-                    >
-                        {msg}
-                    </div>
-                ))
+                      <output
+                          key={msg}
+                          aria-live="polite"
+                          aria-atomic="true"
+                          style={{
+                              display: "block",
+                              padding: "10px 14px",
+                              marginBottom: 8,
+                              borderRadius: borderRadius,
+                              background: withAlpha(theme.errorColor, 0.1),
+                              border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
+                              color: theme.errorColor,
+                              fontSize: 12,
+                              lineHeight: 1.4,
+                          }}
+                      >
+                          {msg}
+                      </output>
+                  ))
                 : null}
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
@@ -9891,7 +9884,7 @@ const RootShell = React.memo(function RootShell(props: {
             if (typeof props.rootRef === "function") {
                 props.rootRef(node)
             } else if (props.rootRef) {
-                ; (props.rootRef as { current: HTMLDivElement | null }).current = node
+                ;(props.rootRef as { current: HTMLDivElement | null }).current = node
             }
         },
         [props.rootRef]
@@ -10165,12 +10158,13 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                     </div>
                 ) : null}
                 {hasCalConfig &&
-                    !slotsLoading &&
-                    !slotsError &&
-                    slotsForSelectedDate.length === 0 &&
-                    selectedDate ? (
-                    <div
+                !slotsLoading &&
+                !slotsError &&
+                slotsForSelectedDate.length === 0 &&
+                selectedDate ? (
+                    <output
                         style={{
+                            display: "block",
                             padding: "10px 14px",
                             marginBottom: 12,
                             borderRadius: borderRadius,
@@ -10178,30 +10172,29 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             color: theme.textSecondaryColor,
                             fontSize: 12,
                         }}
-                        role="status"
                         aria-live="polite"
                         aria-atomic="true"
                     >
                         {DEFAULT_COPY_NO_TIMES_LABEL}
-                    </div>
+                    </output>
                 ) : null}
                 <div
                     style={
                         slotError
                             ? {
-                                borderRadius: borderRadius,
-                                border: `1px solid ${theme.errorColor}`,
-                                padding: 4,
-                            }
+                                  borderRadius: borderRadius,
+                                  border: `1px solid ${theme.errorColor}`,
+                                  padding: 4,
+                              }
                             : undefined
                     }
                 >
                     {hideDemoWhenUnconfigured ? (
-                        <div
-                            role="status"
+                        <output
                             aria-live="polite"
                             aria-atomic="true"
                             style={{
+                                display: "block",
                                 padding: "14px 16px",
                                 margin: "4px 0",
                                 borderRadius: borderRadius,
@@ -10218,7 +10211,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                                     {errorCopy.unavailableBody}
                                 </span>
                             </div>
-                        </div>
+                        </output>
                     ) : (
                         <DateAndTimeInline
                             instanceId={instanceId}
@@ -10684,13 +10677,13 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     color: option.disabled
                         ? theme.textSecondaryColor
                         : isSelected
-                            ? selectedRowText
-                            : optionTextColor,
+                          ? selectedRowText
+                          : optionTextColor,
                     background: isSelected
                         ? selectedRowSurface
                         : isActiveRow
-                            ? hoverRowWash
-                            : "transparent",
+                          ? hoverRowWash
+                          : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -10877,21 +10870,21 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
             </div>
             {open && menuRect && typeof document !== "undefined"
                 ? // Dual @types/react copies in the editor disagree on the
-                (ReactDOM.createPortal(
-                    <ul
-                        ref={menuRef}
-                        id={listboxDomId}
-                        role="listbox"
-                        aria-multiselectable="true"
-                        aria-label={field.label}
-                        className="be-select-scroll"
-                        tabIndex={-1}
-                        style={menuSurfaceStyle}
-                    >
-                        {opts.map(renderRow)}
-                    </ul>,
-                    document.body
-                ) as unknown as React.ReactNode)
+                  (ReactDOM.createPortal(
+                      <ul
+                          ref={menuRef}
+                          id={listboxDomId}
+                          role="listbox"
+                          aria-multiselectable="true"
+                          aria-label={field.label}
+                          className="be-select-scroll"
+                          tabIndex={-1}
+                          style={menuSurfaceStyle}
+                      >
+                          {opts.map(renderRow)}
+                      </ul>,
+                      document.body
+                  ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -10951,8 +10944,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     const displayValue = matchedOption
         ? storedValue
         : opts.length > 0
-            ? getFirstNonEmptyOption(opts)
-            : storedValue
+          ? getFirstNonEmptyOption(opts)
+          : storedValue
     const selectedOption = opts.find((o) => optionValue(o) === displayValue)
 
     React.useEffect(() => {
@@ -11196,13 +11189,13 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     color: option.disabled
                         ? theme.textSecondaryColor
                         : isSelected
-                            ? selectedRowText
-                            : optionTextColor,
+                          ? selectedRowText
+                          : optionTextColor,
                     background: isSelected
                         ? selectedRowSurface
                         : isActiveRow
-                            ? hoverRowWash
-                            : "transparent",
+                          ? hoverRowWash
+                          : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -11297,20 +11290,20 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
             </div>
             {open && menuRect && typeof document !== "undefined"
                 ? // Dual @types/react copies in the editor disagree on the
-                (ReactDOM.createPortal(
-                    <ul
-                        ref={menuRef}
-                        id={listboxDomId}
-                        role="listbox"
-                        aria-label={field.label}
-                        className="be-select-scroll"
-                        tabIndex={-1}
-                        style={menuSurfaceStyle}
-                    >
-                        {opts.map(renderRow)}
-                    </ul>,
-                    document.body
-                ) as unknown as React.ReactNode)
+                  (ReactDOM.createPortal(
+                      <ul
+                          ref={menuRef}
+                          id={listboxDomId}
+                          role="listbox"
+                          aria-label={field.label}
+                          className="be-select-scroll"
+                          tabIndex={-1}
+                          style={menuSurfaceStyle}
+                      >
+                          {opts.map(renderRow)}
+                      </ul>,
+                      document.body
+                  ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -11372,23 +11365,23 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         field.fieldType === "segmented"
             ? field.segmentedStyles
             : field.fieldType === "pills"
-                ? field.pillsStyles
-                : field.fieldType === "cards"
-                    ? field.cardsStyles
-                    : field.fieldType === "radio"
-                        ? field.radioStyles
-                        : undefined
+              ? field.pillsStyles
+              : field.fieldType === "cards"
+                ? field.cardsStyles
+                : field.fieldType === "radio"
+                  ? field.radioStyles
+                  : undefined
     const fieldStyleOverrides: FieldStyleOverrides | undefined =
         field.fieldType === "checkbox" || field.fieldType === "checkboxgroup"
             ? field.checkStyles
             : field.fieldType === "select" || field.fieldType === "multiselect"
-                ? field.choiceStyles
-                : field.fieldType === "segmented" ||
-                    field.fieldType === "pills" ||
-                    field.fieldType === "cards" ||
-                    field.fieldType === "radio"
-                    ? mergeStyleOverrides(field.choiceStyles, variantStyles)
-                    : field.styles
+              ? field.choiceStyles
+              : field.fieldType === "segmented" ||
+                  field.fieldType === "pills" ||
+                  field.fieldType === "cards" ||
+                  field.fieldType === "radio"
+                ? mergeStyleOverrides(field.choiceStyles, variantStyles)
+                : field.styles
     const fs = mergeStyleOverrides(globalFieldStyles, normalizeStyleOverrides(fieldStyleOverrides))
     // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
     // keep winning for stored canvases, engine defaults last.
@@ -11438,9 +11431,9 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     // rendered at the exact field site, spaced by the column gap.
     const duplicatePrimaryNotice =
         field.duplicatePrimaryName && RenderTarget.current() === RenderTarget.canvas ? (
-            <div
-                role="status"
+            <output
                 style={{
+                    display: "block",
                     fontSize: 12,
                     lineHeight: 1.4,
                     color: theme.errorColor,
@@ -11448,7 +11441,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
             >
                 Duplicate "Primary Name" — only the first flagged field is used as the booking
                 attendee name. Remove this flag.
-            </div>
+            </output>
         ) : null
 
     const containerStyle: React.CSSProperties = {
@@ -11462,7 +11455,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     const isCoarsePointer = useCoarsePointer()
     const inputFontSize = isCoarsePointer ? 16 : 14
 
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
 
     const fsFontSize = fontPixelSize(fs?.font?.fontSize)
     const fsInputFontSize = isCoarsePointer
@@ -11476,8 +11469,9 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         minHeight: fs?.minHeight ?? 23,
         padding: fsPadding,
         borderRadius: fsRadius,
-        border: `${fsBorder.width}px ${fsBorder.style} ${error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
-            }`,
+        border: `${fsBorder.width}px ${fsBorder.style} ${
+            error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
+        }`,
         background: fs?.backgroundColor ?? theme.surfaceColor,
         color: fs?.textColor ?? theme.textPrimaryColor,
         fontFamily: fs?.font?.fontFamily ?? "inherit",
@@ -11590,10 +11584,10 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                 field.fieldType === "pills"
                     ? "pills"
                     : field.fieldType === "segmented"
-                        ? "segmented"
-                        : field.fieldType === "radio"
-                            ? "radio"
-                            : "cards"
+                      ? "segmented"
+                      : field.fieldType === "radio"
+                        ? "radio"
+                        : "cards"
             const fsPaddingAxes = fs?.padding ? paddingAxesFrom(fs.padding) : null
             const fsAuthorRadius =
                 typeof fs?.radius === "string" || typeof fs?.radius === "number"
@@ -11811,21 +11805,21 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                             field.fieldType === "email"
                                 ? "email"
                                 : field.fieldType === "phone"
-                                    ? "tel"
-                                    : field.fieldType === "url"
-                                        ? "url"
-                                        : "text"
+                                  ? "tel"
+                                  : field.fieldType === "url"
+                                    ? "url"
+                                    : "text"
                         }
                         inputMode={
                             field.fieldType === "email"
                                 ? "email"
                                 : field.fieldType === "phone"
-                                    ? "tel"
-                                    : field.fieldType === "number"
-                                        ? "decimal"
-                                        : field.fieldType === "url"
-                                            ? "url"
-                                            : undefined
+                                  ? "tel"
+                                  : field.fieldType === "number"
+                                    ? "decimal"
+                                    : field.fieldType === "url"
+                                      ? "url"
+                                      : undefined
                         }
                         value={typeof value === "string" ? value : ""}
                         placeholder={field.placeholder || ""}
@@ -12628,86 +12622,86 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
             </button>
             {open && menuRect && typeof document !== "undefined"
                 ? (ReactDOM.createPortal(
-                    <div
-                        ref={menuRef}
-                        role="menu"
-                        aria-label={triggerLabel}
-                        style={menuSurfaceStyle}
-                        onKeyDown={(event) => {
-                            if (event.key === "Escape") {
-                                event.preventDefault()
-                                closeMenu(true)
-                            } else if (event.key === "ArrowDown") {
-                                event.preventDefault()
-                                focusItem(activeIndex + 1)
-                            } else if (event.key === "ArrowUp") {
-                                event.preventDefault()
-                                focusItem(activeIndex - 1)
-                            } else if (event.key === "Home") {
-                                event.preventDefault()
-                                focusItem(0)
-                            } else if (event.key === "End") {
-                                event.preventDefault()
-                                focusItem(options.length - 1)
-                            } else if (event.key === "Tab") {
-                                closeMenu(false)
-                            }
-                        }}
-                    >
-                        {options.map((option, index) => {
-                            const isActiveRow = index === activeIndex
-                            return (
-                                <a
-                                    key={option.id}
-                                    ref={(node) => {
-                                        itemRefs.current[index] = node
-                                    }}
-                                    role="menuitem"
-                                    href={option.href}
-                                    target={option.id === "other" ? undefined : "_blank"}
-                                    rel={
-                                        option.id === "other" ? undefined : "noopener noreferrer"
-                                    }
-                                    download={option.download}
-                                    onClick={() => {
-                                        setOpen(false)
-                                    }}
-                                    onMouseEnter={() => setActiveIndex(index)}
-                                    onFocus={() => setActiveIndex(index)}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 10,
-                                        padding: "10px 14px",
-                                        borderRadius: menuRowRadius,
-                                        color: optionTextColor,
-                                        textDecoration: "none",
-                                        cursor: "pointer",
-                                        background: isActiveRow ? hoverRowWash : "transparent",
-                                        transition: reducedMotion
-                                            ? "none"
-                                            : "background-color 0.12s ease",
-                                        touchAction: "manipulation",
-                                        userSelect: "none",
-                                        WebkitUserSelect: "none",
-                                        WebkitTapHighlightColor: "transparent",
-                                        fontFamily:
-                                            calendarLinkSet?.font?.fontFamily ?? "inherit",
-                                        fontSize:
-                                            fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
-                                        ...(calendarLinkSet?.font?.fontWeight != null
-                                            ? { fontWeight: calendarLinkSet.font.fontWeight }
-                                            : {}),
-                                    }}
-                                >
-                                    <CalendarProviderIcon id={option.id} />
-                                    <span>{option.label}</span>
-                                </a>
-                            )
-                        })}
-                    </div>,
-                    document.body
-                ) as unknown as React.ReactNode)
+                      <div
+                          ref={menuRef}
+                          role="menu"
+                          aria-label={triggerLabel}
+                          style={menuSurfaceStyle}
+                          onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                  event.preventDefault()
+                                  closeMenu(true)
+                              } else if (event.key === "ArrowDown") {
+                                  event.preventDefault()
+                                  focusItem(activeIndex + 1)
+                              } else if (event.key === "ArrowUp") {
+                                  event.preventDefault()
+                                  focusItem(activeIndex - 1)
+                              } else if (event.key === "Home") {
+                                  event.preventDefault()
+                                  focusItem(0)
+                              } else if (event.key === "End") {
+                                  event.preventDefault()
+                                  focusItem(options.length - 1)
+                              } else if (event.key === "Tab") {
+                                  closeMenu(false)
+                              }
+                          }}
+                      >
+                          {options.map((option, index) => {
+                              const isActiveRow = index === activeIndex
+                              return (
+                                  <a
+                                      key={option.id}
+                                      ref={(node) => {
+                                          itemRefs.current[index] = node
+                                      }}
+                                      role="menuitem"
+                                      href={option.href}
+                                      target={option.id === "other" ? undefined : "_blank"}
+                                      rel={
+                                          option.id === "other" ? undefined : "noopener noreferrer"
+                                      }
+                                      download={option.download}
+                                      onClick={() => {
+                                          setOpen(false)
+                                      }}
+                                      onMouseEnter={() => setActiveIndex(index)}
+                                      onFocus={() => setActiveIndex(index)}
+                                      style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          padding: "10px 14px",
+                                          borderRadius: menuRowRadius,
+                                          color: optionTextColor,
+                                          textDecoration: "none",
+                                          cursor: "pointer",
+                                          background: isActiveRow ? hoverRowWash : "transparent",
+                                          transition: reducedMotion
+                                              ? "none"
+                                              : "background-color 0.12s ease",
+                                          touchAction: "manipulation",
+                                          userSelect: "none",
+                                          WebkitUserSelect: "none",
+                                          WebkitTapHighlightColor: "transparent",
+                                          fontFamily:
+                                              calendarLinkSet?.font?.fontFamily ?? "inherit",
+                                          fontSize:
+                                              fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
+                                          ...(calendarLinkSet?.font?.fontWeight != null
+                                              ? { fontWeight: calendarLinkSet.font.fontWeight }
+                                              : {}),
+                                      }}
+                                  >
+                                      <CalendarProviderIcon id={option.id} />
+                                      <span>{option.label}</span>
+                                  </a>
+                              )
+                          })}
+                      </div>,
+                      document.body
+                  ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -12795,14 +12789,18 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     const bookAnotherIx = useButtonInteraction()
 
     const isStaticRender = useIsStaticRenderer()
-    const reducedMotion = useReducedMotion()
+    const reducedMotion = useReducedMotion() ?? false
     const variantDef = TRANSITION_VARIANT_DEFS[transitionVariant]
     const circleHidden = React.useMemo(() => {
         const raw: unknown = variantDef.variants.inactive
         const resolved = typeof raw === "function" ? (raw as (c: number) => unknown)(1) : raw
         return resolved as Variants
     }, [variantDef])
-    const circleShown = variantDef.variants.active
+    const circleShown = (() => {
+        const raw: unknown = variantDef.variants.active
+        const resolved = typeof raw === "function" ? (raw as (c: number) => unknown)(1) : raw
+        return resolved as TargetAndTransition
+    })()
     const circleTransition = React.useMemo(() => {
         if (reducedMotion || isStaticRender) return INSTANT_TRANSITION
         const base = baseTransition as unknown as { duration?: number }
@@ -12861,10 +12859,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         }
         const confirmationEntry = bookingResult?.uid
             ? {
-                id: "__be_confirmation",
-                label: DEFAULT_COPY_CONFIRMATION_ID_LABEL,
-                value: bookingResult.uid,
-            }
+                  id: "__be_confirmation",
+                  label: DEFAULT_COPY_CONFIRMATION_ID_LABEL,
+                  value: bookingResult.uid,
+              }
             : undefined
         // SUCCESS-ORDER (BE-034): Name, Email, Date, Time lead;
         // remaining values keep entry order; Confirmation ID stays last.
@@ -12906,15 +12904,15 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         () =>
             values[SELECTED_SLOT_KEY]
                 ? buildIcsDataUri(
-                    values[SELECTED_SLOT_KEY],
-                    icsDescription || undefined,
-                    calendarExportTitle,
-                    undefined,
-                    undefined,
-                    meetingDurationMs,
-                    typeof icsLocationLabel === "string" ? icsLocationLabel : "",
-                    bookingResult?.uid ?? undefined
-                )
+                      values[SELECTED_SLOT_KEY],
+                      icsDescription || undefined,
+                      calendarExportTitle,
+                      undefined,
+                      undefined,
+                      meetingDurationMs,
+                      typeof icsLocationLabel === "string" ? icsLocationLabel : "",
+                      bookingResult?.uid ?? undefined
+                  )
                 : "",
         [
             values,
@@ -12933,32 +12931,32 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     const googleCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                "google",
-                slot,
-                calendarExportTitle,
-                icsDescription || undefined,
-                meetingDurationMs
-            )
+                  "google",
+                  slot,
+                  calendarExportTitle,
+                  icsDescription || undefined,
+                  meetingDurationMs
+              )
             : ""
     const officeCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                "office",
-                slot,
-                calendarExportTitle,
-                icsDescription || undefined,
-                meetingDurationMs
-            )
+                  "office",
+                  slot,
+                  calendarExportTitle,
+                  icsDescription || undefined,
+                  meetingDurationMs
+              )
             : ""
     const outlookCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                "outlook",
-                slot,
-                calendarExportTitle,
-                icsDescription || undefined,
-                meetingDurationMs
-            )
+                  "outlook",
+                  slot,
+                  calendarExportTitle,
+                  icsDescription || undefined,
+                  meetingDurationMs
+              )
             : ""
     const apiHref = bookingResult?.rescheduleUrl || bookingResult?.cancelUrl || ""
     // API-provided URLs are never trusted blindly — only http(s) destinations render,
@@ -12974,15 +12972,15 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         terminalAlignment === "center"
                             ? "column"
                             : terminalAlignment === "right"
-                                ? "row-reverse"
-                                : "row",
+                              ? "row-reverse"
+                              : "row",
                     alignItems: "center",
                     justifyContent:
                         terminalAlignment === "left"
                             ? "flex-start"
                             : terminalAlignment === "right"
-                                ? "flex-end"
-                                : "center",
+                              ? "flex-end"
+                              : "center",
                     gap: terminalAlignment === "center" ? 0 : 16,
                     textAlign: terminalAlignment,
                     marginBottom: 16,
@@ -13144,49 +13142,49 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         options={[
                             ...(googleCalUri
                                 ? [
-                                    {
-                                        id: "google" as const,
-                                        label: CALENDAR_MENU_GOOGLE_LABEL,
-                                        href: googleCalUri,
-                                    },
-                                ]
+                                      {
+                                          id: "google" as const,
+                                          label: CALENDAR_MENU_GOOGLE_LABEL,
+                                          href: googleCalUri,
+                                      },
+                                  ]
                                 : []),
                             ...(officeCalUri
                                 ? [
-                                    {
-                                        id: "office" as const,
-                                        label: CALENDAR_MENU_OFFICE_LABEL,
-                                        href: officeCalUri,
-                                    },
-                                ]
+                                      {
+                                          id: "office" as const,
+                                          label: CALENDAR_MENU_OFFICE_LABEL,
+                                          href: officeCalUri,
+                                      },
+                                  ]
                                 : []),
                             ...(outlookCalUri
                                 ? [
-                                    {
-                                        id: "outlook" as const,
-                                        label: CALENDAR_MENU_OUTLOOK_LABEL,
-                                        href: outlookCalUri,
-                                    },
-                                ]
+                                      {
+                                          id: "outlook" as const,
+                                          label: CALENDAR_MENU_OUTLOOK_LABEL,
+                                          href: outlookCalUri,
+                                      },
+                                  ]
                                 : []),
                             ...(icsUri
                                 ? [
-                                    {
-                                        id: "other" as const,
-                                        label: CALENDAR_MENU_OTHER_LABEL,
-                                        href: icsUri,
-                                        download: DEFAULT_ICS_FILENAME,
-                                    },
-                                ]
+                                      {
+                                          id: "other" as const,
+                                          label: CALENDAR_MENU_OTHER_LABEL,
+                                          href: icsUri,
+                                          download: DEFAULT_ICS_FILENAME,
+                                      },
+                                  ]
                                 : []),
                             ...(manageHref
                                 ? [
-                                    {
-                                        id: "manage" as const,
-                                        label: rescheduleOrCancelLabel,
-                                        href: manageHref,
-                                    },
-                                ]
+                                      {
+                                          id: "manage" as const,
+                                          label: rescheduleOrCancelLabel,
+                                          href: manageHref,
+                                      },
+                                  ]
                                 : []),
                         ]}
                         calendarLinkSet={calendarLinkSet}
@@ -13278,14 +13276,13 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         terminalAlignment === "left"
                             ? "flex-start"
                             : terminalAlignment === "right"
-                                ? "flex-end"
-                                : "center",
+                              ? "flex-end"
+                              : "center",
                     justifyContent: "center",
                     textAlign: terminalAlignment,
                     minHeight: 320,
                     padding: "24px 16px",
                     boxSizing: "border-box",
-                    // BE-041: balanced wrapping for terminal copy lines.
                     textWrap: "balance",
                 }}
             >
@@ -13296,8 +13293,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                             terminalAlignment === "center"
                                 ? "column"
                                 : terminalAlignment === "right"
-                                    ? "row-reverse"
-                                    : "row",
+                                  ? "row-reverse"
+                                  : "row",
                         alignItems: "center",
                         gap: terminalAlignment === "center" ? 6 : 16,
                         marginBottom: 16,
@@ -13413,7 +13410,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
 BookingEngine.displayName = "BookingEngine"
 
 type FieldControlProps = Partial<FieldConfig>
-type StepSlotControlProps = Pick<BookingEngineProps, "stepCount"> &
+type StepSlotControlProps = Partial<Pick<BookingEngineProps, "stepCount">> &
     Partial<Pick<StepConfig, "enabled" | "showHeader">>
 type ProgressBarControlProps = Pick<
     BookingEngineProps["progressBar"],
@@ -13425,11 +13422,11 @@ type ButtonsLayoutControlProps = {
 }
 
 function fieldStylesColorControl(title: string) {
-    return { type: ControlType.Color, title, optional: true }
+    return { type: ct(ControlType.Color), title, optional: true }
 }
 function fieldStylesNumberControl(title: string, min: number, max: number, defaultValue: number) {
     return {
-        type: ControlType.Number,
+        type: ct(ControlType.Number),
         title,
         optional: true,
         min,
@@ -13448,7 +13445,7 @@ function fieldStylesFontControl(
     }
 ) {
     return {
-        type: ControlType.Font,
+        type: ct(ControlType.Font),
         title,
         controls: "extended" as const,
         defaultFontType: "sans-serif" as const,
@@ -13456,14 +13453,18 @@ function fieldStylesFontControl(
     }
 }
 function fieldStylesBorderControl(
-    defaultValue: { borderWidth?: number; borderStyle?: string; borderColor?: string } = {
+    defaultValue: {
+        borderWidth?: number
+        borderStyle?: "solid" | "dashed" | "dotted" | "double"
+        borderColor?: string
+    } = {
         borderWidth: FIELD_STYLES_BORDER_WIDTH,
         borderStyle: "solid",
         borderColor: FIELD_STYLES_BORDER_COLOR,
     }
 ) {
     return {
-        type: ControlType.Border,
+        type: ct(ControlType.Border),
         title: "Border",
         optional: true,
         defaultValue,
@@ -13471,7 +13472,7 @@ function fieldStylesBorderControl(
 }
 function fieldStylesRadiusControl(defaultValue: string = FIELD_STYLES_FIELD_RADIUS) {
     return {
-        type: ControlType.BorderRadius,
+        type: ct(ControlType.BorderRadius),
         title: "Radius",
         optional: true,
         defaultValue,
@@ -13479,7 +13480,7 @@ function fieldStylesRadiusControl(defaultValue: string = FIELD_STYLES_FIELD_RADI
 }
 function fieldStylesPaddingControl(defaultValue: string = FIELD_STYLES_INPUT_PADDING) {
     return {
-        type: ControlType.Padding,
+        type: ct(ControlType.Padding),
         title: "Padding",
         optional: true,
         defaultValue,
@@ -13493,7 +13494,7 @@ function isNoShadowValue(value: string | undefined): boolean {
 }
 function fieldStylesShadowControl(title: string = "Shadow") {
     return {
-        type: ControlType.BoxShadow,
+        type: ct(ControlType.BoxShadow),
         title,
         defaultValue: NO_SHADOW_VALUE,
     }
@@ -13554,10 +13555,10 @@ function makeGlobalFieldStylesControls() {
     return {
         ...makeInputFieldStylesControls(),
         selected: {
-            type: ControlType.Object,
+            type: ct(ControlType.Object),
             title: "Selected Styles",
             buttonTitle: "Selected Styles",
-            icon: "effect",
+            icon: "effect" as const,
             optional: true,
             controls: makeSelectedStylesControls(),
         },
@@ -13576,7 +13577,7 @@ function makeCalendarStylesStylesControls() {
         textColor: fieldStylesColorControl("Field Color"),
         backgroundColor: fieldStylesColorControl("Fill"),
         radius: {
-            type: ControlType.Number,
+            type: ct(ControlType.Number),
             title: "Radius",
             optional: true,
             defaultValue: 12,
@@ -13599,16 +13600,16 @@ function makeCalendarStylesStylesControls() {
 function makeButtonInteractionControls(borderDefaultColor: string) {
     return {
         transition: {
-            type: ControlType.Transition,
+            type: ct(ControlType.Transition),
             title: "Transition",
             defaultValue: {
-                type: "tween",
+                type: "tween" as const,
                 duration: 0.15,
-                ease: "easeOut",
-            } as Transition,
+                ease: "easeOut" as const,
+            },
         },
         scale: {
-            type: ControlType.Number,
+            type: ct(ControlType.Number),
             title: "Scale",
             defaultValue: 1,
             min: 0.5,
@@ -13616,7 +13617,7 @@ function makeButtonInteractionControls(borderDefaultColor: string) {
             step: 0.01,
         },
         opacity: {
-            type: ControlType.Number,
+            type: ct(ControlType.Number),
             title: "Opacity",
             defaultValue: 1,
             min: 0,
@@ -13626,13 +13627,13 @@ function makeButtonInteractionControls(borderDefaultColor: string) {
         textColor: fieldStylesColorControl("Text Color"),
         backgroundColor: fieldStylesColorControl("Background"),
         border: {
-            type: ControlType.Border,
+            type: ct(ControlType.Border),
             title: "Border",
             optional: true,
             description: "0 keeps the button's normal border — set 1 or more to override it here.",
             defaultValue: {
                 borderWidth: 0,
-                borderStyle: "solid",
+                borderStyle: "solid" as const,
                 borderColor: borderDefaultColor,
             },
         },
@@ -13660,18 +13661,18 @@ function makeSharedButtonStylesControls(defaults: {
         }),
         shadow: fieldStylesShadowControl(),
         hover: {
-            type: ControlType.Object,
+            type: ct(ControlType.Object),
             title: "Hover",
             buttonTitle: "Hover",
-            icon: "interaction",
+            icon: "interaction" as const,
             optional: true,
             controls: makeButtonInteractionControls(defaults.borderColor),
         },
         pressed: {
-            type: ControlType.Object,
+            type: ct(ControlType.Object),
             title: "Pressed",
             buttonTitle: "Pressed",
-            icon: "interaction",
+            icon: "interaction" as const,
             optional: true,
             controls: makeButtonInteractionControls(defaults.borderColor),
         },
@@ -13703,10 +13704,10 @@ function resolveButtonStyle(
             typeof group?.radius === "string" && group.radius.trim()
                 ? group.radius
                 : typeof group?.radius === "number"
-                    ? `${group.radius}px`
-                    : typeof radiusToken === "number"
-                        ? `${radiusToken}px`
-                        : radiusToken,
+                  ? `${group.radius}px`
+                  : typeof radiusToken === "number"
+                    ? `${radiusToken}px`
+                    : radiusToken,
         padding:
             typeof group?.padding === "string" && group.padding.trim()
                 ? group.padding
@@ -13778,14 +13779,14 @@ function interactionTransition(t: Transition | undefined, animate: boolean): str
     let ease = "ease"
     let delay = 0
     if (t) {
-        if (typeof t.duration === "number" && Number.isFinite(t.duration)) {
-            duration = clamp(t.duration, 0, 5)
+        const tt = t as { duration?: unknown; delay?: unknown; ease?: unknown }
+        if (typeof tt.duration === "number" && Number.isFinite(tt.duration)) {
+            duration = clamp(tt.duration, 0, 5)
         }
-        const d = (t as { delay?: unknown }).delay
-        if (typeof d === "number" && Number.isFinite(d)) {
-            delay = clamp(d, 0, 5)
+        if (typeof tt.delay === "number" && Number.isFinite(tt.delay)) {
+            delay = clamp(tt.delay, 0, 5)
         }
-        const e = t.ease
+        const e = tt.ease
         if (typeof e === "string") {
             ease = cssEaseName(e)
         } else if (Array.isArray(e) && e.length === 4 && e.every((n) => typeof n === "number")) {
@@ -13852,13 +13853,13 @@ function resolveButtonText(...candidates: Array<string | undefined>): string {
 function makeFieldObjectControls() {
     return {
         label: {
-            type: ControlType.String,
+            type: ct(ControlType.String),
             title: "Label",
             defaultValue: "Field Label",
             hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
         },
         fieldType: {
-            type: ControlType.Enum,
+            type: ct(ControlType.Enum),
             title: "Type",
             options: [
                 "text",
@@ -13895,7 +13896,7 @@ function makeFieldObjectControls() {
             defaultValue: "text",
         },
         placeholder: {
-            type: ControlType.String,
+            type: ct(ControlType.String),
             title: "Placeholder",
             defaultValue: "",
             hidden: (p: FieldControlProps) =>
@@ -13905,7 +13906,7 @@ function makeFieldObjectControls() {
                 CHOICE_FIELD_TYPES.includes(p?.fieldType || ""),
         },
         required: {
-            type: ControlType.Boolean,
+            type: ct(ControlType.Boolean),
             title: "Required",
             defaultValue: false,
             hidden: (p: FieldControlProps) =>
@@ -13918,12 +13919,12 @@ function makeFieldObjectControls() {
                 p?.fieldType === "calendar-widget",
         },
         options: {
-            type: ControlType.Array,
+            type: ct(ControlType.Array),
             title: "Options",
             maxCount: 12,
             defaultValue: ["Option 1", "Option 2"],
             control: {
-                type: ControlType.String,
+                type: ct(ControlType.String),
                 defaultValue: "Option",
             },
             hidden: (p: FieldControlProps) =>
@@ -13936,19 +13937,19 @@ function makeFieldObjectControls() {
                 ),
         },
         isPrimaryName: {
-            type: ControlType.Boolean,
+            type: ct(ControlType.Boolean),
             title: "Primary Name",
             defaultValue: false,
             description: "The first flagged field is the booking attendee name — flag exactly one.",
             hidden: (p: FieldControlProps) => p?.fieldType !== "text",
         },
         optionValues: {
-            type: ControlType.Array,
+            type: ct(ControlType.Array),
             title: "Option Values",
             maxCount: 12,
             defaultValue: [],
             control: {
-                type: ControlType.String,
+                type: ct(ControlType.String),
                 defaultValue: "",
                 placeholder: "Custom value (blank uses the label)",
             },
@@ -13957,28 +13958,28 @@ function makeFieldObjectControls() {
                 !MULTI_PICK_TYPES.includes(p?.fieldType || ""),
         },
         optionImages: {
-            type: ControlType.Array,
+            type: ct(ControlType.Array),
             title: "Option Images",
             maxCount: 12,
             defaultValue: [],
             control: {
-                type: ControlType.ResponsiveImage,
+                type: ct(ControlType.ResponsiveImage),
             },
             hidden: (p: FieldControlProps) => p?.fieldType !== "cards" && p?.fieldType !== "radio",
         },
         optionDescriptions: {
-            type: ControlType.Array,
+            type: ct(ControlType.Array),
             title: "Option Descriptions",
             maxCount: 12,
             defaultValue: [],
             control: {
-                type: ControlType.String,
+                type: ct(ControlType.String),
                 defaultValue: "",
             },
             hidden: (p: FieldControlProps) => p?.fieldType !== "cards" && p?.fieldType !== "radio",
         },
         width: {
-            type: ControlType.Enum,
+            type: ct(ControlType.Enum),
             title: "Width",
             options: ["full", "half"],
             optionTitles: ["Full", "Fit"],
@@ -13987,7 +13988,7 @@ function makeFieldObjectControls() {
             hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
         },
         checkSize: {
-            type: ControlType.Number,
+            type: ct(ControlType.Number),
             title: "Check Size",
             min: 12,
             max: 32,
@@ -13998,7 +13999,7 @@ function makeFieldObjectControls() {
                 p?.fieldType !== "checkbox" && p?.fieldType !== "checkboxgroup",
         },
         calFieldId: {
-            type: ControlType.String,
+            type: ct(ControlType.String),
             title: "Cal Field ID",
             defaultValue: "",
             placeholder: "e.g. pet-name",
@@ -14007,40 +14008,46 @@ function makeFieldObjectControls() {
     }
 }
 
+// Preserves the specific ControlType member through object-literal inference
+// (plain `type: ControlType.X` widens to the whole enum and fails assignability).
+function ct<T extends ControlType>(t: T): T {
+    return t
+}
+
 function makeStepControl(slotIndex: number, defaults: StepConfig) {
     return {
-        type: ControlType.Object,
+        type: ct(ControlType.Object),
         title: `Step ${slotIndex + 1}`,
         defaultValue: defaults,
         hidden: (p: StepSlotControlProps) => (p?.stepCount ?? 1) <= slotIndex,
         controls: {
             enabled: {
-                type: ControlType.Boolean,
+                type: ct(ControlType.Boolean),
                 title: "Visible",
                 defaultValue: defaults.enabled,
             },
             showHeader: {
-                type: ControlType.Boolean,
+                type: ct(ControlType.Boolean),
                 title: "Header",
                 enabledTitle: "Show",
                 disabledTitle: "Hide",
                 defaultValue: true,
             },
             title: {
-                type: ControlType.String,
+                type: ct(ControlType.String),
                 title: "Title",
                 defaultValue: defaults.title,
                 hidden: (p: StepSlotControlProps) => p?.showHeader === false,
             },
             subtitle: {
-                type: ControlType.String,
+                type: ct(ControlType.String),
                 title: "Subtitle",
                 defaultValue: defaults.subtitle || "",
                 displayTextArea: true,
                 hidden: (p: StepSlotControlProps) => p?.showHeader === false,
             },
             layout: {
-                type: ControlType.Enum,
+                type: ct(ControlType.Enum),
                 title: "Layout",
                 options: ["single-column", "two-column"],
                 optionTitles: ["1 Col", "2 Col"],
@@ -14048,12 +14055,12 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
                 displaySegmentedControl: true,
             },
             fields: {
-                type: ControlType.Array,
+                type: ct(ControlType.Array),
                 title: "Fields",
                 maxCount: 10,
                 defaultValue: defaults.fields,
                 control: {
-                    type: ControlType.Object,
+                    type: ct(ControlType.Object),
                     controls: makeFieldObjectControls(),
                 },
             },
@@ -14450,7 +14457,8 @@ addPropertyControls(BookingEngine, {
                     successSubtitle: {
                         type: ControlType.String,
                         title: "Success Subtitle",
-                        defaultValue: "Your appointment details are below, add them to your calendar.",
+                        defaultValue:
+                            "Your appointment details are below, add them to your calendar.",
                         displayTextArea: true,
                     },
                     errorTitle: {
