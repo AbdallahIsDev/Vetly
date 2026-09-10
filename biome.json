@@ -1,7 +1,7 @@
 {
     "files": {
         "ignoreUnknown": true,
-        "includes": ["**", "!Code-Components/BookingEngine.tsx", "!framer-scripts"]
+        "includes": ["**", "!framer-scripts"]
     },
     "formatter": {
         "indentStyle": "space",
@@ -18,5 +18,17 @@
     },
     "linter": {
         "rules": {}
-    }
+    },
+    "overrides": [
+        {
+            "includes": ["Code-Components/BookingEngine.tsx"],
+            "linter": {
+                "rules": {
+                    "a11y": {
+                        "noNoninteractiveElementToInteractiveRole": "off"
+                    }
+                }
+            }
+        }
+    ]
 }

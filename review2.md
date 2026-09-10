@@ -14,19 +14,6 @@ Reviewer note: Severity changed to Medium per reviewer.
 
 ---
 
-## TV-2 — Inconsistent number formatting in Hero ("20k+" vs "20K+")
-Status: Open
-Category: Content & copy
-Severity: Low
-Location: Home `/` — Hero section. Badge text node `v:WcwL5Rqga:0:1` ("4.9 · Trusted by 20k+ pet parents") vs Hero Floating Trust Card text `v:Y6WF7bQ6A:0:0` ("20K+") and the Social Proof title `v:u6mrlO1lf:0:0` ("Join 20,000+").
-Description: The hero uses three different formats for the same statistic within ~600 pixels of vertical space: "20k+" (lowercase k, in the badge), "20K+" (uppercase K, in the floating trust card), and "20,000+" (full number, in the social proof heading). Pick one canonical form and use it consistently. The badge copy also mixes sentence-case formatting ("4.9 · Trusted by 20k+ pet parents") while the trust card uses a different label ("Happy Pet Owners").
-Evidence: Badge text node `v:WcwL5Rqga:0:0` text="4.9" + `v:WcwL5Rqga:0:1` text="  ·  Trusted by 20k+ pet parents"; Floating Trust Card stat `v:Y6WF7bQ6A:0:0` text="20K+"; Social Proof title `v:u6mrlO1lf:0:0` text="Join 20,000+". Hero section screenshot: https://framerusercontent.com/screenshots/on-demand/7f590178-1208-4471-868c-ec2c4fd9e148.jpg
-Recommended Fix: Standardize on "20K+" everywhere, OR convert all instances to "20,000+" for readability. Also align the surrounding label copy ("Happy Pet Owners" vs "happy pet parents" vs "pet parents") so the hero doesn't read like three different writers contributed.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-2)
-
----
-
 ## TV-3 — Why Us Card #4 description is a truncated sentence ("so you always feel.")
 Status: Open
 Category: Content & copy
@@ -37,58 +24,6 @@ Evidence: Card instance `oTFX0kNfS` attribute `$control__description` = "Clear g
 Recommended Fix: Replace with a complete sentence, e.g., "Clear guidance, thoughtful care, and confident decisions so you always feel supported."
 Confidence: High
 Discovered by: sub-agent 1, session TV (originally TV-1-3)
-
----
-
-## TV-5 — Bg Gradient fallback colors use pure red `rgb(255, 0, 0)` for the Primary token in 3+ places
-Status: Open
-Category: Visual design & branding
-Severity: Medium
-Location: Home `/` — FAQ Bg Gradient (`fvIb3CK_5`), Blog Bg Gradient #1 (`hVUArtt1v`), Blog Bg Gradient #2 (`lbsRWc7p3`), Location Bg Gradient (`AtYlaIIID`).
-Description: Multiple decorative gradient fills on the home page use the pattern `linear-gradient(180deg, var(--token-8d76f153-6a21-4584-a490-7ac9adb914b2, rgb(255, 0, 0)) /* {"name":"Primary"} */ 40%, var(--token-19435b3e-190a-40c7-8a23-915a55ceeb7a, rgb(0, 53, 255)) /* {"name":"Secondary"} */ 100%)`. The Primary color token is `rgb(0, 144, 255)` (blue), but the fallback `rgb()` value is `rgb(255, 0, 0)` (pure red) — clearly a typo. The fallback only renders if the CSS variable fails to resolve, so on a normal visit users won't see it. But it's a code smell, indicates copy-paste from a broken template, and would cause a jarring red flash if the variable ever fails to load. Blog Bg Gradient #2 also hardcodes `rgb(69, 196, 255)` (a different blue) instead of using a token at all.
-Evidence: Node `fvIb3CK_5` `fill: "linear-gradient(180deg, var(--token-8d76f153-6a21-4584-a490-7ac9adb914b2, rgb(255, 0, 0)) /* {"name":"Primary"} */ 40%, var(--token-19435b3e-190a-40c7-8a23-915a55ceeb7a, rgb(0, 53, 255)) /* {"name":"Secondary"} */ 100%)"`. Same exact `rgb(255, 0, 0)` fallback appears in `hVUArtt1v` (Blog Bg Gradient #1) and `AtYlaIIID` (Location Bg Gradient). FAQ section screenshot: https://framerusercontent.com/screenshots/on-demand/76ebe612-7d4b-4ba1-adba-825bb0eaaef4.jpg
-Recommended Fix: Change the fallback `rgb(255, 0, 0)` to `rgb(0, 144, 255)` (the actual Primary color) in all gradient fills. For Blog Bg Gradient #2, replace the hardcoded `rgb(69, 196, 255)` with the appropriate token (likely Accent Cyan Light or Accent Blue).
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-5)
-
----
-
-## TV-6 — "Red Dot" emergency indicator uses hardcoded `rgb(255, 0, 0)` instead of a color token
-Status: Open
-Category: Visual design & branding
-Severity: Low
-Location: Home `/` — Location & Hours section, "Red Dot" OvalShapeNode `UMk1D8S4O` inside Emergency Strip (`xzEEVW_dN`).
-Description: The Emergency Line indicator dot is filled with `rgb(255, 0, 0)` (pure red) hardcoded inline, rather than referencing a color style token. The project has 26 color tokens defined (including "Primary", "Secondary", "Accent Cyan", etc.) but no "Danger"/"Error"/"Red" token. This is consistent with the gradient fallback issue (TV-1-5) and the absence of a red/error token in the design system. Hardcoded colors make future rebranding painful and bypass the design system.
-Evidence: Node `UMk1D8S4O` (OvalShapeNode) `fill: "rgb(255, 0, 0)"`. Ancestor: `Bz6Rh_D5A` (Location) > `V0W1XC4Qo` (Container) > `CYb4mplpU` (Contact Info) > `dQ6t5KY0A` (Contact Details) > `Bplx2r2jL` (Hours Actions) > `qSFy4aURj` (Actions) > `xzEEVW_dN` (Emergency Strip) > `UMk1D8S4O` (Red Dot).
-Recommended Fix: Add a "Danger" or "Error" color token (e.g., red `rgb(239, 68, 68)`) to the project's color styles and reference it via `var(--token-...)`. Update the dot's fill to use the new token.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-6)
-
----
-
-## TV-7 — 5 Stars component instance uses hardcoded `rgb(255, 187, 0)` star color
-Status: Open
-Category: Visual design & branding
-Severity: Low
-Location: Home `/` — Hero badge "Star Wrapper" `xFHBEGEvL` (component `Uqn4x3nhl`).
-Description: The 5-star rating component in the hero badge uses `rgb(255, 187, 0)` (a yellow/orange) hardcoded as the star color via `$control__starColor`, instead of a color token. The project's color palette has no "star"/"warning"/"accent yellow" token; this is a one-off hardcoded value.
-Evidence: ComponentInstanceNode `xFHBEGEvL` `$componentDisplayName: "5 Stars"`, `$control__starColor: "rgb(255, 187, 0)"`. Also note the suspicious triple-underscore control `$control___5Star: "false"` (likely a typo for `$control__5Star` — verify against the component definition).
-Recommended Fix: Add a "Warning" or "Accent Yellow" color token, then bind `$control__starColor` to that token. Sub-agent 10 (native components) should also fix the `$control___5Star` triple-underscore typo in the 5 Stars component definition.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-7)
-
----
-
-## TV-8 — Anti-pattern: `gap` combined with `stackDistribution: "space-between"` in multiple home page frames
-Status: Open
-Category: Visual design & branding
-Severity: Medium
-Location: Home `/` — Services section Text Container (`I_4CTMrRH`), Blog section Text Container (`tXQImCXgc`), FAQ section Help Card (`hFUEK3He0`).
-Description: Several horizontal-stack frames use both `stackDistribution: "space-between"` AND `gap: "8px"` (or `150px` in the Help Card case). Per Framer's core-principles.md, "stackDistribution values starting with `space-` only distribute leftover space and do not guarantee a minimum gap. DON'T try combining `gap` with those values — it is not supported." The `gap` is silently ignored. The FAQ Help Card `hFUEK3He0` sets `gap: "150px"` AND `stackDistribution: "space-between"` — a 150px gap was clearly intended, but the actual rendered gap will be whatever `space-between` produces based on viewport width, which can be much larger or smaller than 150px.
-Evidence: Node `I_4CTMrRH` attributes: `{ layout: "stack", stackDirection: "horizontal", stackDistribution: "space-between", gap: "8px" }`. Node `tXQImCXgc` attributes: `{ stackDistribution: "space-between", gap: "8px" }`. Node `hFUEK3He0` attributes: `{ stackDistribution: "space-between", gap: "150px" }`. Core-principles.md explicitly bans this combination.
-Recommended Fix: For frames where the children should hug the edges with no fixed gap, keep `stackDistribution: "space-between"` and remove `gap`. For frames where a specific gap is desired (e.g., the FAQ Help Card's `150px`), switch to `stackDistribution: "start"` and keep `gap: "150px"`, OR use `padding` for outer spacing and `gap` for inner spacing.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-9)
 
 ---
 
@@ -105,7 +40,7 @@ Discovered by: sub-agent 1, session TV (originally TV-1-10)
 
 ---
 
-## TV-10 — Tablet Hero Content alignment is centered while Desktop and Phone are left-aligned
+## TV-10 — Tablet Hero Content alignment is centered while Desktop and Phone are left-aligned, __Normal
 Status: Open
 Category: Visual design & branding
 Severity: Low
@@ -115,32 +50,6 @@ Evidence: Desktop `zHo3hTChK.attributes.stackAlignment: "start"`; Tablet `hmX39_
 Recommended Fix: Change Tablet Hero Content `stackAlignment` from `"center"` to `"start"` to match Desktop and Phone.
 Confidence: High
 Discovered by: sub-agent 1, session TV (originally TV-1-12)
-
----
-
-## TV-11 — Floating Trust Card has different fill on Phone (solid white) vs Desktop (translucent white)
-Status: Open
-Category: Visual design & branding
-Severity: Low
-Location: Home `/` — Phone Floating Trust Card `BkwtJCk0LGT3p3XJ8w` (`fill: "var(--token-219c2d29-187a-40f8-aab3-a7af9bd91f3b)"` — solid white token) vs Desktop Floating Trust Card `DzayWjytl` (`fill: "rgba(255, 255, 255, 0.75)"` — 75% opacity).
-Description: The Floating Trust Card overlay on the hero image uses a 75%-opacity white fill on Desktop (so the hero image subtly shows through), but a 100%-opacity solid white fill on Phone (completely opaque). The Phone version loses the "floating glass card" aesthetic. Also, Desktop uses a hardcoded `rgba()` while Phone uses the `White` token — neither is wrong, but using the token in one place and the hardcoded value in another is inconsistent.
-Evidence: Desktop `DzayWjytl.attributes.fill: "rgba(255, 255, 255, 0.75)"`; Phone `BkwtJCk0LGT3p3XJ8w.attributes.fill: "var(--token-219c2d29-187a-40f8-aab3-a7af9bd91f3b)"`.
-Recommended Fix: Decide whether the trust card should be translucent (preferred for the "floating" look) or solid. If translucent, change the Phone fill to `rgba(255, 255, 255, 0.75)` (or define a new "Surface Translucent" token). If solid, change the Desktop fill to the `White` token. Either way, use the same value on both breakpoints.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-13)
-
----
-
-## TV-12 — Layout template's `flowEffect: spring-physics` is applied to ALL pages via the home page's `pageEffects.all`
-Status: Open
-Category: Performance & technical
-Severity: Medium
-Location: Home `/` — Desktop breakpoint `WQLkyLRf1` `pageEffects: { all: { enter: { x: 0px, y: 0px, scale: 1, opacity: 0, rotate: 0, rotateX: 0, rotateY: 0, transition: "tween 0.27,0,0.51,1 0.35s 0s" } } }`. Layout template `yDIYoKc7h` Desktop breakpoint `f7pXm5YjB` `flowEffect: { transition: "spring-physics 400 80 1 0s" }`.
-Description: The home page's primary desktop breakpoint sets `pageEffects.all`, which (per core-principles.md) is the syntax for an All Pages effect — meaning every navigation transition on the entire site runs the configured page-enter tween animation (fade in from opacity 0 over 0.35s with a custom cubic-bezier). The layout template's `flowEffect` (spring-physics 400 80 1 0s) also affects scroll/navigation. Combined, these create a global motion layer that: (1) hides content briefly on every page load (opacity starts at 0), which can hurt Largest Contentful Paint and Core Web Vitals; (2) triggers a spring-physics flow that may feel laggy on low-end devices; (3) cannot be overridden by individual pages. The brief 0.35s fade may be intentional branding, but for performance-sensitive visitors (or those with `prefers-reduced-motion` enabled) this is a concern — verify whether the layout respects `prefers-reduced-motion`.
-Evidence: Node `WQLkyLRf1.attributes.pageEffects.all.enter.transition: "tween 0.27,0,0.51,1 0.35s 0s"`; Layout template `f7pXm5YjB.attributes.flowEffect.transition: "spring-physics 400 80 1 0s"`. Note: `prefers-reduced-motion` handling was not visible in the serialized attributes — sub-agent 13 (performance) and sub-agent 8 (accessibility) should verify whether reduced-motion users get a static fallback.
-Recommended Fix: Confirm the site respects `prefers-reduced-motion: reduce` (Framer usually does this automatically, but verify). Consider removing `pageEffects.all` if the 0.35s fade isn't a brand requirement — it adds animation jank without much value. Alternatively, shorten the duration to ≤0.2s. Defer final decision to sub-agents 8 and 13.
-Confidence: Medium
-Discovered by: sub-agent 1, session TV (originally TV-1-14)
 
 ---
 
@@ -154,32 +63,6 @@ Evidence: Tablet Footer node `hmX39_cxlmQdKIVmWI.attributes: { layout: "null", w
 Recommended Fix: Either change the Footer to use `position: "relative"` and let it flow with the page (recommended), OR set `height: "auto"` so the footer grows with its content. Verify on the live site that the footer doesn't overlap the Blog section above it on tablet/phone. Defer final fix to sub-agent 15.
 Confidence: Medium
 Discovered by: sub-agent 1, session TV (originally TV-1-15)
-
----
-
-## TV-14 — Hero "Sparkles" decorative component and Noise texture are both `visible: "false"` (dead weight in the tree)
-Status: Open
-Category: Performance & technical
-Severity: Low
-Location: Home `/` — Hero Background `TocZhBlOF` > Gradient Mask `V5nApHoTz` > Sparkles `zy6COpPDa` (visible: "false") and Noise `W166wnt5m` (visible: "false").
-Description: The Hero Background contains a `Sparkles` external component instance and a `Noise` texture frame, both set to `visible: "false"`. These are disabled but still in the page tree — they still add to the node count and serialization cost, and they ship with the page bundle (Framer tree-shakes disabled components partially, but the asset references remain). The Noise frame's fill (`https://framerusercontent.com/images/6mcf62RlDfRfU61Yg5vb2pefpi4.png`) is still referenced in the serialized output, meaning the PNG asset is still part of the project. If these effects are no longer used, they should be deleted entirely rather than just hidden.
-Evidence: Node `zy6COpPDa.attributes.visible: "false"` (Sparkles component). Node `W166wnt5m.attributes: { visible: "false", fill: "https://framerusercontent.com/images/6mcf62RlDfRfU61Yg5vb2pefpi4.png", blendingMode: "overlay", opacity: "0.15" }` (Noise).
-Recommended Fix: Delete both the Sparkles instance (`zy6COpPDa`) and the Noise frame (`W166wnt5m`) from the Hero Background if they're no longer part of the design. If they may be re-enabled, leave them but document why they're disabled.
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-17)
-
----
-
-## TV-15 — Testimonial Card has `pointerEvents: "none"` and `userSelect: "none"`, blocking text selection and any interactive elements inside
-Status: Open
-Category: Accessibility & compliance
-Severity: Medium
-Location: Home `/` — Testimonials section, Testimonial Card instance `tcWgiHvx6` (component `ruZNfQdon`).
-Description: The Testimonial Card instance sets `pointerEvents: "none"` and `userSelect: "none"`. This means visitors cannot select the testimonial text (e.g., to copy a quote), cannot click any links inside the testimonial (if any exist), and keyboard focus cannot reach interactive children. For users who rely on copy/paste (research, sharing quotes), this is a usability blocker. The setting was likely added to prevent text selection during a parallax/scroll animation, but the parallax should be implemented without disabling pointer events globally on the card.
-Evidence: Node `tcWgiHvx6.attributes: { pointerEvents: "none", userSelect: "none", width: "1fr", height: "auto" }`. Component displayName "Testimonial card", id `ruZNfQdon`.
-Recommended Fix: Remove `pointerEvents: "none"` and `userSelect: "none"` from the testimonial card instance. If needed for animation, scope the parallax/scroll effect to a non-interactive wrapper instead. (Sub-agent 8 accessibility should verify whether this propagates to all testimonial instances.)
-Confidence: High
-Discovered by: sub-agent 1, session TV (originally TV-1-18)
 
 ---
 
@@ -4570,7 +4453,7 @@ Evidence (from `framer.agent.serialize` of each page):
 | `/privacy-policy` | (absent) | `false` |
 | `/terms-of-service` | (absent) | `false` |
 | `/404` | (absent) | `false` |
-Evidence: 
+Evidence:
 Recommended Fix: Standardize — either set `noIndexSite: false` explicitly on all 13 pages, or remove it from the 6 pages where it's currently set (letting it default). The former is more defensive (makes the intent visible in the canvas); the latter is more minimal. Pick one approach and apply consistently.
 Confidence: High
 Discovered by: sub-agent 14, session TV
