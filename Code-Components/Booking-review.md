@@ -447,3 +447,39 @@
 - **Additional Context:** Reported 2026-09-10 (Arabic). Author observation confirmed — margin and padding were indeed stacking.
 - **Implementation record (2026-09-10):** Footer `marginTop` reads `sectionSpacing.footer`; `paddingTop: 12` removed; `gap: 8`, sticky, safe-area kept verbatim; purpose comment added inline.
 
+---
+
+### BE-079 — Remove the Calendar Summary suffix from export titles (duplicate-word risk)
+
+- **Status:** Done (2026-09-11)
+- **Description:** The `Calendar Summary` Copy control (`icsSummaryLabel`, default "Appointment") is appended after the Cal.com event title to build every calendar export title. Many real Cal.com event types are already named ending in "Appointment" (or "Meeting", etc.), so the suffix duplicates the word. The author judged the control a standing source of unexpected duplicated words across users and ordered it removed completely rather than guarded.
+- **Current Behavior:** `calendarExportTitle` (`BookingEngine.tsx` ~12941) = `"<event title> <summary>"`, blank label degrading to the fixed fallback "Booking". A Cal.com event titled "Dental Appointment" exports as "Dental Appointment Appointment" on the ICS download, Google Calendar link, Microsoft Office link, and Microsoft Outlook link.
+- **Expected Behavior:** Export title is the Cal.com event title verbatim on every export surface — no suffix is ever appended. The `Calendar Summary` control, the `icsSummaryLabel` interface key, and all reads are deleted (stored custom values intentionally freeze/stop applying, recorded per migration discipline). When event metadata has no title (rule 38 failure path), a fixed internal fallback constant (the existing `DEFAULT_COPY_ICS_SUMMARY_FALLBACK` "Booking" is acceptable) remains the ICS SUMMARY so the .ics stays valid — no control re-exposed.
+- **Acceptance Criteria:**
+  - [x] No export surface (ICS, Google, Office, Outlook) appends anything to the event title; a "Dental Appointment" event exports as exactly "Dental Appointment".
+  - [x] `Calendar Summary` control row, `icsSummaryLabel` key, and suffix-consumption reads are gone; a no-title metadata failure still yields a non-empty ICS SUMMARY via the internal constant.
+  - [x] Metadata failure never blocks booking or delays the calendar (rule 38) and no hydration regression appears.
+  - [x] Rule 163 (EXPORT-TITLE-EVENT) is rewritten in the same implementing session per rule 140 — it currently mandates the suffix and would otherwise contradict the shipped state.
+- **Constraints / Must Not Do:** Do not implement a dedup heuristic (skip-append-if-identical-suffix) — the author ordered complete removal, not guarding. Do not re-expose any label/summary control. Do not break the non-blocking metadata contract (rule 38).
+- **Related AGENTS.md Rule(s):** Rule 163 (superseded by this order), Rule 110 (structural copy internal), Rule 38 (metadata never blocks), Rule 132/140 (log + rewrite openly).
+- **Additional Context:** Reported 2026-09-11 during the property-controls audit. Author: event titles already ending in "Appointment" would render the word twice — "completely wrong"; removal is the chosen fix.
+- **Implementation record (2026-09-11):** All 8 `icsSummaryLabel` sites removed in one pass: interface key (copy type, ~4724), prop pass (`icsSummaryLabel={copy.icsSummaryLabel}`), prop type + destructure in the success screen, the `calendarExportTitle` memo (rewritten to a plain expression: `eventTitle?.trim() || DEFAULT_COPY_ICS_SUMMARY_FALLBACK` — event title verbatim, no suffix logic, dedup heuristics deliberately absent), and the `Calendar Summary` property control row. The `DEFAULT_COPY_ICS_SUMMARY_FALLBACK` "Booking" constant and `buildIcsDataUri`'s internal `summaryFallback` param stay untouched (rule 38 no-title ICS-validity path — internal, never a control). Export consumers (ICS SUMMARY, Google/Office/Outlook deep links) already read `calendarExportTitle`, so all four surfaces switch with the single expression. No new controls, no new keys, no metadata-fetch changes; static string + existing constants keep hydration parity. AGENTS.md rule 163 rewritten in the same session (suffix mandate → verbatim title, BE-079 recorded); rule 104's `icsSummaryLabel stays` clause amended. Grep-verified zero `icsSummaryLabel`/`Calendar Summary` references remain in the component.
+
+
+---
+
+### BE-080 - Freeze five Copy controls: two aria-only labels + three Notes payload prefixes
+
+- **Status:** Done (2026-09-11)
+- **Description:** Property-controls copy audit surfaced five rows that fail the rule-111 test: two are aria-only labels (never visible to visitors) and three are literal format strings baked into the Cal.com notes payload and ICS description (not visitor copy). The author ordered all five removed from Property Controls ("make them fixed") - constants stay in the component.
+- **Current Behavior:** (pre-fix) `Time Format Toggle Label`, `Event Info Loading (aria)`, `Notes Time Section`, `Notes Date Prefix`, `Notes Time Prefix` were editable Copy rows; editing the Notes rows silently corrupted the notes payload format.
+- **Expected Behavior:** The five controls, interface keys, and threading are deleted; runtime renders from `DEFAULT_COPY_TIMEFORMAT_LABEL`, `CAL_META_LOADING_ARIA`, and the `DEFAULT_COPY_NOTES_*` constants; `buildNotesPayload` signature becomes `(steps, values, timeZone)`.
+- **Acceptance Criteria:**
+  - [x] No leftover reference to the five keys anywhere in the component (grep-verified).
+  - [x] Aria/payload output byte-identical to the shipped defaults (constants unchanged).
+  - [x] `Event Info Unavailable` and `Step Announcement Template` remain editable (not part of the order).
+  - [x] Biome: zero new diagnostics vs HEAD (10 vs 14); tsc under matched SDK stubs: identical 8 pre-existing error families before and after.
+- **Constraints / Must Not Do:** Never re-add the five rows under any group (rule 191). Do not remove `calEventMetaUnavailableCopy` / `stepAnnouncementTemplate` without a new explicit order.
+- **Related AGENTS.md Rule(s):** Rules 111, 178 (extended), new rule 191.
+- **Additional Context:** Reported 2026-09-11 following the full property-controls audit.
+- **Implementation record (2026-09-11):** 5 control rows + `copy` interface keys + prop threading (segmented control, DateAndTimeInline, SuccessScreen) removed; `buildNotesPayload` signature simplified to `(steps, values, timeZone)` reading constants directly; ICS cut marker reads `DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL`.

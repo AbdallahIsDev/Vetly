@@ -782,7 +782,7 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 
 // SECTION-SPACING (BE-075/BE-078): author rhythm for the three vertical
 // zone gaps. Defaults reproduce the shipped look (16 / 16 / 36).
-const SECTION_SPACING_DEFAULTS = { progress: 16, heading: 16, footer: 36 } as const
+const SECTION_SPACING_DEFAULTS = { progress: 32, heading: 32, footer: 32 } as const
 const SECTION_SPACING_MIN = 0
 const SECTION_SPACING_MAX = 64
 function clampSectionSpacing(raw: unknown, fallback: number): number {
@@ -995,17 +995,17 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         optionFont?.fontSize != null ? (fontPixelSize(optionFont.fontSize) ?? 13) : 13
     const activeFontStyle: React.CSSProperties = selectedFont
         ? {
-              ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
-              ...(selectedFont.fontSize != null
-                  ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
-                  : {}),
-              ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
-              ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
-              ...(selectedFont.letterSpacing != null
-                  ? { letterSpacing: selectedFont.letterSpacing }
-                  : {}),
-              ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
-          }
+            ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
+            ...(selectedFont.fontSize != null
+                ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
+                : {}),
+            ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
+            ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
+            ...(selectedFont.letterSpacing != null
+                ? { letterSpacing: selectedFont.letterSpacing }
+                : {}),
+            ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
+        }
         : {}
     const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([])
     return (
@@ -1130,7 +1130,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
 })
 
 if (typeof window !== "undefined") {
-    ;(window as unknown as Record<string, unknown>).__BE_SEGMENTED_SHARED__ = true
+    ; (window as unknown as Record<string, unknown>).__BE_SEGMENTED_SHARED__ = true
 }
 
 interface OptionImageSource {
@@ -1304,7 +1304,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
     const beInteractive = useBeInteractive()
     const [internalSelected, setInternalSelected] = React.useState<string>(() =>
         controlledValue !== undefined &&
-        parsedOptions.some((option) => optionValue(option) === controlledValue)
+            parsedOptions.some((option) => optionValue(option) === controlledValue)
             ? controlledValue
             : getFirstNonEmptyOption(parsedOptions)
     )
@@ -1318,8 +1318,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
             ? parsedOptions.some((option) => optionValue(option) === controlledValue)
                 ? controlledValue
                 : parsedOptions[0]
-                  ? optionValue(parsedOptions[0])
-                  : controlledValue
+                    ? optionValue(parsedOptions[0])
+                    : controlledValue
             : internalSelected
     const formValue = controlledValue !== undefined ? controlledValue : internalSelected
     const tabbableOptionIndex = (() => {
@@ -1524,13 +1524,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...(selectedRadius != null ? { borderRadius: selectedRadius } : {}),
         ...(selectedPaddingY != null || selectedPaddingX != null
             ? {
-                  padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
-              }
+                padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
+            }
             : {}),
         ...(selectedBorderWidth != null
             ? {
-                  border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
-              }
+                border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
+            }
             : {}),
         ...(selectedFont?.fontSize != null
             ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? effectiveFontSize }
@@ -1538,8 +1538,8 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...selectedFontExtraStyle,
         ...(!isNoShadowValue(selectedShadow) && selectedShadow
             ? {
-                  boxShadow: [`inset 0 0 0 1px ${selectedRing}`, selectedShadow].join(", "),
-              }
+                boxShadow: [`inset 0 0 0 1px ${selectedRing}`, selectedShadow].join(", "),
+            }
             : {}),
     }
 
@@ -1581,15 +1581,14 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                     minHeight: optionMinHeight ?? 23,
                     minWidth: TOUCH_TARGET_MIN,
                     borderRadius: optionRadius ?? radius,
-                    border: `${optionBorder}px solid ${
-                        isSelected ? selectedRing : isHovered ? hoverRing : borderColor
-                    }`,
+                    border: `${optionBorder}px solid ${isSelected ? selectedRing : isHovered ? hoverRing : borderColor
+                        }`,
                     background: isSelected ? selectedSurface : backgroundColor,
                     color: option.disabled
                         ? mutedTextColor
                         : isSelected
-                          ? selectedTextColor
-                          : textColor,
+                            ? selectedTextColor
+                            : textColor,
                     cursor: isSubmitting || option.disabled ? "not-allowed" : "pointer",
                     opacity: isSubmitting || option.disabled ? 0.5 : 1,
                     boxShadow:
@@ -2055,13 +2054,13 @@ const CalendarCell = React.memo(function CalendarCell({
                     background: isSelected
                         ? accentColor
                         : isUnavailable
-                          ? "transparent"
-                          : subtleFill,
+                            ? "transparent"
+                            : subtleFill,
                     color: isSelected
                         ? selectedAccentText
                         : isUnavailable
-                          ? mutedSoftText
-                          : textColor,
+                            ? mutedSoftText
+                            : textColor,
                     cursor: isUnavailable ? "default" : "pointer",
                     fontFamily: tileFont?.fontFamily ?? "inherit",
                     fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
@@ -2565,13 +2564,13 @@ interface TimeSlotListProps {
         minutes: number
     }>
     availableTimes:
-        | Array<{
-              value: string
-              label: string
-              end?: string
-              minutes: number
-          }>
-        | undefined
+    | Array<{
+        value: string
+        label: string
+        end?: string
+        minutes: number
+    }>
+    | undefined
     selectedTime: string | null
     hoveredTime: string | null
     setHoveredTime: (time: string | null) => void
@@ -2589,7 +2588,6 @@ interface TimeSlotListProps {
     slotDateLabel?: string
     slotError?: string | null
     slotErrorId?: string
-    timeFormatLabel: string
 }
 
 const TimeSlotButton = React.memo(function TimeSlotButton(props: {
@@ -2669,8 +2667,8 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
                 color: elapsed
                     ? mutedSoftText
                     : selected
-                      ? selectedText
-                      : withAlpha(textColor, 0.75),
+                        ? selectedText
+                        : withAlpha(textColor, 0.75),
                 fontSize: 14,
                 fontWeight: 600,
                 cursor: elapsed ? "not-allowed" : "pointer",
@@ -2734,7 +2732,6 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
         timeZone,
         slotError,
         slotErrorId,
-        timeFormatLabel,
     } = props
     const firstNonElapsedIndex = React.useMemo(
         () => timeOptions.findIndex((time) => !isTimeElapsed(time)),
@@ -2757,12 +2754,12 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
         () =>
             selectedDate
                 ? // TZ-HEADER fix: SR date in the visitor zone too (was
-                  getCachedDateTimeFormat(pageLocale(), {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      ...(isValidTimeZone(timeZone) ? { timeZone } : {}),
-                  }).format(selectedDate)
+                getCachedDateTimeFormat(pageLocale(), {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    ...(isValidTimeZone(timeZone) ? { timeZone } : {}),
+                }).format(selectedDate)
                 : "",
         [selectedDate, timeZone]
     )
@@ -2900,7 +2897,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                     mutedTextColor={mutedText}
                     backgroundColor={backgroundColor}
                     borderColor={borderColor}
-                    ariaLabel={timeFormatLabel}
+                    ariaLabel={DEFAULT_COPY_TIMEFORMAT_LABEL}
                 />
             </div>
 
@@ -2921,19 +2918,19 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                     style={
                         isNarrow
                             ? {
-                                  minWidth: 0,
-                                  maxHeight: "40vh",
-                                  overflowY: "auto",
-                                  overscrollBehavior: "contain",
-                                  paddingBottom: 16,
-                              }
+                                minWidth: 0,
+                                maxHeight: "40vh",
+                                overflowY: "auto",
+                                overscrollBehavior: "contain",
+                                paddingBottom: 16,
+                            }
                             : {
-                                  position: "absolute",
-                                  inset: 0,
-                                  overflowY: "auto",
-                                  minWidth: 0,
-                                  paddingBottom: 16,
-                              }
+                                position: "absolute",
+                                inset: 0,
+                                overflowY: "auto",
+                                minWidth: 0,
+                                paddingBottom: 16,
+                            }
                     }
                 >
                     {slotsLoading || selectionPending ? (
@@ -2988,7 +2985,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                 fontSize: 13,
                                 fontFamily: "inherit",
                             }}
-                            // W1-10-A14: static guidance, never a live region (rule 103).
+                        // W1-10-A14: static guidance, never a live region (rule 103).
                         >
                             {pickDateToSeeTimesLabel}
                         </div>
@@ -3063,9 +3060,9 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                 if (!buttons.length) return
                                 const idx = selectedTime
                                     ? Math.max(
-                                          0,
-                                          timeOptions.findIndex((t) => t.value === selectedTime)
-                                      )
+                                        0,
+                                        timeOptions.findIndex((t) => t.value === selectedTime)
+                                    )
                                     : 0
                                 const move =
                                     e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1
@@ -3523,14 +3520,14 @@ function useTimeGrid(options: UseTimeGridOptions): {
             const slotMoment = time.value.includes("T")
                 ? new Date(time.value)
                 : (() => {
-                      const d = new Date(
-                          selectedDate.getFullYear(),
-                          selectedDate.getMonth(),
-                          selectedDate.getDate()
-                      )
-                      d.setMinutes(time.minutes)
-                      return d
-                  })()
+                    const d = new Date(
+                        selectedDate.getFullYear(),
+                        selectedDate.getMonth(),
+                        selectedDate.getDate()
+                    )
+                    d.setMinutes(time.minutes)
+                    return d
+                })()
             return slotMoment.getTime() <= now.getTime()
         },
         [selectedDate, today, now]
@@ -3578,8 +3575,8 @@ const CalEventInfoPanel = React.memo(function CalEventInfoPanel(props: {
         typeof meta.durationMinutes === "number" && meta.durationMinutes > 0
             ? meta.durationMinutes
             : typeof fallbackDurationMinutes === "number" && fallbackDurationMinutes > 0
-              ? fallbackDurationMinutes
-              : undefined
+                ? fallbackDurationMinutes
+                : undefined
     const initial = meta.organizerName?.trim().charAt(0).toUpperCase()
     return (
         <div style={{ fontSize: 14, lineHeight: 1.45 }}>
@@ -3804,13 +3801,11 @@ interface DateAndTimeInlineProps {
     required?: boolean
     slotError?: string | null
     slotErrorId?: string
-    timeFormatLabel: string
     eventMeta?: CalEventMeta | null
     eventMetaStatus?: CalEventMetaStatus
     /** CAL-EVENT-META: author Default Meeting Duration (minutes) — only used
      *  when Cal.com itself returns no reliable event length. */
     eventMetaFallbackDurationMinutes?: number
-    calEventMetaLoadingAria?: string
     calEventMetaUnavailableCopy?: string
     hourSuffix?: string
     minuteSuffix?: string
@@ -3857,11 +3852,9 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
         required,
         slotError,
         slotErrorId,
-        timeFormatLabel,
         eventMeta,
         eventMetaStatus = "disabled",
         eventMetaFallbackDurationMinutes,
-        calEventMetaLoadingAria = CAL_META_LOADING_ARIA,
         calEventMetaUnavailableCopy = CAL_META_UNAVAILABLE_COPY,
         hourSuffix = DEFAULT_COPY_HOUR_SUFFIX,
         minuteSuffix = DEFAULT_COPY_MINUTE_SUFFIX,
@@ -4041,11 +4034,11 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
     const surfaceBorder = !tileBorder
         ? subtleBorder
         : tileBorderWidth > 0
-          ? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
-          : "none"
+            ? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
+            : "none"
     const surfacePadding =
         typeof normalizedCalendarStyles?.padding === "string" &&
-        normalizedCalendarStyles.padding.trim()
+            normalizedCalendarStyles.padding.trim()
             ? normalizedCalendarStyles.padding
             : undefined
 
@@ -4307,20 +4300,20 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                 style={
                     isNarrow
                         ? {
-                              display: "flex",
-                              flexDirection: "column",
-                              minHeight: 0,
-                              flex: 1,
-                          }
+                            display: "flex",
+                            flexDirection: "column",
+                            minHeight: 0,
+                            flex: 1,
+                        }
                         : {
-                              display: "grid",
-                              minHeight: 0,
-                              flex: 1,
-                              gridTemplateColumns:
-                                  eventMetaStatus !== "disabled"
-                                      ? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
-                                      : "minmax(0, 2fr) minmax(0, 1fr)",
-                          }
+                            display: "grid",
+                            minHeight: 0,
+                            flex: 1,
+                            gridTemplateColumns:
+                                eventMetaStatus !== "disabled"
+                                    ? "minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)"
+                                    : "minmax(0, 2fr) minmax(0, 1fr)",
+                        }
                 }
             >
                 {eventMetaStatus !== "disabled" ? (
@@ -4328,7 +4321,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                         aria-label={
                             eventMetaStatus === "ready" && eventMeta
                                 ? eventMeta.organizerName || eventMeta.title
-                                : calEventMetaLoadingAria
+                                : CAL_META_LOADING_ARIA
                         }
                         aria-busy={eventMetaStatus === "loading" || undefined}
                         style={{
@@ -4511,7 +4504,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                     timeZone={timeZone}
                     slotError={slotError}
                     slotErrorId={slotErrorId}
-                    timeFormatLabel={timeFormatLabel}
                 />
             </div>
         </div>
@@ -4729,20 +4721,14 @@ interface BookingEngineCopyProps {
         successSubtitle: string
         errorTitle: string
         errorSubtitle: string
-        icsSummaryLabel: string
         stepCounterTemplate: string
-        timeFormatLabel: string
         rescheduleOrCancelLabel: string
         stepProgressLabel: string
         stepAnnouncementTemplate: string
         unknownErrorLabel: string
         errorFallbackMessage: string
         icsLocationLabel: string
-        calEventMetaLoadingAria: string
         calEventMetaUnavailableCopy: string
-        notesSelectedTimeLabel: string
-        notesDatePrefix: string
-        notesTimePrefix: string
         errorCopy: ErrorCopy
         validation?: Partial<ValidationCopy>
     }
@@ -4786,6 +4772,7 @@ interface BookingEngineConfigProps {
     advanced?: {
         instanceId?: string
         calApiBaseUrl?: string
+        copy?: BookingEngineProps["copy"]
     }
     instanceId?: string
     onAnalytics?: (eventName: string, payload?: Record<string, unknown>) => void
@@ -4793,8 +4780,8 @@ interface BookingEngineConfigProps {
 
 interface BookingEngineProps
     extends BookingEngineStyleProps,
-        BookingEngineConfigProps,
-        BookingEngineCopyProps {}
+    BookingEngineConfigProps,
+    BookingEngineCopyProps { }
 
 const EMAIL_REGEX = /^[^\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$/
 const PHONE_REGEX = /^\+?[(]?\d{1,4}[)]?(?:[-\s.]?[(]?\d{1,4}[)]?){2,5}[-\s.]?\d{1,9}$/
@@ -4929,7 +4916,7 @@ function useCoarsePointer(): boolean {
         if (typeof window === "undefined" || typeof window.matchMedia !== "function") return
         try {
             setCoarse(window.matchMedia("(pointer: coarse)").matches)
-        } catch {}
+        } catch { }
     }, [beInteractive])
     return coarse
 }
@@ -5119,8 +5106,8 @@ function migrateLegacyCalendar(slots: StepConfig[]): {
         surface: configuredMarker
             ? configuredMarker.calendarStyles
             : srcMarkers.length > 0
-              ? srcMarkers[0].calendarStyles
-              : undefined,
+                ? srcMarkers[0].calendarStyles
+                : undefined,
     }
     const steps = (slots || []).map((slot) => {
         const fields = (slot?.fields || []).filter(
@@ -5400,7 +5387,7 @@ function beSetInteractive(): void {
     for (const listener of Array.from(BE_INTERACTIVE_LISTENERS)) {
         try {
             listener()
-        } catch {}
+        } catch { }
     }
 }
 
@@ -5647,10 +5634,10 @@ function useCalcomSlots(
                     const json = await readJson<
                         | { data?: unknown[] }
                         | {
-                              data?: {
-                                  slots?: Record<string, unknown[]>
-                              }
-                          }
+                            data?: {
+                                slots?: Record<string, unknown[]>
+                            }
+                        }
                         | { slots?: unknown[] }
                         | unknown[]
                     >(res)
@@ -5733,9 +5720,9 @@ function useCalcomSlots(
                         message =
                             waitSeconds !== undefined && waitSeconds > 0
                                 ? copy.slotsRateLimitTemplate.replace(
-                                      "{seconds}",
-                                      String(Math.min(waitSeconds, 90))
-                                  )
+                                    "{seconds}",
+                                    String(Math.min(waitSeconds, 90))
+                                )
                                 : copy.slotsRateLimitGenericError
                     } else if (status && status >= 500) {
                         message = copy.slotsUnavailableError
@@ -5744,10 +5731,10 @@ function useCalcomSlots(
                             plainErr?.message === MALFORMED_JSON_ERROR
                                 ? copy.slotsFallbackError
                                 : plainErr instanceof TypeError || plainErr?.name === "TypeError"
-                                  ? recentCalRateLimit()
-                                      ? copy.slotsRateLimitGenericError
-                                      : copy.networkError
-                                  : fallbackErrorLabel || copy.slotsFallbackError
+                                    ? recentCalRateLimit()
+                                        ? copy.slotsRateLimitGenericError
+                                        : copy.networkError
+                                    : fallbackErrorLabel || copy.slotsFallbackError
                     }
                     setError(message)
                     settleInflight({ error: message })
@@ -6339,10 +6326,10 @@ async function submitCalcomBooking(params: {
                         res.status === 429
                             ? "rate-limit"
                             : res.status >= 500
-                              ? "server"
-                              : res.status === 401 || res.status === 403
-                                ? "credentials"
-                                : "calcom-validation",
+                                ? "server"
+                                : res.status === 401 || res.status === 403
+                                    ? "credentials"
+                                    : "calcom-validation",
                     errorCode: code || undefined,
                     calcomMessage: String(apiError),
                 })
@@ -6366,10 +6353,10 @@ async function submitCalcomBooking(params: {
                     res.status === 429
                         ? "rate-limit"
                         : res.status >= 500
-                          ? "server"
-                          : res.status === 401 || res.status === 403
-                            ? "credentials"
-                            : "calcom-validation",
+                            ? "server"
+                            : res.status === 401 || res.status === 403
+                                ? "credentials"
+                                : "calcom-validation",
                 errorCode: code || undefined,
                 calcomMessage: null,
             })
@@ -6427,26 +6414,26 @@ async function submitCalcomBooking(params: {
         const mappedError = timedOut
             ? copy.submitTimeoutError
             : malformed
-              ? copy.malformedResponseError
-              : opaqueAfterRateLimit
-                ? copy.slotsRateLimitGenericError
-                : mapCalcomError(errObj?.message || "", errObj?.code || errObj?.errorCode, copy)
+                ? copy.malformedResponseError
+                : opaqueAfterRateLimit
+                    ? copy.slotsRateLimitGenericError
+                    : mapCalcomError(errObj?.message || "", errObj?.code || errObj?.errorCode, copy)
         console.error("[BookingEngine] booking:failure", {
             endpoint: "POST /v2/bookings",
             category: timedOut
                 ? "timeout"
                 : malformed
-                  ? "malformed-response"
-                  : opaqueAfterRateLimit
-                    ? "rate-limit"
-                    : "network",
+                    ? "malformed-response"
+                    : opaqueAfterRateLimit
+                        ? "rate-limit"
+                        : "network",
             errorCode: timedOut
                 ? "TIMEOUT"
                 : malformed
-                  ? MALFORMED_JSON_ERROR
-                  : opaqueAfterRateLimit
-                    ? "RATE_LIMIT_EXCEEDED"
-                    : errObj?.code || errObj?.errorCode || undefined,
+                    ? MALFORMED_JSON_ERROR
+                    : opaqueAfterRateLimit
+                        ? "RATE_LIMIT_EXCEEDED"
+                        : errObj?.code || errObj?.errorCode || undefined,
             rawError: errObj?.message,
             recentRateLimit: recentCalRateLimit(),
         })
@@ -6456,10 +6443,10 @@ async function submitCalcomBooking(params: {
             errorCode: timedOut
                 ? "TIMEOUT"
                 : malformed
-                  ? MALFORMED_JSON_ERROR
-                  : opaqueAfterRateLimit
-                    ? "RATE_LIMIT_EXCEEDED"
-                    : errObj?.code || errObj?.errorCode || "",
+                    ? MALFORMED_JSON_ERROR
+                    : opaqueAfterRateLimit
+                        ? "RATE_LIMIT_EXCEEDED"
+                        : errObj?.code || errObj?.errorCode || "",
             alreadyMapped: true,
         }
     } finally {
@@ -6676,8 +6663,8 @@ function buildBookingFieldsResponses(
                 field.fieldType === "phone"
                     ? sanitizePhoneInput(String(value))
                     : Array.isArray(value)
-                      ? [...value]
-                      : String(value)
+                        ? [...value]
+                        : String(value)
         }
     }
     return out
@@ -6686,9 +6673,6 @@ function buildBookingFieldsResponses(
 function buildNotesPayload(
     steps: NormalizedStep[],
     values: BookingValues,
-    selectedTimeLabel: string = DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL,
-    datePrefix: string = DEFAULT_COPY_NOTES_DATE_PREFIX,
-    timePrefix: string = DEFAULT_COPY_NOTES_TIME_PREFIX,
     timeZone?: string
 ): string {
     const lines: string[] = []
@@ -6704,8 +6688,8 @@ function buildNotesPayload(
                 field.fieldType === "phone"
                     ? sanitizePhoneInput(String(value))
                     : Array.isArray(value)
-                      ? value.join(", ")
-                      : String(value)
+                        ? value.join(", ")
+                        : String(value)
             stepLines.push(`${field.label}: ${shown}`)
         }
         if (!stepLines.length) continue
@@ -6726,9 +6710,9 @@ function buildNotesPayload(
         const dateStr = /^\d{4}-\d{2}-\d{2}T/.test(slot.time24h)
             ? getCachedDateTimeFormat(pageLocale(), dateOpts).format(new Date(slot.time24h))
             : getCachedDateTimeFormat(pageLocale(), dateOpts).format(slot.date)
-        lines.push(selectedTimeLabel)
-        lines.push(`${datePrefix}${dateStr}`)
-        lines.push(`${timePrefix}${slot.timeLabel}`)
+        lines.push(DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL)
+        lines.push(`${DEFAULT_COPY_NOTES_DATE_PREFIX}${dateStr}`)
+        lines.push(`${DEFAULT_COPY_NOTES_TIME_PREFIX}${slot.timeLabel}`)
     }
     return lines.join("\n").trim()
 }
@@ -7183,7 +7167,6 @@ function useBookingEngineState(
         styles,
         typography,
         transitionSettings,
-        copy,
         calApiKey,
         calEventTypeId,
         onAnalytics,
@@ -7200,6 +7183,8 @@ function useBookingEngineState(
     const headingFont = styles.headingFont ?? typography?.headingFont ?? props.headingFont
 
     const instanceIdProp = advanced?.instanceId ?? props.instanceId ?? ""
+
+    const copy = advanced?.copy ?? props.copy
 
     const validation = copy?.validation ?? props.validation
 
@@ -7550,7 +7535,7 @@ function useBookingEngineState(
             beCollisionWarnedKeys.add(persistenceKey)
             console.warn(
                 `[BE persist] COLLISION key=${persistenceKey} is claimed by ${claimed} mounted engines — ` +
-                    `they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`
+                `they share one saved session. Set a unique "Instance ID" on each Booking Engine sharing this page.`
             )
         }
         const snap = inSessionFormSnapshots.get(instanceKeyRef.current)
@@ -7727,7 +7712,7 @@ function useBookingEngineState(
                     if (migratedLegacy) {
                         try {
                             window.sessionStorage.removeItem(LEGACY_SESSION_KEY)
-                        } catch {}
+                        } catch { }
                     }
                 }
             }
@@ -8146,7 +8131,7 @@ function useBookingEngineState(
                 `Cal.com event has ${missingCalFields.length === 1 ? "a field" : "fields"} your Engine has no matching field for: ${labels}. Add ${missingCalFields.length === 1 ? "a field" : "fields"} with ${missingCalFields.length === 1 ? "that label" : "those labels"} (or matching Cal Field IDs) to style and position ${missingCalFields.length === 1 ? "it" : "them"} yourself, or remove ${missingCalFields.length === 1 ? "it" : "them"} in Cal.com. Visitors will see ${missingCalFields.length === 1 ? "it" : "them"} as an auto-generated Additional Details step before the calendar (required state honored as configured).`
             )
         }
-        ;(effectiveStepsConfig || []).forEach((step, stepIdx) => {
+        ; (effectiveStepsConfig || []).forEach((step, stepIdx) => {
             const n = stepIdx + 1
             if (step.showHeader === false) return
             const hasTitle = Boolean(step.title && String(step.title).trim())
@@ -8261,7 +8246,7 @@ function useBookingEngineState(
         try {
             el.focus({ preventScroll: true })
             el.scrollIntoView({ block: "nearest" })
-        } catch {}
+        } catch { }
     }, [])
     const submitButtonRef = React.useRef<HTMLButtonElement | null>(null)
     const hasMountedStepRef = React.useRef(false)
@@ -8345,7 +8330,7 @@ function useBookingEngineState(
                         try {
                             target.focus({ preventScroll: true })
                             target.scrollIntoView({ behavior: "smooth", block: "nearest" })
-                        } catch {}
+                        } catch { }
                         break
                     }
                 }
@@ -8462,12 +8447,12 @@ function useBookingEngineState(
             const errorMessage = result.alreadyMapped
                 ? result.error || copy.errorFallbackMessage
                 : mapCalcomError(
-                      result.error || copy.unknownErrorLabel,
-                      result.errorCode,
-                      errorCopy,
-                      copy.errorFallbackMessage,
-                      result.httpStatus
-                  )
+                    result.error || copy.unknownErrorLabel,
+                    result.errorCode,
+                    errorCopy,
+                    copy.errorFallbackMessage,
+                    result.httpStatus
+                )
             setSubmitError(errorMessage)
             submitErrorCodeRef.current =
                 result.errorCode ||
@@ -8720,9 +8705,9 @@ function useBookingEngineState(
     )
     const stepAnnouncementText = currentStep
         ? (copy.stepAnnouncementTemplate ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE)
-              .replace("{counter}", counterText)
-              .replace("{percent}", String(completePct))
-              .replace("{title}", currentStep.title)
+            .replace("{counter}", counterText)
+            .replace("{percent}", String(completePct))
+            .replace("{title}", currentStep.title)
         : ""
     const announcedStepRef = React.useRef(safeCurrentIndex)
     const [stepAnnouncement, setStepAnnouncement] = React.useState("")
@@ -8740,17 +8725,17 @@ function useBookingEngineState(
         ? groupedNavAlignment === "left"
             ? "flex-start"
             : groupedNavAlignment === "center"
-              ? "center"
-              : "flex-end"
+                ? "center"
+                : "flex-end"
         : isFirst
-          ? "flex-end"
-          : "space-between"
+            ? "flex-end"
+            : "space-between"
     const terminalActionJustify: "flex-start" | "center" | "flex-end" | undefined = navGrouped
         ? groupedNavAlignment === "left"
             ? "flex-start"
             : groupedNavAlignment === "center"
-              ? "center"
-              : "flex-end"
+                ? "center"
+                : "flex-end"
         : undefined
     const contentAlignmentRaw =
         styles?.contentAlignment ?? header?.contentAlignment ?? header?.terminalAlignment
@@ -9158,8 +9143,8 @@ export default function BookingEngine(props: BookingEngineProps) {
         safeCurrentIndex > prevNavDirectionRef.current
             ? 1
             : safeCurrentIndex < prevNavDirectionRef.current
-              ? -1
-              : 0
+                ? -1
+                : 0
     React.useEffect(() => {
         prevNavDirectionRef.current = safeCurrentIndex
     }, [safeCurrentIndex])
@@ -9258,12 +9243,8 @@ export default function BookingEngine(props: BookingEngineProps) {
                     bookAnotherPressed={bookAnotherButtonGroup?.pressed}
                     animateInteractions={animateIx}
                     timeZone={timeZone}
-                    icsSummaryLabel={copy.icsSummaryLabel}
                     eventTitle={calEventMeta?.title}
                     rescheduleOrCancelLabel={copy.rescheduleOrCancelLabel}
-                    notesSelectedTimeLabel={copy.notesSelectedTimeLabel}
-                    notesDatePrefix={copy.notesDatePrefix}
-                    notesTimePrefix={copy.notesTimePrefix}
                     icsLocationLabel={copy.icsLocationLabel}
                     meetingDurationMs={meetingDurationMs}
                     transitionVariant={resolvedTransitionVariant}
@@ -9481,25 +9462,25 @@ export default function BookingEngine(props: BookingEngineProps) {
             {/* Canvas-only warnings for empty steps / empty choice options. */}
             {isCanvas && emptyStepWarnings.length > 0
                 ? emptyStepWarnings.map((msg) => (
-                      <div
-                          key={msg}
-                          role="status"
-                          aria-live="polite"
-                          aria-atomic="true"
-                          style={{
-                              padding: "10px 14px",
-                              marginBottom: 8,
-                              borderRadius: borderRadius,
-                              background: withAlpha(theme.errorColor, 0.1),
-                              border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
-                              color: theme.errorColor,
-                              fontSize: 12,
-                              lineHeight: 1.4,
-                          }}
-                      >
-                          {msg}
-                      </div>
-                  ))
+                    <div
+                        key={msg}
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                        style={{
+                            padding: "10px 14px",
+                            marginBottom: 8,
+                            borderRadius: borderRadius,
+                            background: withAlpha(theme.errorColor, 0.1),
+                            border: `1px solid ${withAlpha(theme.errorColor, 0.3)}`,
+                            color: theme.errorColor,
+                            fontSize: 12,
+                            lineHeight: 1.4,
+                        }}
+                    >
+                        {msg}
+                    </div>
+                ))
                 : null}
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
@@ -9910,7 +9891,7 @@ const RootShell = React.memo(function RootShell(props: {
             if (typeof props.rootRef === "function") {
                 props.rootRef(node)
             } else if (props.rootRef) {
-                ;(props.rootRef as { current: HTMLDivElement | null }).current = node
+                ; (props.rootRef as { current: HTMLDivElement | null }).current = node
             }
         },
         [props.rootRef]
@@ -10184,10 +10165,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                     </div>
                 ) : null}
                 {hasCalConfig &&
-                !slotsLoading &&
-                !slotsError &&
-                slotsForSelectedDate.length === 0 &&
-                selectedDate ? (
+                    !slotsLoading &&
+                    !slotsError &&
+                    slotsForSelectedDate.length === 0 &&
+                    selectedDate ? (
                     <div
                         style={{
                             padding: "10px 14px",
@@ -10208,10 +10189,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                     style={
                         slotError
                             ? {
-                                  borderRadius: borderRadius,
-                                  border: `1px solid ${theme.errorColor}`,
-                                  padding: 4,
-                              }
+                                borderRadius: borderRadius,
+                                border: `1px solid ${theme.errorColor}`,
+                                padding: 4,
+                            }
                             : undefined
                     }
                 >
@@ -10281,11 +10262,9 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             nextMonthAriaTemplate={ariaLabels.nextMonthTemplate}
                             slotError={slotError}
                             slotErrorId={slotErrorId}
-                            timeFormatLabel={copy.timeFormatLabel ?? DEFAULT_COPY_TIMEFORMAT_LABEL}
                             eventMeta={eventMeta}
                             eventMetaStatus={eventMetaStatus}
                             eventMetaFallbackDurationMinutes={eventMetaFallbackDurationMinutes}
-                            calEventMetaLoadingAria={copy.calEventMetaLoadingAria}
                             calEventMetaUnavailableCopy={copy.calEventMetaUnavailableCopy}
                             hourSuffix={DEFAULT_COPY_HOUR_SUFFIX}
                             minuteSuffix={DEFAULT_COPY_MINUTE_SUFFIX}
@@ -10705,13 +10684,13 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     color: option.disabled
                         ? theme.textSecondaryColor
                         : isSelected
-                          ? selectedRowText
-                          : optionTextColor,
+                            ? selectedRowText
+                            : optionTextColor,
                     background: isSelected
                         ? selectedRowSurface
                         : isActiveRow
-                          ? hoverRowWash
-                          : "transparent",
+                            ? hoverRowWash
+                            : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -10898,21 +10877,21 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
             </div>
             {open && menuRect && typeof document !== "undefined"
                 ? // Dual @types/react copies in the editor disagree on the
-                  (ReactDOM.createPortal(
-                      <ul
-                          ref={menuRef}
-                          id={listboxDomId}
-                          role="listbox"
-                          aria-multiselectable="true"
-                          aria-label={field.label}
-                          className="be-select-scroll"
-                          tabIndex={-1}
-                          style={menuSurfaceStyle}
-                      >
-                          {opts.map(renderRow)}
-                      </ul>,
-                      document.body
-                  ) as unknown as React.ReactNode)
+                (ReactDOM.createPortal(
+                    <ul
+                        ref={menuRef}
+                        id={listboxDomId}
+                        role="listbox"
+                        aria-multiselectable="true"
+                        aria-label={field.label}
+                        className="be-select-scroll"
+                        tabIndex={-1}
+                        style={menuSurfaceStyle}
+                    >
+                        {opts.map(renderRow)}
+                    </ul>,
+                    document.body
+                ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -10972,8 +10951,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     const displayValue = matchedOption
         ? storedValue
         : opts.length > 0
-          ? getFirstNonEmptyOption(opts)
-          : storedValue
+            ? getFirstNonEmptyOption(opts)
+            : storedValue
     const selectedOption = opts.find((o) => optionValue(o) === displayValue)
 
     React.useEffect(() => {
@@ -11217,13 +11196,13 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     color: option.disabled
                         ? theme.textSecondaryColor
                         : isSelected
-                          ? selectedRowText
-                          : optionTextColor,
+                            ? selectedRowText
+                            : optionTextColor,
                     background: isSelected
                         ? selectedRowSurface
                         : isActiveRow
-                          ? hoverRowWash
-                          : "transparent",
+                            ? hoverRowWash
+                            : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -11318,20 +11297,20 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
             </div>
             {open && menuRect && typeof document !== "undefined"
                 ? // Dual @types/react copies in the editor disagree on the
-                  (ReactDOM.createPortal(
-                      <ul
-                          ref={menuRef}
-                          id={listboxDomId}
-                          role="listbox"
-                          aria-label={field.label}
-                          className="be-select-scroll"
-                          tabIndex={-1}
-                          style={menuSurfaceStyle}
-                      >
-                          {opts.map(renderRow)}
-                      </ul>,
-                      document.body
-                  ) as unknown as React.ReactNode)
+                (ReactDOM.createPortal(
+                    <ul
+                        ref={menuRef}
+                        id={listboxDomId}
+                        role="listbox"
+                        aria-label={field.label}
+                        className="be-select-scroll"
+                        tabIndex={-1}
+                        style={menuSurfaceStyle}
+                    >
+                        {opts.map(renderRow)}
+                    </ul>,
+                    document.body
+                ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -11393,23 +11372,23 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         field.fieldType === "segmented"
             ? field.segmentedStyles
             : field.fieldType === "pills"
-              ? field.pillsStyles
-              : field.fieldType === "cards"
-                ? field.cardsStyles
-                : field.fieldType === "radio"
-                  ? field.radioStyles
-                  : undefined
+                ? field.pillsStyles
+                : field.fieldType === "cards"
+                    ? field.cardsStyles
+                    : field.fieldType === "radio"
+                        ? field.radioStyles
+                        : undefined
     const fieldStyleOverrides: FieldStyleOverrides | undefined =
         field.fieldType === "checkbox" || field.fieldType === "checkboxgroup"
             ? field.checkStyles
             : field.fieldType === "select" || field.fieldType === "multiselect"
-              ? field.choiceStyles
-              : field.fieldType === "segmented" ||
-                  field.fieldType === "pills" ||
-                  field.fieldType === "cards" ||
-                  field.fieldType === "radio"
-                ? mergeStyleOverrides(field.choiceStyles, variantStyles)
-                : field.styles
+                ? field.choiceStyles
+                : field.fieldType === "segmented" ||
+                    field.fieldType === "pills" ||
+                    field.fieldType === "cards" ||
+                    field.fieldType === "radio"
+                    ? mergeStyleOverrides(field.choiceStyles, variantStyles)
+                    : field.styles
     const fs = mergeStyleOverrides(globalFieldStyles, normalizeStyleOverrides(fieldStyleOverrides))
     // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
     // keep winning for stored canvases, engine defaults last.
@@ -11497,9 +11476,8 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         minHeight: fs?.minHeight ?? 23,
         padding: fsPadding,
         borderRadius: fsRadius,
-        border: `${fsBorder.width}px ${fsBorder.style} ${
-            error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
-        }`,
+        border: `${fsBorder.width}px ${fsBorder.style} ${error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
+            }`,
         background: fs?.backgroundColor ?? theme.surfaceColor,
         color: fs?.textColor ?? theme.textPrimaryColor,
         fontFamily: fs?.font?.fontFamily ?? "inherit",
@@ -11612,10 +11590,10 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                 field.fieldType === "pills"
                     ? "pills"
                     : field.fieldType === "segmented"
-                      ? "segmented"
-                      : field.fieldType === "radio"
-                        ? "radio"
-                        : "cards"
+                        ? "segmented"
+                        : field.fieldType === "radio"
+                            ? "radio"
+                            : "cards"
             const fsPaddingAxes = fs?.padding ? paddingAxesFrom(fs.padding) : null
             const fsAuthorRadius =
                 typeof fs?.radius === "string" || typeof fs?.radius === "number"
@@ -11833,21 +11811,21 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                             field.fieldType === "email"
                                 ? "email"
                                 : field.fieldType === "phone"
-                                  ? "tel"
-                                  : field.fieldType === "url"
-                                    ? "url"
-                                    : "text"
+                                    ? "tel"
+                                    : field.fieldType === "url"
+                                        ? "url"
+                                        : "text"
                         }
                         inputMode={
                             field.fieldType === "email"
                                 ? "email"
                                 : field.fieldType === "phone"
-                                  ? "tel"
-                                  : field.fieldType === "number"
-                                    ? "decimal"
-                                    : field.fieldType === "url"
-                                      ? "url"
-                                      : undefined
+                                    ? "tel"
+                                    : field.fieldType === "number"
+                                        ? "decimal"
+                                        : field.fieldType === "url"
+                                            ? "url"
+                                            : undefined
                         }
                         value={typeof value === "string" ? value : ""}
                         placeholder={field.placeholder || ""}
@@ -12650,86 +12628,86 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
             </button>
             {open && menuRect && typeof document !== "undefined"
                 ? (ReactDOM.createPortal(
-                      <div
-                          ref={menuRef}
-                          role="menu"
-                          aria-label={triggerLabel}
-                          style={menuSurfaceStyle}
-                          onKeyDown={(event) => {
-                              if (event.key === "Escape") {
-                                  event.preventDefault()
-                                  closeMenu(true)
-                              } else if (event.key === "ArrowDown") {
-                                  event.preventDefault()
-                                  focusItem(activeIndex + 1)
-                              } else if (event.key === "ArrowUp") {
-                                  event.preventDefault()
-                                  focusItem(activeIndex - 1)
-                              } else if (event.key === "Home") {
-                                  event.preventDefault()
-                                  focusItem(0)
-                              } else if (event.key === "End") {
-                                  event.preventDefault()
-                                  focusItem(options.length - 1)
-                              } else if (event.key === "Tab") {
-                                  closeMenu(false)
-                              }
-                          }}
-                      >
-                          {options.map((option, index) => {
-                              const isActiveRow = index === activeIndex
-                              return (
-                                  <a
-                                      key={option.id}
-                                      ref={(node) => {
-                                          itemRefs.current[index] = node
-                                      }}
-                                      role="menuitem"
-                                      href={option.href}
-                                      target={option.id === "other" ? undefined : "_blank"}
-                                      rel={
-                                          option.id === "other" ? undefined : "noopener noreferrer"
-                                      }
-                                      download={option.download}
-                                      onClick={() => {
-                                          setOpen(false)
-                                      }}
-                                      onMouseEnter={() => setActiveIndex(index)}
-                                      onFocus={() => setActiveIndex(index)}
-                                      style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 10,
-                                          padding: "10px 14px",
-                                          borderRadius: menuRowRadius,
-                                          color: optionTextColor,
-                                          textDecoration: "none",
-                                          cursor: "pointer",
-                                          background: isActiveRow ? hoverRowWash : "transparent",
-                                          transition: reducedMotion
-                                              ? "none"
-                                              : "background-color 0.12s ease",
-                                          touchAction: "manipulation",
-                                          userSelect: "none",
-                                          WebkitUserSelect: "none",
-                                          WebkitTapHighlightColor: "transparent",
-                                          fontFamily:
-                                              calendarLinkSet?.font?.fontFamily ?? "inherit",
-                                          fontSize:
-                                              fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
-                                          ...(calendarLinkSet?.font?.fontWeight != null
-                                              ? { fontWeight: calendarLinkSet.font.fontWeight }
-                                              : {}),
-                                      }}
-                                  >
-                                      <CalendarProviderIcon id={option.id} />
-                                      <span>{option.label}</span>
-                                  </a>
-                              )
-                          })}
-                      </div>,
-                      document.body
-                  ) as unknown as React.ReactNode)
+                    <div
+                        ref={menuRef}
+                        role="menu"
+                        aria-label={triggerLabel}
+                        style={menuSurfaceStyle}
+                        onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                                event.preventDefault()
+                                closeMenu(true)
+                            } else if (event.key === "ArrowDown") {
+                                event.preventDefault()
+                                focusItem(activeIndex + 1)
+                            } else if (event.key === "ArrowUp") {
+                                event.preventDefault()
+                                focusItem(activeIndex - 1)
+                            } else if (event.key === "Home") {
+                                event.preventDefault()
+                                focusItem(0)
+                            } else if (event.key === "End") {
+                                event.preventDefault()
+                                focusItem(options.length - 1)
+                            } else if (event.key === "Tab") {
+                                closeMenu(false)
+                            }
+                        }}
+                    >
+                        {options.map((option, index) => {
+                            const isActiveRow = index === activeIndex
+                            return (
+                                <a
+                                    key={option.id}
+                                    ref={(node) => {
+                                        itemRefs.current[index] = node
+                                    }}
+                                    role="menuitem"
+                                    href={option.href}
+                                    target={option.id === "other" ? undefined : "_blank"}
+                                    rel={
+                                        option.id === "other" ? undefined : "noopener noreferrer"
+                                    }
+                                    download={option.download}
+                                    onClick={() => {
+                                        setOpen(false)
+                                    }}
+                                    onMouseEnter={() => setActiveIndex(index)}
+                                    onFocus={() => setActiveIndex(index)}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 10,
+                                        padding: "10px 14px",
+                                        borderRadius: menuRowRadius,
+                                        color: optionTextColor,
+                                        textDecoration: "none",
+                                        cursor: "pointer",
+                                        background: isActiveRow ? hoverRowWash : "transparent",
+                                        transition: reducedMotion
+                                            ? "none"
+                                            : "background-color 0.12s ease",
+                                        touchAction: "manipulation",
+                                        userSelect: "none",
+                                        WebkitUserSelect: "none",
+                                        WebkitTapHighlightColor: "transparent",
+                                        fontFamily:
+                                            calendarLinkSet?.font?.fontFamily ?? "inherit",
+                                        fontSize:
+                                            fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
+                                        ...(calendarLinkSet?.font?.fontWeight != null
+                                            ? { fontWeight: calendarLinkSet.font.fontWeight }
+                                            : {}),
+                                    }}
+                                >
+                                    <CalendarProviderIcon id={option.id} />
+                                    <span>{option.label}</span>
+                                </a>
+                            )
+                        })}
+                    </div>,
+                    document.body
+                ) as unknown as React.ReactNode)
                 : null}
         </div>
     )
@@ -12768,12 +12746,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     transitionVariant: TransitionVariantId
     baseTransition: Transition
     timeZone: string
-    icsSummaryLabel: string
     eventTitle?: string
     rescheduleOrCancelLabel: string
-    notesSelectedTimeLabel: string
-    notesDatePrefix: string
-    notesTimePrefix: string
     icsLocationLabel?: string
     meetingDurationMs: number
 }) {
@@ -12808,12 +12782,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         transitionVariant,
         baseTransition,
         timeZone,
-        icsSummaryLabel,
         eventTitle,
         rescheduleOrCancelLabel,
-        notesSelectedTimeLabel,
-        notesDatePrefix,
-        notesTimePrefix,
         icsLocationLabel,
         meetingDurationMs,
     } = props
@@ -12891,10 +12861,10 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         }
         const confirmationEntry = bookingResult?.uid
             ? {
-                  id: "__be_confirmation",
-                  label: DEFAULT_COPY_CONFIRMATION_ID_LABEL,
-                  value: bookingResult.uid,
-              }
+                id: "__be_confirmation",
+                label: DEFAULT_COPY_CONFIRMATION_ID_LABEL,
+                value: bookingResult.uid,
+            }
             : undefined
         // SUCCESS-ORDER (BE-034): Name, Email, Date, Time lead;
         // remaining values keep entry order; Confirmation ID stays last.
@@ -12923,40 +12893,28 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     }, [steps, values, timeZone, bookingResult?.uid])
 
     const icsDescription = React.useMemo(() => {
-        const raw = buildNotesPayload(
-            steps,
-            values,
-            notesSelectedTimeLabel,
-            notesDatePrefix,
-            notesTimePrefix,
-            timeZone
-        )
-        const cut = raw.indexOf(notesSelectedTimeLabel)
+        const raw = buildNotesPayload(steps, values, timeZone)
+        const cut = raw.indexOf(DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL)
         return cut > 0 ? raw.slice(0, cut).trim() : raw
-    }, [steps, values, notesSelectedTimeLabel, notesDatePrefix, notesTimePrefix, timeZone])
+    }, [steps, values, timeZone])
 
-    // EXPORT-TITLE (BE-030): "<event title> <summary suffix>" — the
-    // author summary label stays the suffix; missing title keeps today's
-    // summary/fallback behavior.
-    const calendarExportTitle = React.useMemo(() => {
-        const suffix = icsSummaryLabel?.trim() || DEFAULT_COPY_ICS_SUMMARY_FALLBACK
-        const title = eventTitle?.trim()
-        return title ? `${title} ${suffix}` : suffix
-    }, [eventTitle, icsSummaryLabel])
+    // EXPORT-TITLE (BE-079): the Cal.com event title verbatim — no suffix
+    // is ever appended; no-title metadata failure keeps the ICS fallback.
+    const calendarExportTitle = eventTitle?.trim() || DEFAULT_COPY_ICS_SUMMARY_FALLBACK
 
     const icsUri = React.useMemo(
         () =>
             values[SELECTED_SLOT_KEY]
                 ? buildIcsDataUri(
-                      values[SELECTED_SLOT_KEY],
-                      icsDescription || undefined,
-                      calendarExportTitle,
-                      undefined,
-                      undefined,
-                      meetingDurationMs,
-                      typeof icsLocationLabel === "string" ? icsLocationLabel : "",
-                      bookingResult?.uid ?? undefined
-                  )
+                    values[SELECTED_SLOT_KEY],
+                    icsDescription || undefined,
+                    calendarExportTitle,
+                    undefined,
+                    undefined,
+                    meetingDurationMs,
+                    typeof icsLocationLabel === "string" ? icsLocationLabel : "",
+                    bookingResult?.uid ?? undefined
+                )
                 : "",
         [
             values,
@@ -12975,32 +12933,32 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     const googleCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                  "google",
-                  slot,
-                  calendarExportTitle,
-                  icsDescription || undefined,
-                  meetingDurationMs
-              )
+                "google",
+                slot,
+                calendarExportTitle,
+                icsDescription || undefined,
+                meetingDurationMs
+            )
             : ""
     const officeCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                  "office",
-                  slot,
-                  calendarExportTitle,
-                  icsDescription || undefined,
-                  meetingDurationMs
-              )
+                "office",
+                slot,
+                calendarExportTitle,
+                icsDescription || undefined,
+                meetingDurationMs
+            )
             : ""
     const outlookCalUri =
         hasIsoSlotTime && slot
             ? buildCalendarDeepLink(
-                  "outlook",
-                  slot,
-                  calendarExportTitle,
-                  icsDescription || undefined,
-                  meetingDurationMs
-              )
+                "outlook",
+                slot,
+                calendarExportTitle,
+                icsDescription || undefined,
+                meetingDurationMs
+            )
             : ""
     const apiHref = bookingResult?.rescheduleUrl || bookingResult?.cancelUrl || ""
     // API-provided URLs are never trusted blindly — only http(s) destinations render,
@@ -13016,15 +12974,15 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         terminalAlignment === "center"
                             ? "column"
                             : terminalAlignment === "right"
-                              ? "row-reverse"
-                              : "row",
+                                ? "row-reverse"
+                                : "row",
                     alignItems: "center",
                     justifyContent:
                         terminalAlignment === "left"
                             ? "flex-start"
                             : terminalAlignment === "right"
-                              ? "flex-end"
-                              : "center",
+                                ? "flex-end"
+                                : "center",
                     gap: terminalAlignment === "center" ? 0 : 16,
                     textAlign: terminalAlignment,
                     marginBottom: 16,
@@ -13186,49 +13144,49 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         options={[
                             ...(googleCalUri
                                 ? [
-                                      {
-                                          id: "google" as const,
-                                          label: CALENDAR_MENU_GOOGLE_LABEL,
-                                          href: googleCalUri,
-                                      },
-                                  ]
+                                    {
+                                        id: "google" as const,
+                                        label: CALENDAR_MENU_GOOGLE_LABEL,
+                                        href: googleCalUri,
+                                    },
+                                ]
                                 : []),
                             ...(officeCalUri
                                 ? [
-                                      {
-                                          id: "office" as const,
-                                          label: CALENDAR_MENU_OFFICE_LABEL,
-                                          href: officeCalUri,
-                                      },
-                                  ]
+                                    {
+                                        id: "office" as const,
+                                        label: CALENDAR_MENU_OFFICE_LABEL,
+                                        href: officeCalUri,
+                                    },
+                                ]
                                 : []),
                             ...(outlookCalUri
                                 ? [
-                                      {
-                                          id: "outlook" as const,
-                                          label: CALENDAR_MENU_OUTLOOK_LABEL,
-                                          href: outlookCalUri,
-                                      },
-                                  ]
+                                    {
+                                        id: "outlook" as const,
+                                        label: CALENDAR_MENU_OUTLOOK_LABEL,
+                                        href: outlookCalUri,
+                                    },
+                                ]
                                 : []),
                             ...(icsUri
                                 ? [
-                                      {
-                                          id: "other" as const,
-                                          label: CALENDAR_MENU_OTHER_LABEL,
-                                          href: icsUri,
-                                          download: DEFAULT_ICS_FILENAME,
-                                      },
-                                  ]
+                                    {
+                                        id: "other" as const,
+                                        label: CALENDAR_MENU_OTHER_LABEL,
+                                        href: icsUri,
+                                        download: DEFAULT_ICS_FILENAME,
+                                    },
+                                ]
                                 : []),
                             ...(manageHref
                                 ? [
-                                      {
-                                          id: "manage" as const,
-                                          label: rescheduleOrCancelLabel,
-                                          href: manageHref,
-                                      },
-                                  ]
+                                    {
+                                        id: "manage" as const,
+                                        label: rescheduleOrCancelLabel,
+                                        href: manageHref,
+                                    },
+                                ]
                                 : []),
                         ]}
                         calendarLinkSet={calendarLinkSet}
@@ -13320,8 +13278,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         terminalAlignment === "left"
                             ? "flex-start"
                             : terminalAlignment === "right"
-                              ? "flex-end"
-                              : "center",
+                                ? "flex-end"
+                                : "center",
                     justifyContent: "center",
                     textAlign: terminalAlignment,
                     minHeight: 320,
@@ -13338,8 +13296,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                             terminalAlignment === "center"
                                 ? "column"
                                 : terminalAlignment === "right"
-                                  ? "row-reverse"
-                                  : "row",
+                                    ? "row-reverse"
+                                    : "row",
                         alignItems: "center",
                         gap: terminalAlignment === "center" ? 6 : 16,
                         marginBottom: 16,
@@ -13745,10 +13703,10 @@ function resolveButtonStyle(
             typeof group?.radius === "string" && group.radius.trim()
                 ? group.radius
                 : typeof group?.radius === "number"
-                  ? `${group.radius}px`
-                  : typeof radiusToken === "number"
-                    ? `${radiusToken}px`
-                    : radiusToken,
+                    ? `${group.radius}px`
+                    : typeof radiusToken === "number"
+                        ? `${radiusToken}px`
+                        : radiusToken,
         padding:
             typeof group?.padding === "string" && group.padding.trim()
                 ? group.padding
@@ -14151,160 +14109,6 @@ addPropertyControls(BookingEngine, {
             },
         },
     },
-
-    buttonLabels: {
-        type: ControlType.Object,
-        title: "Buttons",
-        icon: "object",
-        buttonTitle: "Buttons",
-        controls: {
-            buttonsLayout: {
-                type: ControlType.Object,
-                title: "Layout",
-                buttonTitle: "Layout",
-                icon: "object",
-                controls: {
-                    groupNavButtons: {
-                        type: ControlType.Boolean,
-                        title: "Layout",
-                        defaultValue: false,
-                        enabledTitle: "Grouped",
-                        disabledTitle: "Split",
-                        hidden: (p: ButtonsLayoutControlProps) => p?.buttonWidth === "fill",
-                    },
-                    groupedNavAlignment: {
-                        type: ControlType.Enum,
-                        title: "Align",
-                        options: ["left", "center", "right"],
-                        optionTitles: ["Left", "Center", "Right"],
-                        defaultValue: "right",
-                        displaySegmentedControl: true,
-                        hidden: (p: ButtonsLayoutControlProps) => p?.groupNavButtons !== true,
-                    },
-                    buttonOrder: {
-                        type: ControlType.Enum,
-                        title: "Back Position",
-                        options: ["backFirst", "primaryFirst"],
-                        optionTitles: ["Left", "Right"],
-                        defaultValue: "backFirst",
-                        displaySegmentedControl: true,
-                    },
-                    buttonWidth: {
-                        type: ControlType.Enum,
-                        title: "Width",
-                        options: ["fit", "fill"],
-                        optionTitles: ["Fit", "Fill"],
-                        defaultValue: "fit",
-                        displaySegmentedControl: true,
-                    },
-                },
-            },
-            primaryButtonStyles: {
-                type: ControlType.Object,
-                title: "Primary Buttons",
-                buttonTitle: "Primary Buttons",
-                icon: "effect",
-                optional: true,
-                controls: makeSharedButtonStylesControls({
-                    padding: "10px 16px 10px 16px",
-                    borderWidth: 0,
-                    borderColor: FIELD_STYLES_BORDER_COLOR,
-                }),
-            },
-            secondaryButtonStyles: {
-                type: ControlType.Object,
-                title: "Secondary Buttons",
-                buttonTitle: "Secondary Buttons",
-                icon: "effect",
-                optional: true,
-                controls: makeSharedButtonStylesControls({
-                    padding: "10px 16px 10px 16px",
-                    borderWidth: 1,
-                    borderColor: FIELD_STYLES_BORDER_COLOR,
-                }),
-            },
-            calendarLinkStyles: {
-                type: ControlType.Object,
-                title: "Calendar Links",
-                buttonTitle: "Calendar Links",
-                icon: "effect",
-                optional: true,
-                controls: makeSharedButtonStylesControls({
-                    padding: "10px 18px 10px 18px",
-                    borderWidth: 1,
-                    borderColor: "#222222",
-                }),
-            },
-            // BUTTON-TEXTS (BE-027/BE-038): one submenu for the three
-            // editable labels. Every other label is a constant, not a row.
-            buttonTexts: {
-                type: ControlType.Object,
-                title: "Button Texts",
-                buttonTitle: "Button Texts",
-                icon: "object",
-                optional: true,
-                controls: {
-                    continueLabel: {
-                        type: ControlType.String,
-                        title: "Next Step",
-                        defaultValue: "Continue",
-                    },
-                    backLabel: {
-                        type: ControlType.String,
-                        title: "Back Step",
-                        defaultValue: "Back",
-                    },
-                    finalActionLabel: {
-                        type: ControlType.String,
-                        title: "Final Action",
-                        defaultValue: "Book Now",
-                    },
-                },
-            },
-            // BUTTON-GROUPS-REMOVED (BE-027/BE-028): per-button
-            // Text-only groups are gone; stored objects remain
-            // readable as legacy style carriers (rule 142).
-        },
-    },
-
-    progressBar: {
-        type: ControlType.Object,
-        title: "Progress",
-        icon: "object",
-        buttonTitle: "Progress",
-        controls: {
-            barVisible: {
-                type: ControlType.Boolean,
-                title: "Bar Visible",
-                defaultValue: true,
-            },
-            barStyle: {
-                type: ControlType.Enum,
-                title: "Bar Style",
-                options: ["solid", "dashed"],
-                optionTitles: ["Solid", "Dashed"],
-                defaultValue: "dashed",
-                displaySegmentedControl: true,
-                hidden: (p: ProgressBarControlProps) => (p?.barVisible ?? p?.visible) === false,
-            },
-            showText: {
-                type: ControlType.Boolean,
-                title: "Show Text",
-                defaultValue: true,
-            },
-            progressText: {
-                type: ControlType.Enum,
-                title: "Progress Text",
-                options: ["top", "bottom"],
-                optionTitles: ["Top", "Bottom"],
-                defaultValue: "top",
-                displaySegmentedControl: true,
-                hidden: (p: ProgressBarControlProps) =>
-                    (p?.showText ?? p?.showTextContent) === false ||
-                    (p?.barVisible ?? p?.visible) === false,
-            },
-        },
-    },
     styles: {
         type: ControlType.Object,
         title: "Styles",
@@ -14430,7 +14234,158 @@ addPropertyControls(BookingEngine, {
             },
         },
     },
-
+    buttonLabels: {
+        type: ControlType.Object,
+        title: "Buttons",
+        icon: "object",
+        buttonTitle: "Buttons",
+        controls: {
+            buttonsLayout: {
+                type: ControlType.Object,
+                title: "Layout",
+                buttonTitle: "Layout",
+                icon: "object",
+                controls: {
+                    groupNavButtons: {
+                        type: ControlType.Boolean,
+                        title: "Layout",
+                        defaultValue: false,
+                        enabledTitle: "Grouped",
+                        disabledTitle: "Split",
+                        hidden: (p: ButtonsLayoutControlProps) => p?.buttonWidth === "fill",
+                    },
+                    groupedNavAlignment: {
+                        type: ControlType.Enum,
+                        title: "Align",
+                        options: ["left", "center", "right"],
+                        optionTitles: ["Left", "Center", "Right"],
+                        defaultValue: "right",
+                        displaySegmentedControl: true,
+                        hidden: (p: ButtonsLayoutControlProps) => p?.groupNavButtons !== true,
+                    },
+                    buttonOrder: {
+                        type: ControlType.Enum,
+                        title: "Back Position",
+                        options: ["backFirst", "primaryFirst"],
+                        optionTitles: ["Left", "Right"],
+                        defaultValue: "backFirst",
+                        displaySegmentedControl: true,
+                    },
+                    buttonWidth: {
+                        type: ControlType.Enum,
+                        title: "Width",
+                        options: ["fit", "fill"],
+                        optionTitles: ["Fit", "Fill"],
+                        defaultValue: "fit",
+                        displaySegmentedControl: true,
+                    },
+                },
+            },
+            primaryButtonStyles: {
+                type: ControlType.Object,
+                title: "Primary Buttons",
+                buttonTitle: "Primary Buttons",
+                icon: "effect",
+                optional: true,
+                controls: makeSharedButtonStylesControls({
+                    padding: "10px 16px 10px 16px",
+                    borderWidth: 0,
+                    borderColor: FIELD_STYLES_BORDER_COLOR,
+                }),
+            },
+            secondaryButtonStyles: {
+                type: ControlType.Object,
+                title: "Secondary Buttons",
+                buttonTitle: "Secondary Buttons",
+                icon: "effect",
+                optional: true,
+                controls: makeSharedButtonStylesControls({
+                    padding: "10px 16px 10px 16px",
+                    borderWidth: 1,
+                    borderColor: FIELD_STYLES_BORDER_COLOR,
+                }),
+            },
+            calendarLinkStyles: {
+                type: ControlType.Object,
+                title: "Calendar Links",
+                buttonTitle: "Calendar Links",
+                icon: "effect",
+                optional: true,
+                controls: makeSharedButtonStylesControls({
+                    padding: "10px 18px 10px 18px",
+                    borderWidth: 1,
+                    borderColor: "#222222",
+                }),
+            },
+            // BUTTON-TEXTS (BE-027/BE-038): one submenu for the three
+            // editable labels. Every other label is a constant, not a row.
+            buttonTexts: {
+                type: ControlType.Object,
+                title: "Button Texts",
+                buttonTitle: "Button Texts",
+                icon: "object",
+                optional: true,
+                controls: {
+                    continueLabel: {
+                        type: ControlType.String,
+                        title: "Next Step",
+                        defaultValue: "Continue",
+                    },
+                    backLabel: {
+                        type: ControlType.String,
+                        title: "Back Step",
+                        defaultValue: "Back",
+                    },
+                    finalActionLabel: {
+                        type: ControlType.String,
+                        title: "Final Action",
+                        defaultValue: "Book Now",
+                    },
+                },
+            },
+            // BUTTON-GROUPS-REMOVED (BE-027/BE-028): per-button
+            // Text-only groups are gone; stored objects remain
+            // readable as legacy style carriers (rule 142).
+        },
+    },
+    progressBar: {
+        type: ControlType.Object,
+        title: "Progress",
+        icon: "object",
+        buttonTitle: "Progress",
+        controls: {
+            barVisible: {
+                type: ControlType.Boolean,
+                title: "Bar Visible",
+                defaultValue: true,
+            },
+            barStyle: {
+                type: ControlType.Enum,
+                title: "Bar Style",
+                options: ["solid", "dashed"],
+                optionTitles: ["Solid", "Dashed"],
+                defaultValue: "dashed",
+                displaySegmentedControl: true,
+                hidden: (p: ProgressBarControlProps) => (p?.barVisible ?? p?.visible) === false,
+            },
+            showText: {
+                type: ControlType.Boolean,
+                title: "Show Text",
+                defaultValue: true,
+            },
+            progressText: {
+                type: ControlType.Enum,
+                title: "Progress Text",
+                options: ["top", "bottom"],
+                optionTitles: ["Top", "Bottom"],
+                defaultValue: "top",
+                displaySegmentedControl: true,
+                hidden: (p: ProgressBarControlProps) =>
+                    (p?.showText ?? p?.showTextContent) === false ||
+                    (p?.barVisible ?? p?.visible) === false,
+            },
+        },
+    },
     transitionSettings: {
         type: ControlType.Object,
         title: "Transition",
@@ -14462,294 +14417,6 @@ addPropertyControls(BookingEngine, {
             },
         },
     },
-
-    copy: {
-        type: ControlType.Object,
-        title: "Copy",
-        icon: "object",
-        buttonTitle: "Copy",
-        controls: {
-            successTitle: {
-                type: ControlType.String,
-                title: "Success Title",
-                defaultValue: "Booked Successfully",
-            },
-            successSubtitle: {
-                type: ControlType.String,
-                title: "Success Subtitle",
-                defaultValue: "Your appointment has been confirmed, Details are below.",
-                displayTextArea: true,
-            },
-            errorTitle: {
-                type: ControlType.String,
-                title: "Error Title",
-                defaultValue: "Something went wrong while processing your booking",
-            },
-            errorSubtitle: {
-                type: ControlType.String,
-                title: "Error Subtitle",
-                defaultValue: "Your details are saved — try again in a moment.",
-                displayTextArea: true,
-            },
-            icsSummaryLabel: {
-                type: ControlType.String,
-                title: "Calendar Summary",
-                defaultValue: "Appointment",
-            },
-            stepCounterTemplate: {
-                type: ControlType.String,
-                title: "Step Counter",
-                defaultValue: "Step {current} of {total}",
-            },
-            timeFormatLabel: {
-                type: ControlType.String,
-                title: "Time Format Toggle Label",
-                defaultValue: DEFAULT_COPY_TIMEFORMAT_LABEL,
-            },
-            rescheduleOrCancelLabel: {
-                type: ControlType.String,
-                title: "Manage Link",
-                defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
-            },
-            stepProgressLabel: {
-                type: ControlType.String,
-                title: "Step Progress",
-                defaultValue: DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
-            },
-            stepAnnouncementTemplate: {
-                type: ControlType.String,
-                title: "Step Announcement Template",
-                defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
-                displayTextArea: true,
-            },
-            unknownErrorLabel: {
-                type: ControlType.String,
-                title: "Unknown Error",
-                defaultValue: DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
-            },
-            errorFallbackMessage: {
-                type: ControlType.String,
-                title: "Submit Error Fallback",
-                defaultValue: DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
-                displayTextArea: true,
-            },
-            icsLocationLabel: {
-                type: ControlType.String,
-                title: "ICS Location",
-                defaultValue: "",
-            },
-            calEventMetaLoadingAria: {
-                type: ControlType.String,
-                title: "Event Info Loading (aria)",
-                defaultValue: CAL_META_LOADING_ARIA,
-            },
-            calEventMetaUnavailableCopy: {
-                type: ControlType.String,
-                title: "Event Info Unavailable",
-                defaultValue: CAL_META_UNAVAILABLE_COPY,
-            },
-            notesSelectedTimeLabel: {
-                type: ControlType.String,
-                title: "Notes Time Section",
-                defaultValue: DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL,
-            },
-            notesDatePrefix: {
-                type: ControlType.String,
-                title: "Notes Date Prefix",
-                defaultValue: DEFAULT_COPY_NOTES_DATE_PREFIX,
-            },
-            notesTimePrefix: {
-                type: ControlType.String,
-                title: "Notes Time Prefix",
-                defaultValue: DEFAULT_COPY_NOTES_TIME_PREFIX,
-            },
-            errorCopy: {
-                type: ControlType.Object,
-                title: "Booking Error Messages",
-                icon: "object",
-                buttonTitle: "Booking Error Messages",
-                controls: {
-                    credentialError: {
-                        type: ControlType.String,
-                        title: "Credentials Rejected",
-                        defaultValue: ERROR_COPY_DEFAULTS.credentialError,
-                    },
-                    timeTakenError: {
-                        type: ControlType.String,
-                        title: "Slot Just Taken",
-                        defaultValue: ERROR_COPY_DEFAULTS.timeTakenError,
-                    },
-                    invalidEmailError: {
-                        type: ControlType.String,
-                        title: "Invalid Email",
-                        defaultValue: ERROR_COPY_DEFAULTS.invalidEmailError,
-                    },
-                    timeNoLongerAvailableError: {
-                        type: ControlType.String,
-                        title: "Time No Longer Available",
-                        defaultValue: ERROR_COPY_DEFAULTS.timeNoLongerAvailableError,
-                    },
-                    networkError: {
-                        type: ControlType.String,
-                        title: "Network / Connection",
-                        defaultValue: ERROR_COPY_DEFAULTS.networkError,
-                    },
-                    submitTimeoutError: {
-                        type: ControlType.String,
-                        title: "Submit Timed Out",
-                        defaultValue: ERROR_COPY_DEFAULTS.submitTimeoutError,
-                    },
-                    malformedResponseError: {
-                        type: ControlType.String,
-                        title: "Unusable Response",
-                        defaultValue: ERROR_COPY_DEFAULTS.malformedResponseError,
-                    },
-                    badRequestError: {
-                        type: ControlType.String,
-                        title: "Request Rejected (400)",
-                        defaultValue: ERROR_COPY_DEFAULTS.badRequestError,
-                    },
-                    attendeeContactError: {
-                        type: ControlType.String,
-                        title: "Missing Contact Details",
-                        defaultValue: ERROR_COPY_DEFAULTS.attendeeContactError,
-                    },
-                    emptyResponseError: {
-                        type: ControlType.String,
-                        title: "Empty Confirmation",
-                        defaultValue: ERROR_COPY_DEFAULTS.emptyResponseError,
-                    },
-                    httpStatusTemplate: {
-                        type: ControlType.String,
-                        title: "HTTP Error Template",
-                        placeholder: "Include {status} where the HTTP code should appear",
-                        defaultValue: ERROR_COPY_DEFAULTS.httpStatusTemplate,
-                    },
-                    slotsTimeoutError: {
-                        type: ControlType.String,
-                        title: "Availability Timed Out",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsTimeoutError,
-                    },
-                    slotsNotFoundError: {
-                        type: ControlType.String,
-                        title: "Event Type Not Found",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsNotFoundError,
-                    },
-                    slotsRateLimitTemplate: {
-                        type: ControlType.String,
-                        title: "Rate Limited Template",
-                        placeholder: "Include {seconds} where the wait time should appear",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsRateLimitTemplate,
-                    },
-                    slotsRateLimitGenericError: {
-                        type: ControlType.String,
-                        title: "Rate Limited (No Wait)",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsRateLimitGenericError,
-                    },
-                    slotsUnavailableError: {
-                        type: ControlType.String,
-                        title: "Service Unavailable",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsUnavailableError,
-                    },
-                    slotsFallbackError: {
-                        type: ControlType.String,
-                        title: "Availability Load Failed",
-                        defaultValue: ERROR_COPY_DEFAULTS.slotsFallbackError,
-                    },
-                    offlineError: {
-                        type: ControlType.String,
-                        title: "Offline Check",
-                        defaultValue: ERROR_COPY_DEFAULTS.offlineError,
-                    },
-                    missingSlotError: {
-                        type: ControlType.String,
-                        title: "No Slot Selected",
-                        defaultValue: ERROR_COPY_DEFAULTS.missingSlotError,
-                    },
-                    misconfiguredFormError: {
-                        type: ControlType.String,
-                        title: "Form Misconfigured",
-                        defaultValue: ERROR_COPY_DEFAULTS.misconfiguredFormError,
-                    },
-                    invalidSlotTimeError: {
-                        type: ControlType.String,
-                        title: "Invalid Slot Time",
-                        defaultValue: ERROR_COPY_DEFAULTS.invalidSlotTimeError,
-                    },
-                    unavailableTitle: {
-                        type: ControlType.String,
-                        title: "Unavailable Title",
-                        defaultValue: ERROR_COPY_DEFAULTS.unavailableTitle,
-                    },
-                    unavailableBody: {
-                        type: ControlType.String,
-                        title: "Unavailable Body",
-                        defaultValue: ERROR_COPY_DEFAULTS.unavailableBody,
-                    },
-                    unavailableMessage: {
-                        type: ControlType.String,
-                        title: "Unavailable (No Credentials)",
-                        defaultValue: ERROR_COPY_DEFAULTS.unavailableMessage,
-                    },
-                },
-            },
-            validation: {
-                type: ControlType.Object,
-                title: "Validation Messages",
-                icon: "object",
-                buttonTitle: "Validation Messages",
-                controls: {
-                    requiredFieldError: {
-                        type: ControlType.String,
-                        title: "Required Field",
-                        defaultValue: DEFAULT_VALIDATION_COPY.requiredFieldError,
-                    },
-                    emailError: {
-                        type: ControlType.String,
-                        title: "Invalid Email",
-                        defaultValue: DEFAULT_VALIDATION_COPY.emailError,
-                    },
-                    phoneError: {
-                        type: ControlType.String,
-                        title: "Invalid Phone",
-                        defaultValue: DEFAULT_VALIDATION_COPY.phoneError,
-                    },
-                    numberError: {
-                        type: ControlType.String,
-                        title: "Invalid Number",
-                        defaultValue: DEFAULT_VALIDATION_COPY.numberError,
-                    },
-                    urlError: {
-                        type: ControlType.String,
-                        title: "Invalid URL",
-                        defaultValue: DEFAULT_VALIDATION_COPY.urlError,
-                    },
-                    minLengthError: {
-                        type: ControlType.String,
-                        title: "Too Short",
-                        defaultValue: DEFAULT_VALIDATION_COPY.minLengthError,
-                    },
-                    maxLengthError: {
-                        type: ControlType.String,
-                        title: "Too Long",
-                        defaultValue: DEFAULT_VALIDATION_COPY.maxLengthError,
-                    },
-                    pickDateTimeError: {
-                        type: ControlType.String,
-                        title: "No Time Picked",
-                        defaultValue: DEFAULT_VALIDATION_COPY.pickDateTimeError,
-                    },
-                    pastTimeError: {
-                        type: ControlType.String,
-                        title: "Past Time",
-                        defaultValue: DEFAULT_VALIDATION_COPY.pastTimeError,
-                    },
-                    // VALIDATION-REMOVED (rule 100): no custom pattern or min-length controls.
-                },
-            },
-        },
-    },
-
     calApiKey: {
         type: ControlType.String,
         title: "Cal.com API Key",
@@ -14769,6 +14436,262 @@ addPropertyControls(BookingEngine, {
         icon: "object",
         buttonTitle: "Advanced",
         controls: {
+            copy: {
+                type: ControlType.Object,
+                title: "Copy",
+                icon: "object",
+                buttonTitle: "Copy",
+                controls: {
+                    successTitle: {
+                        type: ControlType.String,
+                        title: "Success Title",
+                        defaultValue: "Booked Successfully",
+                    },
+                    successSubtitle: {
+                        type: ControlType.String,
+                        title: "Success Subtitle",
+                        defaultValue: "Your appointment details are below, add them to your calendar.",
+                        displayTextArea: true,
+                    },
+                    errorTitle: {
+                        type: ControlType.String,
+                        title: "Error Title",
+                        defaultValue: "Something went wrong while processing your booking",
+                    },
+                    errorSubtitle: {
+                        type: ControlType.String,
+                        title: "Error Subtitle",
+                        defaultValue: "Your details are saved, try again in a moment.",
+                        displayTextArea: true,
+                    },
+                    stepCounterTemplate: {
+                        type: ControlType.String,
+                        title: "Step Counter",
+                        defaultValue: "Step {current} of {total}",
+                    },
+                    rescheduleOrCancelLabel: {
+                        type: ControlType.String,
+                        title: "Manage Link",
+                        defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
+                    },
+                    stepProgressLabel: {
+                        type: ControlType.String,
+                        title: "Step Progress",
+                        defaultValue: DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
+                    },
+                    stepAnnouncementTemplate: {
+                        type: ControlType.String,
+                        title: "Step Announcement Template",
+                        defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
+                        displayTextArea: true,
+                    },
+                    unknownErrorLabel: {
+                        type: ControlType.String,
+                        title: "Unknown Error",
+                        defaultValue: DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
+                    },
+                    errorFallbackMessage: {
+                        type: ControlType.String,
+                        title: "Submit Error Fallback",
+                        defaultValue: DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
+                        displayTextArea: true,
+                    },
+                    icsLocationLabel: {
+                        type: ControlType.String,
+                        title: "ICS Location",
+                        defaultValue: "",
+                    },
+                    calEventMetaUnavailableCopy: {
+                        type: ControlType.String,
+                        title: "Event Info Unavailable",
+                        defaultValue: CAL_META_UNAVAILABLE_COPY,
+                    },
+                    errorCopy: {
+                        type: ControlType.Object,
+                        title: "Booking Error Messages",
+                        icon: "object",
+                        buttonTitle: "Booking Error Messages",
+                        controls: {
+                            credentialError: {
+                                type: ControlType.String,
+                                title: "Credentials Rejected",
+                                defaultValue: ERROR_COPY_DEFAULTS.credentialError,
+                            },
+                            timeTakenError: {
+                                type: ControlType.String,
+                                title: "Slot Just Taken",
+                                defaultValue: ERROR_COPY_DEFAULTS.timeTakenError,
+                            },
+                            invalidEmailError: {
+                                type: ControlType.String,
+                                title: "Invalid Email",
+                                defaultValue: ERROR_COPY_DEFAULTS.invalidEmailError,
+                            },
+                            timeNoLongerAvailableError: {
+                                type: ControlType.String,
+                                title: "Time No Longer Available",
+                                defaultValue: ERROR_COPY_DEFAULTS.timeNoLongerAvailableError,
+                            },
+                            networkError: {
+                                type: ControlType.String,
+                                title: "Network / Connection",
+                                defaultValue: ERROR_COPY_DEFAULTS.networkError,
+                            },
+                            submitTimeoutError: {
+                                type: ControlType.String,
+                                title: "Submit Timed Out",
+                                defaultValue: ERROR_COPY_DEFAULTS.submitTimeoutError,
+                            },
+                            malformedResponseError: {
+                                type: ControlType.String,
+                                title: "Unusable Response",
+                                defaultValue: ERROR_COPY_DEFAULTS.malformedResponseError,
+                            },
+                            badRequestError: {
+                                type: ControlType.String,
+                                title: "Request Rejected (400)",
+                                defaultValue: ERROR_COPY_DEFAULTS.badRequestError,
+                            },
+                            attendeeContactError: {
+                                type: ControlType.String,
+                                title: "Missing Contact Details",
+                                defaultValue: ERROR_COPY_DEFAULTS.attendeeContactError,
+                            },
+                            emptyResponseError: {
+                                type: ControlType.String,
+                                title: "Empty Confirmation",
+                                defaultValue: ERROR_COPY_DEFAULTS.emptyResponseError,
+                            },
+                            httpStatusTemplate: {
+                                type: ControlType.String,
+                                title: "HTTP Error Template",
+                                placeholder: "Include {status} where the HTTP code should appear",
+                                defaultValue: ERROR_COPY_DEFAULTS.httpStatusTemplate,
+                            },
+                            slotsTimeoutError: {
+                                type: ControlType.String,
+                                title: "Availability Timed Out",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsTimeoutError,
+                            },
+                            slotsNotFoundError: {
+                                type: ControlType.String,
+                                title: "Event Type Not Found",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsNotFoundError,
+                            },
+                            slotsRateLimitTemplate: {
+                                type: ControlType.String,
+                                title: "Rate Limited Template",
+                                placeholder: "Include {seconds} where the wait time should appear",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsRateLimitTemplate,
+                            },
+                            slotsRateLimitGenericError: {
+                                type: ControlType.String,
+                                title: "Rate Limited (No Wait)",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsRateLimitGenericError,
+                            },
+                            slotsUnavailableError: {
+                                type: ControlType.String,
+                                title: "Service Unavailable",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsUnavailableError,
+                            },
+                            slotsFallbackError: {
+                                type: ControlType.String,
+                                title: "Availability Load Failed",
+                                defaultValue: ERROR_COPY_DEFAULTS.slotsFallbackError,
+                            },
+                            offlineError: {
+                                type: ControlType.String,
+                                title: "Offline Check",
+                                defaultValue: ERROR_COPY_DEFAULTS.offlineError,
+                            },
+                            missingSlotError: {
+                                type: ControlType.String,
+                                title: "No Slot Selected",
+                                defaultValue: ERROR_COPY_DEFAULTS.missingSlotError,
+                            },
+                            misconfiguredFormError: {
+                                type: ControlType.String,
+                                title: "Form Misconfigured",
+                                defaultValue: ERROR_COPY_DEFAULTS.misconfiguredFormError,
+                            },
+                            invalidSlotTimeError: {
+                                type: ControlType.String,
+                                title: "Invalid Slot Time",
+                                defaultValue: ERROR_COPY_DEFAULTS.invalidSlotTimeError,
+                            },
+                            unavailableTitle: {
+                                type: ControlType.String,
+                                title: "Unavailable Title",
+                                defaultValue: ERROR_COPY_DEFAULTS.unavailableTitle,
+                            },
+                            unavailableBody: {
+                                type: ControlType.String,
+                                title: "Unavailable Body",
+                                defaultValue: ERROR_COPY_DEFAULTS.unavailableBody,
+                            },
+                            unavailableMessage: {
+                                type: ControlType.String,
+                                title: "Unavailable (No Credentials)",
+                                defaultValue: ERROR_COPY_DEFAULTS.unavailableMessage,
+                            },
+                        },
+                    },
+                    validation: {
+                        type: ControlType.Object,
+                        title: "Validation Messages",
+                        icon: "object",
+                        buttonTitle: "Validation Messages",
+                        controls: {
+                            requiredFieldError: {
+                                type: ControlType.String,
+                                title: "Required Field",
+                                defaultValue: DEFAULT_VALIDATION_COPY.requiredFieldError,
+                            },
+                            emailError: {
+                                type: ControlType.String,
+                                title: "Invalid Email",
+                                defaultValue: DEFAULT_VALIDATION_COPY.emailError,
+                            },
+                            phoneError: {
+                                type: ControlType.String,
+                                title: "Invalid Phone",
+                                defaultValue: DEFAULT_VALIDATION_COPY.phoneError,
+                            },
+                            numberError: {
+                                type: ControlType.String,
+                                title: "Invalid Number",
+                                defaultValue: DEFAULT_VALIDATION_COPY.numberError,
+                            },
+                            urlError: {
+                                type: ControlType.String,
+                                title: "Invalid URL",
+                                defaultValue: DEFAULT_VALIDATION_COPY.urlError,
+                            },
+                            minLengthError: {
+                                type: ControlType.String,
+                                title: "Too Short",
+                                defaultValue: DEFAULT_VALIDATION_COPY.minLengthError,
+                            },
+                            maxLengthError: {
+                                type: ControlType.String,
+                                title: "Too Long",
+                                defaultValue: DEFAULT_VALIDATION_COPY.maxLengthError,
+                            },
+                            pickDateTimeError: {
+                                type: ControlType.String,
+                                title: "No Time Picked",
+                                defaultValue: DEFAULT_VALIDATION_COPY.pickDateTimeError,
+                            },
+                            pastTimeError: {
+                                type: ControlType.String,
+                                title: "Past Time",
+                                defaultValue: DEFAULT_VALIDATION_COPY.pastTimeError,
+                            },
+                            // VALIDATION-REMOVED (rule 100): no custom pattern or min-length controls.
+                        },
+                    },
+                },
+            },
             calApiBaseUrl: {
                 type: ControlType.String,
                 title: "Cal.com API Base URL",
