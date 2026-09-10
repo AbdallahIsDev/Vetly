@@ -13,22 +13,22 @@
   Current model: 3 shared style sets (Primary / Secondary / Calendar
   Links) + ONE Button Texts submenu with 3 editable rows (Next Step /
   Back Step / Final Action). Every other label is a hard-coded constant.
-  Theme: Accent #0066BB, Primary Foreground #FFFFFF, Text #111827,
-  Text Secondary rgba(17,24,39,.62), Border #E5E7EB, Error #DC2626,
-  Success #15803D, Surface #F7F8FA, Radius 12. Buttons Font 14px/600.
-  Touch target min 44px. Footer: flex gap 8 margin-top 24 sticky.
+  Theme: Accent #222222, Primary Foreground #FFFFFF, Text #222222,
+  Text Secondary rgba(34,34,34,.62), Border #E2E5EA, Error #DC2626,
+  Success #15803D, Surface #F7F8FA, Radius 12. Buttons Font Inter 14px/600.
+  Buttons min-height 32px, padding 10px 16px. Footer: flex gap 8 margin-top 24 sticky.
   Loading text "Booking…" + 14px spinner. Terminal marks: 48px circles,
   24px glyphs; layered concentric construction on both terminals.
 -->
 <style>
   :root{
-    --accent:#0066BB; --on-accent:#FFFFFF; --text:#111827;
-    --text-2:rgba(17,24,39,.62); --border:#E5E7EB; --error:#DC2626;
+    --accent:#222222; --on-accent:#FFFFFF; --text:#222222;
+    --text-2:rgba(34,34,34,.62); --border:#E2E5EA; --error:#DC2626;
     --success:#15803D; --surface:#F7F8FA;
   }
   *{box-sizing:border-box}
   body{margin:0;background:#FFFFFF;color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     padding:40px 24px 80px}
   .page{max-width:960px;margin:0 auto}
   h1{font-size:22px;margin:0 0 6px}
@@ -44,15 +44,17 @@
   .row:last-child{margin-bottom:0}
   .swatch{display:flex;flex-direction:column;gap:6px}
   .swatch span.lbl{font-size:11.5px;color:var(--text-2)}
-  .be{min-height:44px;display:inline-flex;align-items:center;font-family:inherit;
+  .be{min-height:32px;display:inline-flex;align-items:center;font-family:inherit;
     font-size:14px;font-weight:600;border-radius:12px;cursor:pointer;text-decoration:none;
     transition:background-color .15s ease-out,border-color .15s ease-out,
       box-shadow .15s ease-out,color .15s ease-out,opacity .15s ease-out,transform .15s ease-out}
-  .be-primary{background:var(--accent);color:var(--on-accent);border:none;padding:10px 22px}
-  .be-primary-tight{background:var(--accent);color:var(--on-accent);border:none;padding:10px 18px}
-  .be-ghost{background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 18px}
-  .be-ghost-muted{background:transparent;color:var(--text-2);border:1px solid var(--border);padding:10px 18px}
-  .be-outline{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 18px}
+  .be-primary{background:var(--accent);color:var(--on-accent);border:none;padding:10px 16px}
+  .be-primary-tight{background:var(--accent);color:var(--on-accent);border:none;padding:10px 16px}
+  .be-ghost{background:#FFFFFF;color:var(--text-2);border:1px solid transparent;padding:10px 16px}
+  .be-ghost:hover{border-color:var(--border);color:var(--text)}
+  .be-ghost-muted{background:#FFFFFF;color:var(--text-2);border:1px solid transparent;padding:10px 16px}
+  .be-ghost-muted:hover{border-color:var(--border);color:var(--text)}
+  .be-outline{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 16px}
   .be-loading{opacity:.7;cursor:not-allowed;display:inline-flex;align-items:center;gap:8px}
   .be-disabled{opacity:.5;cursor:not-allowed}
   .be-spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--on-accent);
@@ -60,7 +62,7 @@
   @keyframes be-spin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){.be-spinner{animation:none}}
   .be-mini{background:transparent;color:var(--error);border:1px solid var(--error);
-    padding:6px 14px;font-size:12px;min-height:44px;flex-shrink:0}
+    padding:6px 14px;font-size:12px;min-height:32px;flex-shrink:0}
   .demo{border:1px dashed var(--border);border-radius:12px;padding:16px;margin:0}
   .demo .cap{font-size:11.5px;color:var(--text-2);margin-bottom:10px}
   .footer-split{display:flex;gap:8px;margin-top:24px;align-items:center;
@@ -104,6 +106,93 @@
     color:var(--error);font-size:12px;line-height:1.4}
   .gone{font-size:13px;color:var(--text-2);border:1px dashed var(--border);border-radius:12px;padding:14px 18px;margin:0 0 14px}
   .gone:last-child{margin-bottom:0}
+  /* ---- style explorer (candidate defaults) ---- */
+  .vx{border:1px solid var(--border);border-radius:16px;overflow:hidden;margin:0 0 28px}
+  .vx-head{padding:18px 20px;border-bottom:1px solid var(--border);background:#fff}
+  .vx-head h3{margin:0 0 4px;font-size:16px}
+  .vx-head p{margin:0;font-size:13px;color:var(--text-2);max-width:640px;line-height:1.5}
+  .vx-a{--x-bg:#FFFFFF;--x-surface:#F7F8FA;--x-text:#222222;--x-muted:rgba(34,34,34,.62);
+    --x-border:#E2E5EA;--x-field:#FFFFFF;--x-accent:#222222;--x-onaccent:#FFFFFF;
+    --x-radius:12px;--x-err:#DC2626;--x-ok:#15803D}
+  .vx-b{--x-bg:#0C1116;--x-surface:#141B23;--x-text:#E9EEF4;--x-muted:rgba(233,238,244,.6);
+    --x-border:#26313D;--x-field:#141B23;--x-accent:#3B9BFF;--x-onaccent:#FFFFFF;
+    --x-radius:12px;--x-err:#F87171;--x-ok:#34D399}
+  .vx-c{--x-bg:#FAF7F1;--x-surface:#FFFFFF;--x-text:#1C1917;--x-muted:#78716C;
+    --x-border:#E7E2D9;--x-field:#FFFFFF;--x-accent:#0F766E;--x-onaccent:#FFFFFF;
+    --x-radius:14px;--x-err:#DC2626;--x-ok:#15803D}
+  .vx-body{padding:20px;display:flex;flex-direction:column;gap:20px;background:var(--x-bg);color:var(--x-text)}
+  .x-flow{background:var(--x-bg);border:1px solid var(--x-border);border-radius:var(--x-radius);padding:20px;min-height:320px}
+  .x-prog{font-size:12.5px;color:var(--x-muted);margin-bottom:6px}
+  .x-bar{height:6px;border-radius:999px;background:var(--x-border);margin-bottom:16px;overflow:hidden}
+  .x-bar i{display:block;height:100%;width:50%;background:var(--x-accent);border-radius:999px}
+  .x-title{font-size:22px;font-weight:700;margin:0 0 4px}
+  .x-sub{font-size:14px;color:var(--x-muted);margin:0 0 16px;line-height:1.5}
+  .x-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px}
+  .x-f{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .x-f.full{grid-column:span 2}
+  .x-f label,.x-f .x-fl{font-size:13px;font-weight:500}
+  .x-in{background:var(--x-field);border:1px solid var(--x-border);border-radius:var(--x-radius);
+    color:var(--x-text);font-size:14px;padding:10px 14px;min-height:23px;font-family:inherit;width:100%}
+  .x-in::placeholder{color:var(--x-muted);opacity:1}
+  .x-err-msg{font-size:12px;color:var(--x-err)}
+  .x-in.bad{border-color:var(--x-err)}
+  .x-seg{display:inline-flex;background:var(--x-surface);border:1px solid var(--x-border);
+    border-radius:var(--x-radius);padding:3px;gap:0}
+  .x-seg span{font-size:13px;font-weight:600;padding:6px 14px;border-radius:8px;color:var(--x-muted)}
+  .x-seg span.on{background:var(--x-field);color:var(--x-text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .x-pills{display:flex;gap:8px;flex-wrap:wrap}
+  .x-pill{padding:5px 12px;border-radius:999px;border:1px solid var(--x-border);font-size:14px;background:var(--x-field)}
+  .x-pill.on{background:var(--x-accent);border-color:var(--x-accent);color:var(--x-onaccent)}
+  .x-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .x-card{padding:10px 8px;border-radius:10px;border:1px solid var(--x-border);font-size:14px;text-align:center;background:var(--x-field)}
+  .x-card.on{border-color:var(--x-accent);background:var(--x-accent);color:var(--x-onaccent)}
+  .x-radio{display:flex;gap:8px;align-items:center;font-size:14px}
+  .x-dot{width:18px;height:18px;border-radius:50%;border:1px solid var(--x-border);display:inline-block;position:relative;background:var(--x-field)}
+  .x-dot.on{border-color:var(--x-accent)}
+  .x-dot.on::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--x-accent)}
+  .x-check{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4}
+  .x-box{width:18px;height:18px;border-radius:4px;border:1px solid var(--x-border);background:var(--x-accent);
+    color:var(--x-onaccent);font-size:12px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .x-box.off{background:var(--x-field)}
+  .x-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .x-chip{display:inline-flex;align-items:center;gap:4px;background:var(--x-accent);color:var(--x-onaccent);
+    border-radius:8px;font-size:13px;padding:2px 4px 2px 8px}
+  .x-chip b{font-weight:400;cursor:pointer;font-size:13px}
+  .x-combo{display:flex;justify-content:space-between;align-items:center}
+  .x-nav{display:flex;justify-content:space-between;gap:8px;margin-top:24px;flex-wrap:wrap}
+  .x-btn{min-height:32px;display:inline-flex;align-items:center;font-size:14px;font-weight:600;
+    border-radius:var(--x-radius);padding:10px 16px;cursor:pointer;font-family:inherit}
+  .x-pri{background:var(--x-accent);color:var(--x-onaccent);border:none}
+  .x-sec{background:#FFFFFF;color:var(--x-muted);border:1px solid transparent;padding:10px 16px}
+  .x-sec:hover{border-color:var(--x-border);color:var(--x-text)}
+  .x-cal{display:grid;grid-template-columns:2fr 1fr;gap:16px;background:var(--x-bg);
+    border:1px solid var(--x-border);border-radius:var(--x-radius);padding:20px}
+  .x-month{font-size:16px;font-weight:700;margin:0 0 8px}
+  .x-week{display:grid;grid-template-columns:repeat(7,1fr);font-size:12px;font-weight:700;color:var(--x-muted);text-align:center;margin-bottom:4px}
+  .x-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:14px;font-weight:500}
+  .x-days span{padding:8px 0;border-radius:8px}
+  .x-days span.sel{background:var(--x-accent);color:var(--x-onaccent)}
+  .x-days span.dim{color:var(--x-muted);opacity:.55}
+  .x-days span.tod{position:relative}
+  .x-days span.tod::after{content:"";position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
+    width:4px;height:4px;border-radius:50%;background:currentColor}
+  .x-slots{display:flex;flex-direction:column;gap:8px}
+  .x-slot{height:36px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;
+    border-radius:var(--x-radius);border:1px solid var(--x-border);background:var(--x-field);color:var(--x-text)}
+  .x-slot.on{background:var(--x-accent);border-color:var(--x-accent);color:var(--x-onaccent)}
+  .x-term{background:var(--x-bg);border:1px solid var(--x-border);border-radius:var(--x-radius);padding:24px 16px;min-height:200px}
+  .x-mark{width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;margin-bottom:12px}
+  .x-mark.ok{background:rgba(21,128,61,.12);color:var(--x-ok)}
+  .x-mark.err{background:rgba(220,38,38,.12);color:var(--x-err)}
+  .x-t{font-size:22px;font-weight:700;margin:0 0 4px}
+  .x-s{font-size:14px;color:var(--x-muted);margin:0 0 12px}
+  .x-rows{border:1px solid var(--x-border);border-radius:12px;overflow:hidden;margin-bottom:16px;background:var(--x-surface)}
+  .x-rows div{display:flex;justify-content:space-between;padding:10px 14px;font-size:14px;border-bottom:1px solid var(--x-border)}
+  .x-rows div:last-child{border-bottom:none}
+  .x-rows span:first-child{color:var(--x-muted)}
+  .x-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+  .x-msg{padding:14px 18px;border-radius:12px;background:rgba(220,38,38,.08);
+    border:1px solid rgba(220,38,38,.3);font-size:14px;margin-bottom:16px}
 </style>
 </head>
 <body>
@@ -278,6 +367,173 @@
       <div class="swatch">
         <div class="err-banner" style="margin:0"><span>Couldn’t load times.</span><button type="button" class="be be-mini">Try again</button></div>
         <span class="lbl">Default (in banner)</span>
+      </div>
+    </div>
+  </div>
+  <h2 class="group">Style Explorer - candidate defaults (pick one, then I apply it)</h2>
+  <p class="sub">Three complete static versions. Same content, different tokens. Every surface below derives from that version's variables - field, choice, calendar, slot, button, success, error. Nothing here runs; click nothing.</p>
+
+  <div class="vx vx-a">
+    <div class="vx-head"><h3>Version A - Clinical Light</h3><p>Cal-like light. White surfaces, near-black text, single black accent. Safest default for clinics, consultants, SaaS - disappears into any light website.</p></div>
+    <div class="vx-body">
+      <div class="x-flow">
+        <div class="x-prog">Step 1 of 2</div>
+        <div class="x-bar"><i></i></div>
+        <div class="x-title">Book an Appointment</div>
+        <p class="x-sub">Tell us a bit about yourself so we can prepare.</p>
+        <div class="x-grid">
+          <div class="x-f"><span class="x-fl">Full Name</span><div class="x-in">Jane Smith</div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in">jane.smith@example.com</div></div>
+          <div class="x-f"><span class="x-fl">Phone</span><div class="x-in">+1 (555) 123-4567</div></div>
+          <div class="x-f"><span class="x-fl">Age</span><div class="x-in">5</div></div>
+          <div class="x-f"><span class="x-fl">Website</span><div class="x-in">example.com</div></div>
+          <div class="x-f"><span class="x-fl">Pet</span><div class="x-in x-combo"><span>Option 1</span><span>▾</span></div></div>
+          <div class="x-f full"><span class="x-fl">Notes</span><div class="x-in">Anything we should know before the visit…</div></div>
+          <div class="x-f full"><span class="x-fl">Services</span><div class="x-in"><div class="x-chips"><span class="x-chip">Option1 <b>×</b></span><span class="x-chip">Option3 <b>×</b></span></div></div></div>
+          <div class="x-f"><span class="x-fl">Format</span><div><span class="x-seg"><span class="on">12h</span><span>24h</span></span></div></div>
+          <div class="x-f"><span class="x-fl">Size</span><div class="x-pills"><span class="x-pill on">Small</span><span class="x-pill">Large</span></div></div>
+          <div class="x-f full"><span class="x-fl">Plan</span><div class="x-cards"><div class="x-card on">Basic</div><div class="x-card">Plus</div></div></div>
+          <div class="x-f"><span class="x-fl">Visit</span><div class="x-radio"><span class="x-dot on"></span><span>First visit</span></div></div>
+          <div class="x-f"><span class="x-fl">Reminders</span><div class="x-check"><span class="x-box">✓</span><span>Send SMS reminders</span></div></div>
+          <div class="x-f full"><span class="x-fl">Extras</span><div class="x-check"><span class="x-box">✓</span><span>Grooming</span></div><div class="x-check"><span class="x-box off"></span><span>Boarding</span></div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in bad">not-an-email</div><span class="x-err-msg">Enter a valid email address</span></div>
+        </div>
+        <div class="x-nav"><button type="button" class="x-btn x-sec">Back</button><button type="button" class="x-btn x-pri">Continue</button></div>
+      </div>
+      <div class="x-cal">
+        <div>
+          <p class="x-month">August 2026</p>
+          <div class="x-week"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+          <div class="x-days"><span class="dim">27</span><span class="dim">28</span><span class="dim">29</span><span class="dim">30</span><span class="dim">31</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span class="tod">10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span class="sel">24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span></div>
+        </div>
+        <div>
+          <p class="x-month" style="font-size:14px">MON 24th</p>
+          <div class="x-slots"><div class="x-slot">9:00 AM</div><div class="x-slot on">10:30 AM</div><div class="x-slot">12:00 PM</div><div class="x-slot">2:15 PM</div></div>
+        </div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark ok">✓</div>
+        <p class="x-t">Booking successfully confirmed</p>
+        <p class="x-s">Your appointment details are below — add them to your calendar.</p>
+        <div class="x-rows"><div><span>Name</span><span>Jane Doe</span></div><div><span>Email</span><span>jane@example.com</span></div><div><span>Date</span><span>Monday, August 24, 2026</span></div><div><span>Time</span><span>10:30 AM</span></div><div><span>Confirmation ID</span><span>ueC2BNLdcnEztXxE14LHP</span></div></div>
+        <div class="x-actions"><button type="button" class="x-btn x-sec">Add to Calendar</button><button type="button" class="x-btn x-sec">Manage</button><button type="button" class="x-btn x-pri">Book another</button></div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark err">!</div>
+        <p class="x-t">Something went wrong</p>
+        <p class="x-s">Your details are saved — try again in a moment.</p>
+        <div class="x-msg">The booking could not be confirmed. Check your connection and try again.</div>
+        <div class="x-actions"><button type="button" class="x-btn x-pri">Try again</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vx vx-b">
+    <div class="vx-head"><h3>Version B - Midnight</h3><p>True dark. Deep surfaces, bright blue accent, softened error/success. For dark websites — no white flash, no restyle.</p></div>
+    <div class="vx-body">
+      <div class="x-flow">
+        <div class="x-prog">Step 1 of 2</div>
+        <div class="x-bar"><i></i></div>
+        <div class="x-title">Book an Appointment</div>
+        <p class="x-sub">Tell us a bit about yourself so we can prepare.</p>
+        <div class="x-grid">
+          <div class="x-f"><span class="x-fl">Full Name</span><div class="x-in">Jane Smith</div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in">jane.smith@example.com</div></div>
+          <div class="x-f"><span class="x-fl">Phone</span><div class="x-in">+1 (555) 123-4567</div></div>
+          <div class="x-f"><span class="x-fl">Age</span><div class="x-in">5</div></div>
+          <div class="x-f"><span class="x-fl">Website</span><div class="x-in">example.com</div></div>
+          <div class="x-f"><span class="x-fl">Pet</span><div class="x-in x-combo"><span>Option 1</span><span>▾</span></div></div>
+          <div class="x-f full"><span class="x-fl">Notes</span><div class="x-in">Anything we should know before the visit…</div></div>
+          <div class="x-f full"><span class="x-fl">Services</span><div class="x-in"><div class="x-chips"><span class="x-chip">Option1 <b>×</b></span><span class="x-chip">Option3 <b>×</b></span></div></div></div>
+          <div class="x-f"><span class="x-fl">Format</span><div><span class="x-seg"><span class="on">12h</span><span>24h</span></span></div></div>
+          <div class="x-f"><span class="x-fl">Size</span><div class="x-pills"><span class="x-pill on">Small</span><span class="x-pill">Large</span></div></div>
+          <div class="x-f full"><span class="x-fl">Plan</span><div class="x-cards"><div class="x-card on">Basic</div><div class="x-card">Plus</div></div></div>
+          <div class="x-f"><span class="x-fl">Visit</span><div class="x-radio"><span class="x-dot on"></span><span>First visit</span></div></div>
+          <div class="x-f"><span class="x-fl">Reminders</span><div class="x-check"><span class="x-box">✓</span><span>Send SMS reminders</span></div></div>
+          <div class="x-f full"><span class="x-fl">Extras</span><div class="x-check"><span class="x-box">✓</span><span>Grooming</span></div><div class="x-check"><span class="x-box off"></span><span>Boarding</span></div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in bad">not-an-email</div><span class="x-err-msg">Enter a valid email address</span></div>
+        </div>
+        <div class="x-nav"><button type="button" class="x-btn x-sec">Back</button><button type="button" class="x-btn x-pri">Continue</button></div>
+      </div>
+      <div class="x-cal">
+        <div>
+          <p class="x-month">August 2026</p>
+          <div class="x-week"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+          <div class="x-days"><span class="dim">27</span><span class="dim">28</span><span class="dim">29</span><span class="dim">30</span><span class="dim">31</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span class="tod">10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span class="sel">24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span></div>
+        </div>
+        <div>
+          <p class="x-month" style="font-size:14px">MON 24th</p>
+          <div class="x-slots"><div class="x-slot">9:00 AM</div><div class="x-slot on">10:30 AM</div><div class="x-slot">12:00 PM</div><div class="x-slot">2:15 PM</div></div>
+        </div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark ok">✓</div>
+        <p class="x-t">Booking successfully confirmed</p>
+        <p class="x-s">Your appointment details are below — add them to your calendar.</p>
+        <div class="x-rows"><div><span>Name</span><span>Jane Doe</span></div><div><span>Email</span><span>jane@example.com</span></div><div><span>Date</span><span>Monday, August 24, 2026</span></div><div><span>Time</span><span>10:30 AM</span></div><div><span>Confirmation ID</span><span>ueC2BNLdcnEztXxE14LHP</span></div></div>
+        <div class="x-actions"><button type="button" class="x-btn x-sec">Add to Calendar</button><button type="button" class="x-btn x-sec">Manage</button><button type="button" class="x-btn x-pri">Book another</button></div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark err">!</div>
+        <p class="x-t">Something went wrong</p>
+        <p class="x-s">Your details are saved — try again in a moment.</p>
+        <div class="x-msg">The booking could not be confirmed. Check your connection and try again.</div>
+        <div class="x-actions"><button type="button" class="x-btn x-pri">Try again</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vx vx-c">
+    <div class="vx-head"><h3>Version C - Warm Sand</h3><p>Warm minimal. Sand background, stone text, deep teal accent. For hospitality, clinics, real estate — calm and neutral.</p></div>
+    <div class="vx-body">
+      <div class="x-flow">
+        <div class="x-prog">Step 1 of 2</div>
+        <div class="x-bar"><i></i></div>
+        <div class="x-title">Book an Appointment</div>
+        <p class="x-sub">Tell us a bit about yourself so we can prepare.</p>
+        <div class="x-grid">
+          <div class="x-f"><span class="x-fl">Full Name</span><div class="x-in">Jane Smith</div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in">jane.smith@example.com</div></div>
+          <div class="x-f"><span class="x-fl">Phone</span><div class="x-in">+1 (555) 123-4567</div></div>
+          <div class="x-f"><span class="x-fl">Age</span><div class="x-in">5</div></div>
+          <div class="x-f"><span class="x-fl">Website</span><div class="x-in">example.com</div></div>
+          <div class="x-f"><span class="x-fl">Pet</span><div class="x-in x-combo"><span>Option 1</span><span>▾</span></div></div>
+          <div class="x-f full"><span class="x-fl">Notes</span><div class="x-in">Anything we should know before the visit…</div></div>
+          <div class="x-f full"><span class="x-fl">Services</span><div class="x-in"><div class="x-chips"><span class="x-chip">Option1 <b>×</b></span><span class="x-chip">Option3 <b>×</b></span></div></div></div>
+          <div class="x-f"><span class="x-fl">Format</span><div><span class="x-seg"><span class="on">12h</span><span>24h</span></span></div></div>
+          <div class="x-f"><span class="x-fl">Size</span><div class="x-pills"><span class="x-pill on">Small</span><span class="x-pill">Large</span></div></div>
+          <div class="x-f full"><span class="x-fl">Plan</span><div class="x-cards"><div class="x-card on">Basic</div><div class="x-card">Plus</div></div></div>
+          <div class="x-f"><span class="x-fl">Visit</span><div class="x-radio"><span class="x-dot on"></span><span>First visit</span></div></div>
+          <div class="x-f"><span class="x-fl">Reminders</span><div class="x-check"><span class="x-box">✓</span><span>Send SMS reminders</span></div></div>
+          <div class="x-f full"><span class="x-fl">Extras</span><div class="x-check"><span class="x-box">✓</span><span>Grooming</span></div><div class="x-check"><span class="x-box off"></span><span>Boarding</span></div></div>
+          <div class="x-f"><span class="x-fl">Email</span><div class="x-in bad">not-an-email</div><span class="x-err-msg">Enter a valid email address</span></div>
+        </div>
+        <div class="x-nav"><button type="button" class="x-btn x-sec">Back</button><button type="button" class="x-btn x-pri">Continue</button></div>
+      </div>
+      <div class="x-cal">
+        <div>
+          <p class="x-month">August 2026</p>
+          <div class="x-week"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+          <div class="x-days"><span class="dim">27</span><span class="dim">28</span><span class="dim">29</span><span class="dim">30</span><span class="dim">31</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span class="tod">10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span class="sel">24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>29</span><span>30</span></div>
+        </div>
+        <div>
+          <p class="x-month" style="font-size:14px">MON 24th</p>
+          <div class="x-slots"><div class="x-slot">9:00 AM</div><div class="x-slot on">10:30 AM</div><div class="x-slot">12:00 PM</div><div class="x-slot">2:15 PM</div></div>
+        </div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark ok">✓</div>
+        <p class="x-t">Booking successfully confirmed</p>
+        <p class="x-s">Your appointment details are below — add them to your calendar.</p>
+        <div class="x-rows"><div><span>Name</span><span>Jane Doe</span></div><div><span>Email</span><span>jane@example.com</span></div><div><span>Date</span><span>Monday, August 24, 2026</span></div><div><span>Time</span><span>10:30 AM</span></div><div><span>Confirmation ID</span><span>ueC2BNLdcnEztXxE14LHP</span></div></div>
+        <div class="x-actions"><button type="button" class="x-btn x-sec">Add to Calendar</button><button type="button" class="x-btn x-sec">Manage</button><button type="button" class="x-btn x-pri">Book another</button></div>
+      </div>
+      <div class="x-term">
+        <div class="x-mark err">!</div>
+        <p class="x-t">Something went wrong</p>
+        <p class="x-s">Your details are saved — try again in a moment.</p>
+        <div class="x-msg">The booking could not be confirmed. Check your connection and try again.</div>
+        <div class="x-actions"><button type="button" class="x-btn x-pri">Try again</button></div>
       </div>
     </div>
   </div>

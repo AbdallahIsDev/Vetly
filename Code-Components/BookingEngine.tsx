@@ -789,7 +789,7 @@ const FIXED_ERROR_COLOR = "#DC2626"
 const FIELD_STYLES_INPUT_PADDING = "14px"
 const FIELD_STYLES_SELECT_PADDING = "14px"
 const FIELD_STYLES_CARDS_PADDING = "10px 8px 10px 8px"
-const FIELD_STYLES_PILLS_PADDING = "10px 12px 10px 12px"
+const FIELD_STYLES_PILLS_PADDING = "5px 12px 5px 12px"
 const FIELD_STYLES_SEGMENTED_PADDING = "11px 10px 11px 10px"
 const FIELD_STYLES_SPACING = 6
 const FIELD_STYLES_CHECK_SIZE = 18
@@ -798,7 +798,7 @@ const FIELD_STYLES_CARDS_RADIUS = "12px"
 const FIELD_STYLES_PILLS_RADIUS = "999px"
 const FIELD_STYLES_SEGMENTED_RADIUS = "12px"
 const FIELD_STYLES_BORDER_WIDTH = 1
-const FIELD_STYLES_BORDER_COLOR = "#E5E7EB"
+const FIELD_STYLES_BORDER_COLOR = "#E2E2E2"
 
 function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
     padding: string
@@ -921,6 +921,15 @@ interface SegmentedControlProps {
     optionPaddingX?: number
     optionFont?: FramerFont
     trackShadow?: string
+    // Selected-state surface (BE-073): when set, the thumb + active option follow
+    // the Selected Styles subgroup; unset keys inherit the option's own look.
+    selectedRadius?: number | string
+    selectedPaddingY?: number
+    selectedPaddingX?: number
+    selectedFont?: FramerFont
+    selectedShadow?: string
+    selectedBorderWidth?: number
+    selectedBorderStyle?: string
 }
 
 const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedControlProps) {
@@ -940,6 +949,13 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         optionPaddingX,
         optionFont,
         trackShadow,
+        selectedRadius,
+        selectedPaddingY,
+        selectedPaddingX,
+        selectedFont,
+        selectedShadow,
+        selectedBorderWidth,
+        selectedBorderStyle,
     } = props
     const isStaticRender = useIsStaticRenderer()
     const prefersReducedMotion = useReducedMotion()
@@ -949,11 +965,37 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         options.findIndex((o) => o.value === value)
     )
     const segmentInnerRadius = innerRadiusValue(borderRadius, 3)
-    const thumbWidth = count > 0 ? `calc((100% - 6px) / ${count})` : "calc(50% - 3px)"
+    // Selected thumb surface: inset follows selected padding (default 3px), width
+    // math tracks it so alignment never drifts; unset keys inherit option look.
+    const thumbPadY = selectedPaddingY ?? 3
+    const thumbPadX = selectedPaddingX ?? 3
+    const thumbWidth =
+        count > 0 ? `calc((100% - ${thumbPadX * 2}px) / ${count})` : "calc(50% - 3px)"
+    const thumbRadius = selectedRadius ?? segmentInnerRadius
+    const thumbBorderWidth = selectedBorderWidth ?? 1
+    const thumbBorderStyle = selectedBorderStyle ?? "solid"
     const effectiveTrackBackground = trackBackground ?? withAlpha(borderColor, 0.14)
     const thumbBorder = thumbBorderColor ?? borderColor
+    const thumbShadow =
+        selectedShadow && !isNoShadowValue(selectedShadow)
+            ? selectedShadow
+            : "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)"
     const segmentFontSize =
         optionFont?.fontSize != null ? (fontPixelSize(optionFont.fontSize) ?? 13) : 13
+    const activeFontStyle: React.CSSProperties = selectedFont
+        ? {
+              ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
+              ...(selectedFont.fontSize != null
+                  ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
+                  : {}),
+              ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
+              ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
+              ...(selectedFont.letterSpacing != null
+                  ? { letterSpacing: selectedFont.letterSpacing }
+                  : {}),
+              ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
+          }
+        : {}
     const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([])
     return (
         <fieldset
@@ -970,7 +1012,6 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                 margin: 0,
                 minWidth: 0,
                 gap: 0,
-                minHeight: 32,
                 boxSizing: "border-box",
                 ...shadowStyle(trackShadow),
             }}
@@ -979,15 +1020,15 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                 <div
                     style={{
                         position: "absolute",
-                        top: 3,
-                        bottom: 3,
-                        left: 3,
+                        top: thumbPadY,
+                        bottom: thumbPadY,
+                        left: thumbPadX,
                         width: thumbWidth,
                         transform: `translateX(${selectedIndex * 100}%)`,
-                        borderRadius: segmentInnerRadius,
+                        borderRadius: thumbRadius,
                         background: backgroundColor,
-                        border: `1px solid ${thumbBorder}`,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
+                        border: `${Math.max(thumbBorderWidth, 0)}px ${thumbBorderStyle} ${thumbBorder}`,
+                        boxShadow: thumbShadow,
                         pointerEvents: "none",
                     }}
                 />
@@ -1002,14 +1043,14 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                     }
                     style={{
                         position: "absolute",
-                        top: 3,
-                        bottom: 3,
-                        left: 3,
+                        top: thumbPadY,
+                        bottom: thumbPadY,
+                        left: thumbPadX,
                         width: thumbWidth,
-                        borderRadius: segmentInnerRadius,
+                        borderRadius: thumbRadius,
                         background: backgroundColor,
-                        border: `1px solid ${thumbBorder}`,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)",
+                        border: `${Math.max(thumbBorderWidth, 0)}px ${thumbBorderStyle} ${thumbBorder}`,
+                        boxShadow: thumbShadow,
                         pointerEvents: "none",
                     }}
                 />
@@ -1041,7 +1082,14 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             position: "relative",
                             zIndex: 1,
                             width: "100%",
-                            padding: `0 ${optionPaddingX ?? 8}px`,
+                            minHeight: BUTTON_MIN_HEIGHT,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding:
+                                active && (selectedPaddingY != null || selectedPaddingX != null)
+                                    ? `${selectedPaddingY ?? 0}px ${selectedPaddingX ?? optionPaddingX ?? 8}px`
+                                    : `0 ${optionPaddingX ?? 8}px`,
                             border: "none",
                             borderRadius: segmentInnerRadius,
                             background: "transparent",
@@ -1049,13 +1097,14 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             cursor: disabled ? "not-allowed" : "pointer",
                             fontFamily: optionFont?.fontFamily ?? "inherit",
                             fontSize: segmentFontSize,
-                            fontWeight: 600,
+                            fontWeight: 500,
                             ...(optionFont?.letterSpacing != null
                                 ? { letterSpacing: optionFont.letterSpacing }
                                 : {}),
                             ...(optionFont?.lineHeight != null
                                 ? { lineHeight: optionFont.lineHeight }
                                 : {}),
+                            ...(active ? activeFontStyle : {}),
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -1534,7 +1583,12 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                     opacity: isSubmitting || option.disabled ? 0.5 : 1,
                     boxShadow:
                         [
-                            isSelected ? `inset 0 0 0 1px ${selectedRing}` : null,
+                            // The selected ring follows the selected border width: an
+                            // explicit 0 removes the outline entirely (it is visually
+                            // indistinguishable from a border); unset keeps today's ring.
+                            isSelected && selectedBorderWidth !== 0
+                                ? `inset 0 0 0 1px ${selectedRing}`
+                                : null,
                             !isNoShadowValue(optionShadow) && optionShadow ? optionShadow : null,
                         ]
                             .filter(Boolean)
@@ -1770,6 +1824,13 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                     optionFont={optionFont}
                     trackShadow={optionShadow}
                     borderColor={borderColor}
+                    selectedRadius={selectedRadius}
+                    selectedPaddingY={selectedPaddingY}
+                    selectedPaddingX={selectedPaddingX}
+                    selectedFont={selectedFont}
+                    selectedShadow={selectedShadow}
+                    selectedBorderWidth={selectedBorderWidth}
+                    selectedBorderStyle={selectedBorderStyle}
                     ariaLabel={label || choiceGroupAriaLabel || inputName}
                     disabled={isSubmitting}
                 />
@@ -2727,7 +2788,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                 minWidth: 0,
                 borderLeft: isNarrow ? "none" : subtleBorder,
                 borderTop: isNarrow ? subtleBorder : "none",
-                padding: isNarrow ? "10px 16px 16px 16px" : "16px 16px 0 16px",
+                padding: "16px 16px 0 16px",
                 boxSizing: "border-box",
                 display: "flex",
                 flexDirection: "column",
@@ -2853,12 +2914,14 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                   maxHeight: "40vh",
                                   overflowY: "auto",
                                   overscrollBehavior: "contain",
+                                  paddingBottom: 16,
                               }
                             : {
                                   position: "absolute",
                                   inset: 0,
                                   overflowY: "auto",
                                   minWidth: 0,
+                                  paddingBottom: 16,
                               }
                     }
                 >
@@ -3940,11 +4003,19 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
     const normalizedCalendarStyles = normalizeStyleOverrides(calendarStyles)
     const surfaceBackground =
         normalizedCalendarStyles?.backgroundColor ?? DEFAULT_CALENDAR_SURFACE_BACKGROUND
-    const surfaceRadius = resolveFieldRadius(
+    const surfaceRadiusRaw = resolveFieldRadius(
         normalizedCalendarStyles,
         radius,
         "calendar-widget" as FieldType
     )
+    // RADIUS 0-24 (rule 60 parity): the Number control enforces it in the panel;
+    // the runtime clamps programmatic values the same way.
+    const surfaceRadius = (() => {
+        const n = Number.parseFloat(surfaceRadiusRaw)
+        if (!Number.isFinite(n)) return surfaceRadiusRaw
+        const clamped = Math.max(0, Math.min(24, n))
+        return surfaceRadiusRaw.trim().endsWith("%") ? `${clamped}%` : `${clamped}px`
+    })()
     const resolvedTextColor = normalizedCalendarStyles?.textColor || textColor
     const tileBorder = normalizedCalendarStyles?.border
     const tileBorderWidth = typeof tileBorder?.borderWidth === "number" ? tileBorder.borderWidth : 1
@@ -4715,6 +4786,8 @@ const EMAIL_REGEX = /^[^\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-
 const PHONE_REGEX = /^\+?[(]?\d{1,4}[)]?(?:[-\s.]?[(]?\d{1,4}[)]?){2,5}[-\s.]?\d{1,9}$/
 
 const TOUCH_TARGET_MIN = 44
+const BUTTON_MIN_HEIGHT = 32
+const FORM_CONTENT_MIN_HEIGHT = 320
 const COMPACT_BREAKPOINT = 768
 function weeksInMonthView(year: number, month: number, firstDayOfWeek: number): number {
     const offset = (new Date(year, month, 1).getDay() - firstDayOfWeek + 7) % 7
@@ -5007,6 +5080,10 @@ interface CalendarStageConfig {
     surface?: FieldStyleOverrides
 }
 const SYSTEM_CALENDAR_ID = "system-calendar"
+// Cal.com system slugs that must never auto-inject, even when visible (BE-068):
+// rescheduleReason belongs to the reschedule flow only; guests (Multiple Emails)
+// has no engine counterpart by design and empty matches the official default.
+const SYSTEM_EXCLUDED_CAL_SLUGS: ReadonlySet<string> = new Set(["reschedulereason", "guests"])
 const MAX_SYSTEM_STAGES = 2
 const DEFAULT_CALENDAR_TITLE = "Pick a Time"
 const DEFAULT_CALENDAR_SUBTITLE = "Choose a date and time that works for you."
@@ -7235,18 +7312,14 @@ function useBookingEngineState(
         ? (rawVariant as TransitionVariantId)
         : "blurScale"
     // Footer primary-label swap (Continue/Book Now) reuses the step transition's
-    // variant + timing so the button text animates with the step content.
+    // variant SHAPE (blur/scale/fade per the author's type choice) but on a fixed
+    // quick timing: waiting out a full step-length exit+enter left the button
+    // empty for ~2s. Sync-crossfaded in a grid stack (both labels share one cell,
+    // container sized by the widest), so nothing jumps and nothing blanks.
     const footerLabelTransition = React.useMemo(() => {
-        const def = TRANSITION_VARIANT_DEFS[resolvedTransitionVariant]
         if (prefersReducedMotion) return INSTANT_TRANSITION
-        const base = stepTransition as unknown as { duration?: number }
-        const d =
-            typeof base?.duration === "number" && Number.isFinite(base.duration)
-                ? base.duration
-                : undefined
-        if (d !== undefined) return { ...def.transition, duration: d } as Transition
-        return def.transition
-    }, [resolvedTransitionVariant, stepTransition, prefersReducedMotion])
+        return { type: "tween", duration: 0.16, ease: "easeOut" } as Transition
+    }, [prefersReducedMotion])
 
     React.useEffect(() => {
         if (typeof window === "undefined") return
@@ -7854,6 +7927,13 @@ function useBookingEngineState(
     // Dashboard-disabled fields arrive as `hidden` (the toggle IS the hidden flag —
     // verified against the dashboard badges) and are never injected, exactly like
     // the official Cal.com component, which does not render them either.
+    // Cal.com system slugs that must never auto-inject, even when visible:
+    // - rescheduleReason belongs to the reschedule flow only; a fresh booking
+    //   has nothing to reschedule, and the official component does not ask it.
+    // - guests (Multiple Emails) has no engine counterpart by design (BE-059
+    //   decision: single-attendee identity); empty matches the official default.
+    // An author who really wants either covers it manually (label/calFieldId) and
+    // it flows through the normal coverage path above - nothing is blocked.
     const missingCalFields = React.useMemo(() => {
         if (!calBookingFields || calBookingFields.length === 0) return []
         if (!hasCalConfig) return []
@@ -7872,7 +7952,12 @@ function useBookingEngineState(
                 if (field.fieldType === "email") covered.add("email")
             }
         }
-        return calBookingFields.filter((f) => !f.hidden && !covered.has(f.slug.toLowerCase()))
+        return calBookingFields.filter(
+            (f) =>
+                !f.hidden &&
+                !SYSTEM_EXCLUDED_CAL_SLUGS.has(f.slug.toLowerCase()) &&
+                !covered.has(f.slug.toLowerCase())
+        )
     }, [calBookingFields, baseActiveSteps, hasCalConfig, hasDatetimeStep])
 
     const effectiveActiveSteps = React.useMemo(() => {
@@ -8146,14 +8231,21 @@ function useBookingEngineState(
     }, [])
     const submitButtonRef = React.useRef<HTMLButtonElement | null>(null)
     const hasMountedStepRef = React.useRef(false)
+    // No programmatic step focus before the visitor's first real input: Chromium
+    // paints :focus-visible on focused elements when the page never delivered an
+    // input event, which drew a ring around the heading on every load until the
+    // first click. The interaction gate latches on real pointer/key input only,
+    // so Continue/Back/keys flows still announce exactly as before.
+    const beInteractiveForFocus = useBeInteractive()
     React.useEffect(() => {
         if (!hasMountedStepRef.current) {
             hasMountedStepRef.current = true
             return
         }
         if (loadFocusSuppressedRef.current) return
+        if (!beInteractiveForFocus) return
         focusStepTitle()
-    }, [safeCurrentIndex, focusStepTitle])
+    }, [safeCurrentIndex, focusStepTitle, beInteractiveForFocus])
 
     const handleFieldChange = React.useCallback(
         (fieldId: string, value: string | boolean | Array<string> | undefined) => {
@@ -8797,6 +8889,11 @@ function useBookingEngineState(
  */
 export default function BookingEngine(props: BookingEngineProps) {
     const engineRootRef = React.useRef<HTMLDivElement | null>(null)
+    const formRef = React.useRef<HTMLFormElement | null>(null)
+    // Smooth step-height transitions: the form animates its explicit height toward
+    // the active step's measured height (null = natural height, the pre-mount and
+    // prerender state, so hydration stays byte-identical).
+    const [formHeight, setFormHeight] = React.useState<number | null>(null)
     const {
         activeSteps,
         availableDates,
@@ -8885,18 +8982,18 @@ export default function BookingEngine(props: BookingEngineProps) {
     const secondarySharedSet = blGroups.secondaryButtonStyles
     const calendarLinkSharedSet = blGroups.calendarLinkStyles
     const ghostButtonRole: ButtonRoleDefaults = {
-        background: "transparent",
-        color: theme.textPrimaryColor,
+        background: "#FFFFFF",
+        color: theme.textSecondaryColor,
         borderWidth: 1,
-        borderColor: theme.borderColor,
-        padding: "10px 18px 10px 18px",
+        borderColor: "transparent",
+        padding: "10px 16px 10px 16px",
     }
     const primaryButtonRole: ButtonRoleDefaults = {
         background: theme.accentColor,
         color: theme.accentForegroundColor,
         borderWidth: 0,
         borderColor: theme.borderColor,
-        padding: "10px 22px 10px 22px",
+        padding: "10px 16px 10px 16px",
     }
     const backButtonGroup = mergeButtonStyleGroups(secondarySharedSet, blGroups.backButton)
     const backButtonStyle = resolveButtonStyle(backButtonGroup, ghostButtonRole, borderRadius)
@@ -8915,7 +9012,7 @@ export default function BookingEngine(props: BookingEngineProps) {
     )
     const bookAnotherButtonStyle = resolveButtonStyle(
         bookAnotherButtonGroup,
-        { ...primaryButtonRole, padding: "10px 18px 10px 18px" },
+        { ...primaryButtonRole, padding: "10px 16px 10px 16px" },
         borderRadius
     )
     const retryButtonGroup = mergeButtonStyleGroups(primarySharedSet, blGroups.retryButton)
@@ -9030,6 +9127,32 @@ export default function BookingEngine(props: BookingEngineProps) {
     React.useEffect(() => {
         prevNavDirectionRef.current = safeCurrentIndex
     }, [safeCurrentIndex])
+    const measureActiveStepHeight = React.useCallback(() => {
+        const form = formRef.current
+        if (!form || typeof window === "undefined") return
+        const active = form.querySelector<HTMLElement>(`[data-step-index="${safeCurrentIndex}"]`)
+        const h = active ? active.offsetHeight : 0
+        const next = Math.max(h, FORM_CONTENT_MIN_HEIGHT)
+        setFormHeight((prev) => (prev === next ? prev : next))
+    }, [safeCurrentIndex])
+    useIsomorphicLayoutEffect(() => {
+        // Canvas favors natural fit over animation: the Framer frame sizes the
+        // instance from content height, and an explicit pixel height fights it
+        // (new fields clip under a stale frame). Published site keeps animating.
+        if (isCanvas) {
+            setFormHeight(null)
+            return
+        }
+        measureActiveStepHeight()
+        if (typeof window === "undefined" || typeof ResizeObserver === "undefined") return
+        const active = formRef.current?.querySelector<HTMLElement>(
+            `[data-step-index="${safeCurrentIndex}"]`
+        )
+        if (!active) return
+        const observer = new ResizeObserver(() => measureActiveStepHeight())
+        observer.observe(active)
+        return () => observer.disconnect()
+    }, [measureActiveStepHeight, safeCurrentIndex, isCanvas])
 
     if (totalActive === 0) {
         if (!isCanvas) return null
@@ -9146,10 +9269,19 @@ export default function BookingEngine(props: BookingEngineProps) {
             disabled={isSubmitting}
             {...backIx.bind}
             style={{
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: BUTTON_MIN_HEIGHT,
                 ...applyButtonInteraction(
                     backButtonStyle,
-                    backButtonGroup?.hover,
+                    // Ghost default hover (author Hover wins when opened): the transparent
+                    // base border takes the border token and muted text goes solid.
+                    (backButtonGroup?.hover ?? {
+                        textColor: theme.textPrimaryColor,
+                        border: {
+                            borderWidth: 1,
+                            borderStyle: "solid",
+                            borderColor: theme.borderColor,
+                        },
+                    }) as ButtonInteractionState,
                     backButtonGroup?.pressed,
                     backIx,
                     animateIx
@@ -9180,7 +9312,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                 {...primaryIx.bind}
                 aria-busy={isSubmitting ? true : undefined}
                 style={{
-                    minHeight: TOUCH_TARGET_MIN,
+                    minHeight: BUTTON_MIN_HEIGHT,
                     ...applyButtonInteraction(
                         primaryButtonStyle,
                         primaryGroup?.hover,
@@ -9215,33 +9347,38 @@ export default function BookingEngine(props: BookingEngineProps) {
                         {DEFAULT_COPY_BOOKING_LABEL}
                     </>
                 ) : (
-                    <AnimatePresence mode="wait" initial={false}>
-                        <motion.span
-                            key={primaryLabel}
-                            initial="inactive"
-                            animate="active"
-                            exit="inactive"
-                            variants={TRANSITION_VARIANT_DEFS[resolvedTransitionVariant].variants}
-                            transition={footerLabelTransition}
-                            custom={
-                                TRANSITION_VARIANT_DEFS[resolvedTransitionVariant].useDirection
-                                    ? navDirection
-                                    : undefined
-                            }
-                            style={{ display: "inline-block" }}
-                        >
-                            {primaryLabel}
-                        </motion.span>
-                    </AnimatePresence>
+                    <span style={{ display: "grid" }}>
+                        <AnimatePresence initial={false}>
+                            <motion.span
+                                key={primaryLabel}
+                                initial="inactive"
+                                animate="active"
+                                exit="inactive"
+                                variants={
+                                    TRANSITION_VARIANT_DEFS[resolvedTransitionVariant].variants
+                                }
+                                transition={footerLabelTransition}
+                                custom={
+                                    TRANSITION_VARIANT_DEFS[resolvedTransitionVariant].useDirection
+                                        ? navDirection
+                                        : undefined
+                                }
+                                style={{
+                                    gridArea: "1 / 1",
+                                    display: "inline-block",
+                                    whiteSpace: "nowrap",
+                                }}
+                            >
+                                {primaryLabel}
+                            </motion.span>
+                        </AnimatePresence>
+                    </span>
                 )}
             </button>
         </div>
     )
     return (
         <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
-            <a href={`#be-skip-end-${reactInstanceId}`} className="be-skip-link">
-                Skip to end of booking
-            </a>
             <output
                 aria-live="polite"
                 aria-atomic="true"
@@ -9460,17 +9597,21 @@ export default function BookingEngine(props: BookingEngineProps) {
                 </div>
             ) : null}
 
-            <form
+            <motion.form
                 aria-label={ariaLabels.bookingForm}
                 id={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
                 noValidate
-                onSubmit={(e) => {
+                onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
                     e.preventDefault()
                     handleContinue()
                 }}
+                ref={formRef}
+                initial={false}
+                animate={{ height: formHeight ?? "auto" }}
+                transition={stepTransition}
                 style={{
                     position: "relative",
-                    minHeight: 320,
+                    minHeight: FORM_CONTENT_MIN_HEIGHT,
                     // SHADOW-CLIP (BE-026): paint-only clip with a
                     // 24px outer margin — field shadows render whole
                     // while transitioning steps stay bounded.
@@ -9586,7 +9727,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                         </StepVisibilityWrapper>
                     )
                 })}
-            </form>
+            </motion.form>
 
             {/* Footer nav */}
             <div
@@ -9616,12 +9757,6 @@ export default function BookingEngine(props: BookingEngineProps) {
                     </>
                 )}
             </div>
-
-            <div
-                id={`be-skip-end-${reactInstanceId}`}
-                tabIndex={-1}
-                style={{ position: "relative" }}
-            />
 
             <style suppressHydrationWarning>{`
 .be-input { outline: none; }
@@ -9766,28 +9901,6 @@ const RootShell = React.memo(function RootShell(props: {
         animation-iteration-count: 1 !important;
         transition-duration: 0.001s !important;
     }
-}
-
-.be-skip-link {
-    position: absolute;
-    left: -9999px;
-    top: 0;
-    z-index: 1000;
-    padding: 8px 12px;
-    font-size: 14px;
-    font-weight: 600;
-    color: inherit;
-    background: transparent;
-    text-decoration: underline;
-}
-.be-skip-link:focus {
-    left: 8px;
-    top: 8px;
-}
-
-.be-focus-target:focus-visible {
-    outline: 2px solid currentColor;
-    outline-offset: 2px;
 }
 
 .be-dt-scroll { scrollbar-width: none; -ms-overflow-style: none; }
@@ -10010,7 +10123,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             type="button"
                             onClick={onRetrySlots}
                             style={{
-                                minHeight: TOUCH_TARGET_MIN,
+                                minHeight: BUTTON_MIN_HEIGHT,
                                 padding: "6px 14px",
                                 borderRadius: borderRadius,
                                 border: `1px solid ${theme.errorColor}`,
@@ -10018,7 +10131,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                                 color: theme.errorColor,
                                 fontFamily: "inherit",
                                 fontSize: 12,
-                                fontWeight: 600,
+                                fontWeight: 400,
                                 cursor: "pointer",
                                 flexShrink: 0,
                             }}
@@ -12453,7 +12566,7 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                 }}
                 onKeyDown={handleTriggerKeyDown}
                 style={{
-                    minHeight: TOUCH_TARGET_MIN,
+                    minHeight: BUTTON_MIN_HEIGHT,
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
@@ -13089,7 +13202,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                     onClick={onRestart}
                     {...bookAnotherIx.bind}
                     style={{
-                        minHeight: TOUCH_TARGET_MIN,
+                        minHeight: BUTTON_MIN_HEIGHT,
                         ...applyButtonInteraction(
                             bookAnotherStyle,
                             bookAnotherHover,
@@ -13277,7 +13390,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         onClick={onRetry}
                         {...retryIx.bind}
                         style={{
-                            minHeight: TOUCH_TARGET_MIN,
+                            minHeight: BUTTON_MIN_HEIGHT,
                             ...applyButtonInteraction(
                                 retryStyle,
                                 retryHover,
@@ -13428,7 +13541,7 @@ function makeSelectedStylesControls() {
         border: fieldStylesBorderControl({
             borderWidth: FIELD_STYLES_BORDER_WIDTH,
             borderStyle: "solid",
-            borderColor: "#0066BB",
+            borderColor: "#222222",
         }),
         shadow: fieldStylesShadowControl(),
     }
@@ -13461,7 +13574,17 @@ function makeCalendarStylesStylesControls() {
         }),
         textColor: fieldStylesColorControl("Field Color"),
         backgroundColor: fieldStylesColorControl("Fill"),
-        radius: fieldStylesRadiusControl(eff.radius),
+        radius: {
+            type: ControlType.Number,
+            title: "Radius",
+            optional: true,
+            defaultValue: 12,
+            min: 0,
+            max: 24,
+            step: 1,
+            unit: "px",
+            displayStepper: true,
+        },
         padding: fieldStylesPaddingControl(eff.padding),
         border: fieldStylesBorderControl({
             borderWidth: 1,
@@ -14040,7 +14163,7 @@ addPropertyControls(BookingEngine, {
                 icon: "effect",
                 optional: true,
                 controls: makeSharedButtonStylesControls({
-                    padding: "10px 22px 10px 22px",
+                    padding: "10px 16px 10px 16px",
                     borderWidth: 0,
                     borderColor: FIELD_STYLES_BORDER_COLOR,
                 }),
@@ -14052,7 +14175,7 @@ addPropertyControls(BookingEngine, {
                 icon: "effect",
                 optional: true,
                 controls: makeSharedButtonStylesControls({
-                    padding: "10px 18px 10px 18px",
+                    padding: "10px 16px 10px 16px",
                     borderWidth: 1,
                     borderColor: FIELD_STYLES_BORDER_COLOR,
                 }),
@@ -14066,7 +14189,7 @@ addPropertyControls(BookingEngine, {
                 controls: makeSharedButtonStylesControls({
                     padding: "10px 18px 10px 18px",
                     borderWidth: 1,
-                    borderColor: "#0066BB",
+                    borderColor: "#222222",
                 }),
             },
             // BUTTON-TEXTS (BE-027/BE-038): one submenu for the three
@@ -14190,7 +14313,7 @@ addPropertyControls(BookingEngine, {
             accentColor: {
                 type: ControlType.Color,
                 title: "Accent",
-                defaultValue: "#0066BB",
+                defaultValue: "#222222",
             },
             accentForegroundColor: {
                 type: ControlType.Color,
@@ -14205,7 +14328,7 @@ addPropertyControls(BookingEngine, {
             textPrimaryColor: {
                 type: ControlType.Color,
                 title: "Text",
-                defaultValue: "#111827",
+                defaultValue: "#222222",
             },
             borderColor: {
                 type: ControlType.Color,

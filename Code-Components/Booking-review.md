@@ -266,3 +266,182 @@
 - **Implementation record (2026-09-09):** Deleted the control block, the `FieldConfig` key, the fingerprint `do` carrier (autosave re-keys once on update), the `ChoiceGroupInlineProps.defaultValue` prop + destructure, and all 6 call sites; `getInitialSelection(options, defaultValue)` collapsed to `getFirstNonEmptyOption(options)` with controlled-value matching preserved inline at each site (identical semantics for live values).
 
 ---
+
+### BE-067 — One-black defaults + ghost Back hover reveal
+
+- **Status:** Done (2026-09-09)
+- **Description:** Author direction: Accent and Text both default to `#111111` (one black look, no brand hue in defaults); ghost Back defaults to white fill, transparent 1px border, muted text, with border + solid text appearing on hover; inputs stay white with visible borders.
+- **Current Behavior:** (pre-fix) blue accent `#0066BB`, slate text `#111827`, ghost buttons with always-visible borders.
+- **Expected Behavior:** Near-black defaults everywhere; Back reads as text until hovered (no layout shift — transparent border always present); inputs white + bordered so they read on white sites.
+- **Acceptance Criteria:**
+  - [x] Accent/Text defaults `#111111`; Primary Foreground stays white.
+  - [x] Ghost role white/transparent/muted; Back hover fallback paints border token + primary text only while author Hover unopened.
+  - [x] Selected-styles + Calendar-Links border defaults follow `#111111`.
+  - [x] Reference file + explorer Version A updated to match.
+- **Constraints / Must Not Do:** Do not restore visible ghost borders or blue defaults; author Hover/Pressed always wins when opened.
+- **Related AGENTS.md Rule(s):** New rule 187.
+- **Additional Context:** Discussed 2026-09-09 (Arabic); author approved the full proposal including transparent-border technique.
+- **Implementation record (2026-09-09):** Token defaults, ghost role, Back hover fallback object, static border defaults; reference swatches + explorer A updated.
+
+---
+
+### BE-068 — System Cal.com slugs excluded from auto-inject (guests, rescheduleReason)
+
+- **Status:** Done (2026-09-09)
+- **Description:** After option A shipped, entering an Event ID flagged system fields (`location`, `notes`, `guests`, `rescheduleReason`) — all optional. Two of them must never inject: `rescheduleReason` belongs to the reschedule flow (a fresh booking has nothing to reschedule), and `guests` (Multiple Emails) has no engine counterpart by single-attendee design. `location`/`notes` stay injected (legitimate booker questions).
+- **Current Behavior:** (pre-fix) all four surfaced in the canvas warning and injected for visitors.
+- **Expected Behavior:** `SYSTEM_EXCLUDED_CAL_SLUGS` (`reschedulereason`, `guests`) never auto-injects; author-covered fields with those slugs still flow normally; warning lists only what will actually inject.
+- **Acceptance Criteria:**
+  - [x] Exclusion by slug (lowercased) before the coverage check; manual coverage path untouched.
+  - [x] Biome green.
+- **Constraints / Must Not Do:** Do not exclude `location`/`notes`; do not block manual coverage of the excluded slugs.
+- **Related AGENTS.md Rule(s):** Rule 76 amended.
+- **Additional Context:** Reported 2026-09-09 with dashboard + warning screenshots. Author confirmed guests has negligible value; dashboard toggle-off already maps to `hidden`.
+- **Implementation record (2026-09-09):** Module-level `SYSTEM_EXCLUDED_CAL_SLUGS` + filter clause.
+
+---
+
+### BE-069 — Remove the skip link entirely (no flow shortcuts)
+
+- **Status:** Done (2026-09-09)
+- **Description:** The "Skip to end of booking" link revealed ugly on Tab focus (overlapping content), glitched layout on activation, and contradicted the product (a booking is a mandatory sequence — nothing may be skipped). Author direction: remove the entire mechanism, record the ban.
+- **Current Behavior:** (pre-fix) skip anchor + target + CSS present.
+- **Expected Behavior:** No skip anchor, target, or CSS anywhere; Tab order flows through the steps natively.
+- **Acceptance Criteria:**
+  - [x] Zero `be-skip` references (verified by grep); biome green.
+- **Constraints / Must Not Do:** Do not re-add any skip/shortcut mechanism, including remapped Tab/Shift-Tab section jumps.
+- **Related AGENTS.md Rule(s):** New rule 188.
+- **Additional Context:** Reported 2026-09-09 with screenshots (focus-reveal overlap + post-activation glitch).
+- **Implementation record (2026-09-09):** Deleted anchor, target div, and both CSS rules.
+
+---
+
+### BE-070 — Selected Styles audit: alleged cross-leak + inert rows (VERDICT, no runtime change)
+
+- **Status:** Done (2026-09-09)
+- **Description:** Author reported (a) Selected border edits leaking onto the field border, and (b) Selected radius/font/padding/shadow doing nothing, proposing to delete the inert rows.
+- **Current Behavior:** (verified, unchanged) no selected-to-field write path exists anywhere: every border/color read is nullish-safe (`??`, never `||`), merges never mutate, `normalizeStyleOverrides` copies before cleaning. The subgroup cannot affect the field border by construction.
+- **Expected Behavior:** No code change. (a) needs the 30-second red test to identify the true mechanism — prime suspects, all selected-scoped by design: unselected-option hover border follows the selected color/fill, radio dot ring follows selected text, inset selected ring follows selected border color. (b) is architecture, not breakage: cards/pills/radio/listbox consume their documented vocabulary; segmented geometry (radius/font/padding/shadow/border-width) is hardcoded per rules 80/101, so those four rows are inert on segmented only — the shared factory cannot hide rows per type, and deleting them globally would gut cards/pills/radio.
+- **Acceptance Criteria:**
+  - [x] Full read audit: resolvers, merges, normalize, all consumers (segmented site feeds selected bg/text/border-color into thumb + active text — rule 158 intent holds).
+  - [x] Rule 158 clarified to enumerate per-type consumption + inert-by-design rows.
+  - [x] Red-test protocol delivered to author for (a).
+- **Constraints / Must Not Do:** Do not delete subgroup rows (live on other types); do not wire selected geometry into the segmented thumb (rules 80/101); do not "fix" (a) without the red test identifying a real path.
+- **Related AGENTS.md Rule(s):** Rules 80/101, 130, 142, 146, 158 (clarified).
+- **Additional Context:** Reported 2026-09-09 (Arabic). Segmented field was the test surface for (b).
+- **Implementation record (2026-09-09):** Rule-158 clarification only; zero runtime edits.
+
+---
+
+### BE-071 - Calendar surface Radius mirrors the global 0-24 contract
+
+- **Status:** Done (2026-09-10)
+- **Description:** The Calendar Styles Radius row (a `BorderRadius` control with no bounds) now matches the global Styles Radius: Number control, min 0, max 24, step 1, px stepper, default 12 - plus the same runtime clamp. Legacy string values keep resolving.
+- **Acceptance Criteria:**
+  - [x] Control + runtime dual enforcement; biome green.
+- **Related AGENTS.md Rule(s):** Rule 60 (extended to the calendar surface).
+- **Implementation record (2026-09-10):** Row swapped to Number; `surfaceRadius` clamps parsed values (`%` passes through).
+
+---
+
+### BE-072 - Smooth form-height animation across steps
+
+- **Status:** Done (2026-09-10)
+- **Description:** Step changes jumped instantly between heights (e.g. 200px two-field step vs 500px five-field step). The form now animates its explicit height toward the measured active-step height with the step transition timing, both directions.
+- **Acceptance Criteria:**
+  - [x] Grow + shrink animate smoothly; floor, reduced-motion, hydration parity preserved; biome green.
+- **Related AGENTS.md Rule(s):** New rule 189.
+- **Implementation record (2026-09-10):** `motion.form` + `formRef` measurement (layout effect + ResizeObserver on the active node) + `FORM_CONTENT_MIN_HEIGHT` floor shared with the style.
+
+---
+### BE-073 - Selected geometry applies to the segmented thumb (rule was wrong)
+
+- **Status:** Done (2026-09-10)
+- **Description:** Author order: the "geometry stays hardcoded" rule was wrong - Selected Styles radius/font/padding/shadow/border must visibly work on segmented like every other choice type. Verified the selected colors already flowed (thumb bg/text/border); only geometry was pinned.
+- **Expected Behavior:** Selected radius/padding/font/shadow/border-width reshape the thumb + active option; unset keys inherit exactly as before; 12h/24h toggle byte-identical (passes nothing).
+- **Acceptance Criteria:**
+  - [x] Thumb inset derives from selected padding (width math tracks it, alignment never drifts).
+  - [x] No TDZ/hook hazards (biome `noInvalidUseBeforeDeclaration` caught one during implementation - fixed by ordering).
+  - [x] Biome green.
+- **Constraints / Must Not Do:** Do not touch track geometry (outer padding, position math, slide animation - rule 80); do not change the toggle.
+- **Related AGENTS.md Rule(s):** Rule 158 corrected (was "inert by design", now full vocabulary on thumb + active option).
+- **Additional Context:** Author override 2026-09-10 (rule 140): "the rule is wrong, fix the comp".
+- **Implementation record (2026-09-10):** `SegmentedControl` gains 7 optional selected props; thumb radius/inset/width/border/shadow + active font/padding derive with inherit-fallbacks; ChoiceGroupInline segmented site threads its selected props through.
+
+---
+### BE-074 - Canvas keeps natural height (no explicit pixels on canvas)
+
+- **Status:** Done (2026-09-10)
+- **Description:** Live preview fit content correctly, but the Framer canvas clipped new fields under a stale fixed frame. The explicit animated height fought the canvas frame sizing.
+- **Expected Behavior:** On canvas the form stays natural `auto` height (Framer measures content per render); published site keeps animating.
+- **Acceptance Criteria:**
+  - [x] `isCanvas` bypass in the measure effect (null height, observer skipped); biome green.
+- **Related AGENTS.md Rule(s):** Rule 189 extended (canvas clause).
+- **Additional Context:** Reported 2026-09-10 with canvas screenshot (fields cut under fixed frame). If clipping persists after this, the instance frame itself is set to Fixed height in canvas layout settings (author-side, not code).
+- **Implementation record (2026-09-10):** Early return on `isCanvas` + dep added.
+
+---
+
+### BE-075 — Author-controllable vertical rhythm (progress / header / fields / nav spacing)
+
+- **Status:** Open
+- **Description:** The author wants Framer Property Controls for the vertical distances between the main booking-flow zones: progress block to step header, step header to fields, and fields to the footer navigation. Today none of these distances is author-adjustable, so authors cannot tighten or loosen the flow rhythm from the panel.
+- **Current Behavior:** Vertical rhythm is fixed in code: the progress wrapper carries a fixed bottom margin, the step title (h2) uses marginBottom 4, the subtitle block uses marginBottom 16, the footer nav row uses marginTop 24 plus paddingTop 12, and only the field-to-field grid has an author control (the shared Gap token). No control adjusts progress-to-header, header-to-fields, or fields-to-nav distances.
+- **Expected Behavior:** A Framer author can enlarge or shrink the flow vertical spacing from the panel (either one global rhythm value or a small set of named zone gaps), with shipped defaults reproducing the current look exactly on untouched canvases.
+- **Acceptance Criteria:**
+  - [ ] Progress-to-header, header-to-fields, and fields-to-nav distances are all author-adjustable from the panel and visibly change the rendered spacing at both extremes.
+  - [ ] Untouched canvases render byte-identically to today (defaults equal current fixed values).
+  - [ ] Spacing stays correct with headers hidden (BE-060 toggle), with the Calendar stage, with validation errors expanding content, and with the 320px minimum-height floor.
+  - [ ] No hydration mismatch and no step-height animation regression.
+- **Constraints / Must Not Do:** Do not add raw per-surface pixel/spacing rows that contradict Rule 123 (footer gap 8 / marginTop 24 / sticky are internal rhythm) without an explicit Rule 140 author override recorded on the entry; do not move Gap out of Styles or change its 0-48 contract (Rule 82); do not use margin/padding where Rule 6 mandates flex gap for field/error pairs; keep the deterministic step-visibility and form-height-animation architecture intact.
+- **Related AGENTS.md Rule(s):** Rules 6, 18, 82, 123, 129, 189
+- **Additional Context:** Author suggestion (non-binding): a single global gap that grows/shrinks header-to-fields and fields-to-nav together. Reported 2026-09-10, in Arabic/mixed Arabic-English, no screenshots.
+
+---
+
+### BE-076 — Step DOM: header-inside-form (3 zones) vs standalone header stage (4 zones)
+
+- **Status:** Open
+- **Description:** The author observes the rendered step DOM has three top-level zones (progress block, motion.form containing the per-step header plus fields, footer nav) and asks whether the header should instead be a fourth standalone zone (progress, header, form, nav). Each step owns a different title/subtitle, and the header currently renders inside every step inside the form.
+- **Current Behavior:** Per-step header (h2.be-focus-target plus subtitle block) renders inside each StepVisibilityWrapper inside the single motion.form, followed by StepBody; progress renders above the form and the footer nav below it. There is no standalone header element outside the form.
+- **Expected Behavior:** A recorded verdict with rationale: either keep the header inside each step inside the form, or promote it to a standalone stage, with the chosen structure rendering per-step titles correctly on every step including the system Calendar and auto-injected Additional Details step.
+- **Acceptance Criteria:**
+  - [ ] Every step (authored Form steps, auto-injected step, system Calendar) still shows its own correct title/subtitle (or nothing when its header is hidden).
+  - [ ] Step-change focus/announcement, deterministic active-step visibility, inert sync, restore-before-paint, hydration parity, and form-height measurement all keep working.
+  - [ ] No visual regression on untouched canvases whichever direction is chosen.
+- **Constraints / Must Not Do:** Do not break Rules 14/17/21/23 (deterministic step visibility), 103/124 (announcement plus restore focus parity), 139 (inert sync), 186 (per-step Header toggle), 189 (animated form height); do not split the form in a way that breaks submit/validation ownership.
+- **Related AGENTS.md Rule(s):** Rules 14, 17, 21, 23, 103, 124, 139, 186, 189
+- **Additional Context:** Author question from 2026-09-10 (Arabic); explicitly asked for the agent opinion on 3 vs 4 elements. No screenshots.
+
+---
+
+### BE-077 — Step header title/subtitle use margins with no grouping wrapper
+
+- **Status:** Open
+- **Description:** The step header title-to-subtitle and subtitle-to-fields distances are produced by individual margins on sibling elements rather than by a grouped header element with a flex gap. The title and subtitle render as unwrapped siblings (fragment) inside each step.
+- **Current Behavior:** The step h2 carries marginBottom 4 and the subtitle div carries marginBottom 16; there is no header wrapper element, so no gap separates title from subtitle or header from fields.
+- **Expected Behavior:** The title and subtitle render inside one header group whose internal and trailing spacing behaves like the component other gap-based rhythm, with untouched canvases looking exactly as today.
+- **Acceptance Criteria:**
+  - [ ] Title/subtitle are grouped in one header element; sibling-margin spacing is replaced by the group gap mechanism.
+  - [ ] Untouched canvases render byte-identically (same 4px- and 16px-equivalent distances by default).
+  - [ ] Per-step Header toggle still removes the whole header, per-step/global alignment still applies, and step-change focus ref/announcer behavior is unchanged.
+- **Constraints / Must Not Do:** Do not add required markers or helper text (Rule 4); do not change alignment scope (Rules 125/172) or terminal-header construction (Rule 174); do not alter the focus-target class or announce behavior (Rules 103/124).
+- **Related AGENTS.md Rule(s):** Rules 6, 103, 124, 125, 172, 174, 186
+- **Additional Context:** Reported 2026-09-10 (Arabic). Author notes field/error pairs already use flex gap (Rule 6) and expects the header to follow the same pattern.
+
+---
+
+### BE-078 — Footer nav spacing stacks marginTop plus paddingTop plus safe-area paddingBottom
+
+- **Status:** Open
+- **Description:** The vertical space between the last field and the footer navigation buttons comes from two stacked values (marginTop 24 on the footer row plus paddingTop 12 on the same row), and the row also carries a paddingBottom env(safe-area-inset-bottom, 0px) whose purpose is undocumented. The author suspects the padding-top is redundant because the margin alone already produces the required distance.
+- **Current Behavior:** The footer nav div sets gap 8, marginTop 24, paddingTop 12, position sticky with bottom 0, and paddingBottom env(safe-area-inset-bottom, 0px) together on every step, so fields-to-nav distance is the sum of the margin and the padding.
+- **Expected Behavior:** Fields-to-nav spacing comes from one intentional mechanism with the safe-area/sticky behavior documented, rendering the same (or an explicitly re-baselined) default distance on untouched canvases.
+- **Acceptance Criteria:**
+  - [ ] One documented owner for the fields-to-nav distance; no redundant margin-plus-padding stacking.
+  - [ ] Purpose of the safe-area inset padding and the sticky footer is recorded (kept with rationale or removed with rationale).
+  - [ ] No visual jump on untouched canvases unless the entry records an intentional re-baseline; narrow/stacked layouts and the 320px floor unaffected.
+- **Constraints / Must Not Do:** Do not add author-facing spacing rows in this entry (panel controls belong to BE-075); do not contradict Rule 123 (footer rhythm is internal) without a Rule 140 override; do not break the Buttons Layout Order/Align/Width behavior (Rules 123/126/136).
+- **Related AGENTS.md Rule(s):** Rules 18, 123, 126, 129, 136
+- **Additional Context:** Reported 2026-09-10 (Arabic). Author observation only; no screenshots.
+
