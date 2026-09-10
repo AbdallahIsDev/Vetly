@@ -780,6 +780,17 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
     return { y, x }
 }
 
+// SECTION-SPACING (BE-075/BE-078): author rhythm for the three vertical
+// zone gaps. Defaults reproduce the shipped look (16 / 16 / 36).
+const SECTION_SPACING_DEFAULTS = { progress: 16, heading: 16, footer: 36 } as const
+const SECTION_SPACING_MIN = 0
+const SECTION_SPACING_MAX = 64
+function clampSectionSpacing(raw: unknown, fallback: number): number {
+    const n = typeof raw === "number" ? raw : Number(raw)
+    if (!Number.isFinite(n)) return fallback
+    return Math.max(SECTION_SPACING_MIN, Math.min(SECTION_SPACING_MAX, Math.round(n)))
+}
+
 const DEFAULT_CALENDAR_SURFACE_BACKGROUND = "#FFFFFF"
 
 const DERIVED_SECONDARY_TEXT_ALPHA = 0.62
@@ -4632,6 +4643,9 @@ interface BookingEngineStyleProps {
         borderColor: string
         borderRadius: string | number
         gap?: number
+        progressGap?: number
+        headingGap?: number
+        footerGap?: number
         font?: FramerFont
         headingFont?: FramerFont
         fieldStyles?: FieldStyleOverrides
@@ -7236,6 +7250,26 @@ function useBookingEngineState(
         const n = Number.isFinite(raw) ? raw : 24
         return Math.max(0, Math.min(48, Math.round(n)))
     }, [styles?.gap])
+    // SECTION-SPACING (BE-075): three clamped zone gaps resolved once —
+    // vertical rhythm for progress→form, header→fields, fields→nav.
+    // Pure functions of props, so hydration stays byte-identical.
+    const sectionSpacing = React.useMemo(
+        () => ({
+            progress: clampSectionSpacing(
+                styles?.progressGap,
+                SECTION_SPACING_DEFAULTS.progress
+            ),
+            heading: clampSectionSpacing(
+                styles?.headingGap,
+                SECTION_SPACING_DEFAULTS.heading
+            ),
+            footer: clampSectionSpacing(
+                styles?.footerGap,
+                SECTION_SPACING_DEFAULTS.footer
+            ),
+        }),
+        [styles?.progressGap, styles?.headingGap, styles?.footerGap]
+    )
     const progressVisible = (progressBar?.barVisible ?? progressBar?.visible) !== false
     const stepCountPosition: "top" | "bottom" =
         (progressBar?.progressText ?? progressBar?.stepCountPosition) === "bottom"
@@ -8745,6 +8779,7 @@ function useBookingEngineState(
         calApiKey,
         calEventTypeId,
         fieldGap,
+        sectionSpacing,
         globalFieldStyles,
         completePct,
         continueLabel,
@@ -8903,6 +8938,7 @@ export default function BookingEngine(props: BookingEngineProps) {
         borderRadius,
         sanitizedRadius,
         fieldGap,
+        sectionSpacing,
         globalFieldStyles,
         buttonLabels,
         completePct,
@@ -9467,7 +9503,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                 : null}
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: sectionSpacing.progress }}>
                     {progressShowTextContent && stepCountPosition === "top" ? (
                         <div
                             style={{
@@ -9632,7 +9668,14 @@ export default function BookingEngine(props: BookingEngineProps) {
                         >
                             <BeErrorBoundary stepKey={step.id}>
                                 {step.showHeader === false ? null : (
-                                    <>
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 4,
+                                            marginBottom: sectionSpacing.heading,
+                                        }}
+                                    >
                                         <h2
                                             ref={isActive ? stepTitleRef : null}
                                             tabIndex={-1}
@@ -9655,7 +9698,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                 ...(headingFont?.lineHeight != null
                                                     ? { lineHeight: headingFont.lineHeight }
                                                     : { lineHeight: 1.2 }),
-                                                marginBottom: 4,
+                                                marginBottom: 0,
                                                 marginTop: 0,
                                                 scrollMarginTop: 72,
                                             }}
@@ -9667,7 +9710,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                 style={{
                                                     color: theme.textSecondaryColor,
                                                     fontSize: bodySubtitleSize,
-                                                    marginBottom: 16,
+                                                    marginBottom: 0,
                                                     lineHeight: bodySubtitleLineHeight,
                                                     ...(isStepAlignment(step.alignment)
                                                         ? { textAlign: step.alignment }
@@ -9677,7 +9720,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                 {step.subtitle}
                                             </div>
                                         ) : null}
-                                    </>
+                                    </div>
                                 )}
                                 <StepBody
                                     step={step}
@@ -9729,19 +9772,19 @@ export default function BookingEngine(props: BookingEngineProps) {
                 })}
             </motion.form>
 
-            {/* Footer nav */}
+            {/* Footer nav (BE-078): marginTop owns fields-to-nav distance
+            (36 default); sticky + safe-area bottom pin the row. */}
             <div
                 style={{
                     display: "flex",
                     gap: 8,
-                    marginTop: 24,
+                    marginTop: sectionSpacing.footer,
                     alignItems: "center",
                     justifyContent: navJustify,
                     flexWrap: "wrap",
                     position: "sticky",
                     bottom: 0,
                     zIndex: 10,
-                    paddingTop: 12,
                     paddingBottom: "env(safe-area-inset-bottom, 0px)",
                 }}
             >
@@ -14351,6 +14394,36 @@ addPropertyControls(BookingEngine, {
                 defaultValue: 24,
                 min: 0,
                 max: 48,
+                step: 1,
+                unit: "px",
+                displayStepper: true,
+            },
+            progressGap: {
+                type: ControlType.Number,
+                title: "Progress Gap",
+                defaultValue: SECTION_SPACING_DEFAULTS.progress,
+                min: SECTION_SPACING_MIN,
+                max: SECTION_SPACING_MAX,
+                step: 1,
+                unit: "px",
+                displayStepper: true,
+            },
+            headingGap: {
+                type: ControlType.Number,
+                title: "Heading Gap",
+                defaultValue: SECTION_SPACING_DEFAULTS.heading,
+                min: SECTION_SPACING_MIN,
+                max: SECTION_SPACING_MAX,
+                step: 1,
+                unit: "px",
+                displayStepper: true,
+            },
+            footerGap: {
+                type: ControlType.Number,
+                title: "Footer Gap",
+                defaultValue: SECTION_SPACING_DEFAULTS.footer,
+                min: SECTION_SPACING_MIN,
+                max: SECTION_SPACING_MAX,
                 step: 1,
                 unit: "px",
                 displayStepper: true,

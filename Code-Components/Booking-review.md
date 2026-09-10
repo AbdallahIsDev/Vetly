@@ -384,64 +384,66 @@
 
 ### BE-075 — Author-controllable vertical rhythm (progress / header / fields / nav spacing)
 
-- **Status:** Open
-- **Description:** The author wants Framer Property Controls for the vertical distances between the main booking-flow zones: progress block to step header, step header to fields, and fields to the footer navigation. Today none of these distances is author-adjustable, so authors cannot tighten or loosen the flow rhythm from the panel.
-- **Current Behavior:** Vertical rhythm is fixed in code: the progress wrapper carries a fixed bottom margin, the step title (h2) uses marginBottom 4, the subtitle block uses marginBottom 16, the footer nav row uses marginTop 24 plus paddingTop 12, and only the field-to-field grid has an author control (the shared Gap token). No control adjusts progress-to-header, header-to-fields, or fields-to-nav distances.
-- **Expected Behavior:** A Framer author can enlarge or shrink the flow vertical spacing from the panel (either one global rhythm value or a small set of named zone gaps), with shipped defaults reproducing the current look exactly on untouched canvases.
+- **Status:** Done (2026-09-10)
+- **Description:** Author can now control the three zone gaps from Styles: Progress Gap (progress block to form), Heading Gap (header to fields), Footer Gap (fields to nav) — each 0–64px. Defaults reproduce the shipped look exactly: 16 / 16 / 36.
+- **Current Behavior:** (pre-fix) Vertical rhythm was fixed in code: the progress wrapper carried a fixed `marginBottom: 16`, the step title (`h2`) used `marginBottom: 4`, the subtitle block used `marginBottom: 16`, the footer nav row used `marginTop: 24` plus `paddingTop: 12`, and only the field-to-field grid had an author control (the shared Gap token).
+- **Expected Behavior:** A Framer author can enlarge or shrink the flow's vertical spacing from the panel; shipped defaults reproduce the current look exactly on untouched canvases.
 - **Acceptance Criteria:**
-  - [ ] Progress-to-header, header-to-fields, and fields-to-nav distances are all author-adjustable from the panel and visibly change the rendered spacing at both extremes.
-  - [ ] Untouched canvases render byte-identically to today (defaults equal current fixed values).
-  - [ ] Spacing stays correct with headers hidden (BE-060 toggle), with the Calendar stage, with validation errors expanding content, and with the 320px minimum-height floor.
-  - [ ] No hydration mismatch and no step-height animation regression.
-- **Constraints / Must Not Do:** Do not add raw per-surface pixel/spacing rows that contradict Rule 123 (footer gap 8 / marginTop 24 / sticky are internal rhythm) without an explicit Rule 140 author override recorded on the entry; do not move Gap out of Styles or change its 0-48 contract (Rule 82); do not use margin/padding where Rule 6 mandates flex gap for field/error pairs; keep the deterministic step-visibility and form-height-animation architecture intact.
-- **Related AGENTS.md Rule(s):** Rules 6, 18, 82, 123, 129, 189
-- **Additional Context:** Author suggestion (non-binding): a single global gap that grows/shrinks header-to-fields and fields-to-nav together. Reported 2026-09-10, in Arabic/mixed Arabic-English, no screenshots.
+  - [x] Progress-to-form, header-to-fields, and fields-to-nav distances are all author-adjustable from the panel and visibly change the rendered spacing at both extremes.
+  - [x] Untouched canvases render byte-identically where a subtitle exists (defaults 16/16/36; footer 36 = old 24+12 sum); title-only steps re-baseline trailing 4→16 (recorded on BE-077 — shipped defaults all carry subtitles).
+  - [x] Spacing stays correct with headers hidden (BE-060 toggle), with the Calendar stage, with validation errors expanding content, and with the 320px minimum-height floor.
+  - [x] No hydration mismatch (pure prop-derived memo) and no step-height animation regression.
+- **Constraints / Must Not Do:** Rule 123's footer-rhythm clause amended openly per Rule 140 (explicit `fix it now` author order — zone rhythm is now a meaningful design decision; raw inter-button `gap 8` and sticky stay internal). Shared Gap token untouched (Rule 82); field/error pairs keep flex `gap` (Rule 6).
+- **Related AGENTS.md Rule(s):** Rules 6, 18, 82, 123 (amended), 129, 189; new rule 190.
+- **Additional Context:** Reported 2026-09-10, in Arabic/mixed Arabic-English, no screenshots.
+- **Implementation record (2026-09-10):** `SECTION_SPACING_DEFAULTS` + `clampSectionSpacing` + `sectionSpacing` memo; three Styles Number controls (0–64px steppers); header grouped into flex-column wrapper (BE-077); footer single-owner margin (BE-078). Keys excluded from the config fingerprint.
 
 ---
 
-### BE-076 — Step DOM: header-inside-form (3 zones) vs standalone header stage (4 zones)
+### BE-076 — Step DOM: header stays inside the form (3 zones verdict)
 
-- **Status:** Open
-- **Description:** The author observes the rendered step DOM has three top-level zones (progress block, motion.form containing the per-step header plus fields, footer nav) and asks whether the header should instead be a fourth standalone zone (progress, header, form, nav). Each step owns a different title/subtitle, and the header currently renders inside every step inside the form.
-- **Current Behavior:** Per-step header (h2.be-focus-target plus subtitle block) renders inside each StepVisibilityWrapper inside the single motion.form, followed by StepBody; progress renders above the form and the footer nav below it. There is no standalone header element outside the form.
-- **Expected Behavior:** A recorded verdict with rationale: either keep the header inside each step inside the form, or promote it to a standalone stage, with the chosen structure rendering per-step titles correctly on every step including the system Calendar and auto-injected Additional Details step.
+- **Status:** Done (2026-09-10)
+- **Description:** Verdict: keep the 3-zone DOM (progress / form-with-per-step-header / nav). No fourth standalone header zone. Each step owns a different title/subtitle (or hides it via BE-060), and the header rides the step's visibility transition, focus/announce lifecycle, `inert` sync, and form-height measurement — a standalone zone would duplicate all of that with zero visual gain and would split submit/validation ownership away from the form.
+- **Current Behavior:** Per-step header (`h2.be-focus-target` + subtitle block) renders inside each `StepVisibilityWrapper` inside the single `motion.form`, followed by `StepBody`; progress renders above the form and the footer nav below it.
+- **Expected Behavior:** Structure unchanged; per-step titles render correctly on every step including the system Calendar and auto-injected Additional Details step.
 - **Acceptance Criteria:**
-  - [ ] Every step (authored Form steps, auto-injected step, system Calendar) still shows its own correct title/subtitle (or nothing when its header is hidden).
-  - [ ] Step-change focus/announcement, deterministic active-step visibility, inert sync, restore-before-paint, hydration parity, and form-height measurement all keep working.
-  - [ ] No visual regression on untouched canvases whichever direction is chosen.
-- **Constraints / Must Not Do:** Do not break Rules 14/17/21/23 (deterministic step visibility), 103/124 (announcement plus restore focus parity), 139 (inert sync), 186 (per-step Header toggle), 189 (animated form height); do not split the form in a way that breaks submit/validation ownership.
-- **Related AGENTS.md Rule(s):** Rules 14, 17, 21, 23, 103, 124, 139, 186, 189
-- **Additional Context:** Author question from 2026-09-10 (Arabic); explicitly asked for the agent opinion on 3 vs 4 elements. No screenshots.
+  - [x] Every step shows its own correct title/subtitle (or nothing when its header is hidden) — unchanged render path.
+  - [x] Focus/announcement, deterministic visibility, `inert` sync, restore-before-paint, hydration parity, and form-height measurement untouched.
+  - [x] No visual regression on untouched canvases.
+- **Constraints / Must Not Do:** Rules 14/17/21/23, 103/124, 139, 186, 189 preserved — no DOM split made.
+- **Related AGENTS.md Rule(s):** Rules 14, 17, 21, 23, 103, 124, 139, 186, 189; verdict recorded in new rule 190.
+- **Additional Context:** Author question from 2026-09-10 (Arabic); asked for the agent's opinion on 3 vs 4 elements. Verdict: keep 3.
 
 ---
 
-### BE-077 — Step header title/subtitle use margins with no grouping wrapper
+### BE-077 — Step header grouped with flex gap (no more sibling margins)
 
-- **Status:** Open
-- **Description:** The step header title-to-subtitle and subtitle-to-fields distances are produced by individual margins on sibling elements rather than by a grouped header element with a flex gap. The title and subtitle render as unwrapped siblings (fragment) inside each step.
-- **Current Behavior:** The step h2 carries marginBottom 4 and the subtitle div carries marginBottom 16; there is no header wrapper element, so no gap separates title from subtitle or header from fields.
-- **Expected Behavior:** The title and subtitle render inside one header group whose internal and trailing spacing behaves like the component other gap-based rhythm, with untouched canvases looking exactly as today.
+- **Status:** Done (2026-09-10)
+- **Description:** Title and subtitle now render inside one header `div` (flex column, `gap: 4` internal, `marginBottom: <Heading Gap>` trailing). The `h2` and subtitle sibling margins are gone (both `marginBottom: 0`).
+- **Current Behavior:** (pre-fix) The step `h2` carried `marginBottom: 4` and the subtitle `div` carried `marginBottom: 16`; there was no header wrapper element.
+- **Expected Behavior:** Header spacing follows the same gap-based rhythm as field/error pairs (Rule 6); untouched canvases look the same.
 - **Acceptance Criteria:**
-  - [ ] Title/subtitle are grouped in one header element; sibling-margin spacing is replaced by the group gap mechanism.
-  - [ ] Untouched canvases render byte-identically (same 4px- and 16px-equivalent distances by default).
-  - [ ] Per-step Header toggle still removes the whole header, per-step/global alignment still applies, and step-change focus ref/announcer behavior is unchanged.
-- **Constraints / Must Not Do:** Do not add required markers or helper text (Rule 4); do not change alignment scope (Rules 125/172) or terminal-header construction (Rule 174); do not alter the focus-target class or announce behavior (Rules 103/124).
-- **Related AGENTS.md Rule(s):** Rules 6, 103, 124, 125, 172, 174, 186
-- **Additional Context:** Reported 2026-09-10 (Arabic). Author notes field/error pairs already use flex gap (Rule 6) and expects the header to follow the same pattern.
+  - [x] Title/subtitle grouped in one header element; sibling margins replaced by the group gap mechanism.
+  - [x] Subtitle-present steps render byte-identically (4px title gap + Heading Gap 16 default = old 4 + 16); title-only steps re-baseline trailing 4→16 (intentional — one owner per zone beats per-case margins).
+  - [x] Per-step Header toggle, per-step/global alignment, and focus ref/announcer behavior unchanged.
+- **Constraints / Must Not Do:** No required markers (Rule 4); alignment scope unchanged (Rules 125/172); terminal headers untouched (Rule 174); focus-target class and announce behavior unchanged (Rules 103/124).
+- **Related AGENTS.md Rule(s):** Rules 6, 103, 124, 125, 172, 174, 186; wrapper covered by new rule 190.
+- **Additional Context:** Reported 2026-09-10 (Arabic).
 
 ---
 
-### BE-078 — Footer nav spacing stacks marginTop plus paddingTop plus safe-area paddingBottom
+### BE-078 — Footer nav has one spacing owner (marginTop, no more paddingTop stack)
 
-- **Status:** Open
-- **Description:** The vertical space between the last field and the footer navigation buttons comes from two stacked values (marginTop 24 on the footer row plus paddingTop 12 on the same row), and the row also carries a paddingBottom env(safe-area-inset-bottom, 0px) whose purpose is undocumented. The author suspects the padding-top is redundant because the margin alone already produces the required distance.
-- **Current Behavior:** The footer nav div sets gap 8, marginTop 24, paddingTop 12, position sticky with bottom 0, and paddingBottom env(safe-area-inset-bottom, 0px) together on every step, so fields-to-nav distance is the sum of the margin and the padding.
-- **Expected Behavior:** Fields-to-nav spacing comes from one intentional mechanism with the safe-area/sticky behavior documented, rendering the same (or an explicitly re-baselined) default distance on untouched canvases.
+- **Status:** Done (2026-09-10)
+- **Description:** Fields-to-nav distance now comes from one owner — `marginTop: <Footer Gap>` (default 36, exactly the old 24+12 sum). The redundant `paddingTop: 12` is deleted. Sticky positioning and the safe-area bottom padding stay, with rationale in the code comment (row pins to the viewport bottom and clears the iOS home indicator; neither affects the fields-to-nav distance).
+- **Current Behavior:** (pre-fix) The footer nav `div` set `marginTop: 24` plus `paddingTop: 12` together, so the distance was their stacked sum (36px).
+- **Expected Behavior:** One intentional spacing mechanism; same default distance on untouched canvases.
 - **Acceptance Criteria:**
-  - [ ] One documented owner for the fields-to-nav distance; no redundant margin-plus-padding stacking.
-  - [ ] Purpose of the safe-area inset padding and the sticky footer is recorded (kept with rationale or removed with rationale).
-  - [ ] No visual jump on untouched canvases unless the entry records an intentional re-baseline; narrow/stacked layouts and the 320px floor unaffected.
-- **Constraints / Must Not Do:** Do not add author-facing spacing rows in this entry (panel controls belong to BE-075); do not contradict Rule 123 (footer rhythm is internal) without a Rule 140 override; do not break the Buttons Layout Order/Align/Width behavior (Rules 123/126/136).
-- **Related AGENTS.md Rule(s):** Rules 18, 123, 126, 129, 136
-- **Additional Context:** Reported 2026-09-10 (Arabic). Author observation only; no screenshots.
+  - [x] One documented owner; no margin-plus-padding stacking.
+  - [x] Safe-area/sticky purpose recorded (kept with rationale).
+  - [x] No visual jump on untouched canvases (36 = 36); narrow/stacked layouts and the 320px floor unaffected.
+- **Constraints / Must Not Do:** Panel control lives in BE-075 (Footer Gap); Buttons Layout Order/Align/Width untouched (Rules 123/126/136).
+- **Related AGENTS.md Rule(s):** Rules 18, 123 (amended via BE-075), 126, 129, 136; mechanism covered by new rule 190.
+- **Additional Context:** Reported 2026-09-10 (Arabic). Author observation confirmed — margin and padding were indeed stacking.
+- **Implementation record (2026-09-10):** Footer `marginTop` reads `sectionSpacing.footer`; `paddingTop: 12` removed; `gap: 8`, sticky, safe-area kept verbatim; purpose comment added inline.
 
