@@ -922,6 +922,31 @@ function Skeleton({
     )
 }
 
+// SEGMENTED-MOTION (BE-090): tree-wide thumb motion prefs for the shared
+// SegmentedControl (12h/24h toggle + segmented choice variant). Context — not
+// props — so both consumers stay in sync without drilling through calendar and
+// field layers that otherwise don't care. Tree-scoped per provider, so sibling
+// engines with different settings stay isolated (rule 94). Clamped once at
+// the single resolution site; the component only reads.
+const SEGMENTED_MOTION_LIMITS = {
+    stiffness: { min: 50, max: 1000, fallback: 400 },
+    damping: { min: 5, max: 100, fallback: 38 },
+} as const
+const SegmentedMotionContext = React.createContext<{
+    stiffness: number
+    damping: number
+}>({
+    stiffness: SEGMENTED_MOTION_LIMITS.stiffness.fallback,
+    damping: SEGMENTED_MOTION_LIMITS.damping.fallback,
+})
+function clampSegmentedMotion(
+    raw: unknown,
+    limit: { min: number; max: number; fallback: number }
+): number {
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return limit.fallback
+    return Math.min(limit.max, Math.max(limit.min, raw))
+}
+
 interface SegmentedControlProps {
     options: Array<{ label: string; value: string }>
     value: string
@@ -976,6 +1001,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
     } = props
     const isStaticRender = useIsStaticRenderer()
     const prefersReducedMotion = useReducedMotion() ?? false
+    const segmentedMotion = React.useContext(SegmentedMotionContext)
     const count = options.length
     const selectedIndex = Math.max(
         0,
@@ -1056,7 +1082,11 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                     transition={
                         prefersReducedMotion
                             ? { duration: 0 }
-                            : { type: "spring", stiffness: 400, damping: 30 }
+                            : {
+                                  type: "spring",
+                                  stiffness: segmentedMotion.stiffness,
+                                  damping: segmentedMotion.damping,
+                              }
                     }
                     style={{
                         position: "absolute",
@@ -4659,6 +4689,8 @@ interface BookingEngineStyleProps {
     transitionSettings?: {
         transition?: Transition
         variant?: "fadeRise" | "blurScale" | "slide" | "zoom" | "verticalSlide" | "blurSlide"
+        thumbStiffness?: number
+        thumbDamping?: number
     }
     transition: Transition
     transitionVariant?: "fadeRise" | "blurScale" | "slide" | "zoom" | "verticalSlide" | "blurSlide"
@@ -7258,6 +7290,22 @@ function useBookingEngineState(
     const transition = transitionSettings?.transition ?? props.transition
     const transitionVariant = transitionSettings?.variant ?? props.transitionVariant
 
+    // BE-090: segmented-thumb motion prefs (Transition submenu controls),
+    // clamped once here; the memoized object keeps context identity stable so
+    // typing never re-renders the segmented controls.
+    const thumbStiffness = clampSegmentedMotion(
+        transitionSettings?.thumbStiffness,
+        SEGMENTED_MOTION_LIMITS.stiffness
+    )
+    const thumbDamping = clampSegmentedMotion(
+        transitionSettings?.thumbDamping,
+        SEGMENTED_MOTION_LIMITS.damping
+    )
+    const segmentedMotion = React.useMemo(
+        () => ({ stiffness: thumbStiffness, damping: thumbDamping }),
+        [thumbStiffness, thumbDamping]
+    )
+
     const font = styles.font ?? typography?.font ?? props.font
     const headingFont = styles.headingFont ?? typography?.headingFont ?? props.headingFont
 
@@ -9016,6 +9064,7 @@ function useBookingEngineState(
         stepTransition,
         resolvedTransitionVariant,
         footerLabelTransition,
+        segmentedMotion,
         navJustify,
         terminalActionJustify,
         terminalAlignment,
@@ -9138,6 +9187,7 @@ export default function BookingEngine(props: BookingEngineProps) {
         stepTransition,
         resolvedTransitionVariant,
         footerLabelTransition,
+        segmentedMotion,
         style,
         submitError,
         theme,
@@ -9555,6 +9605,8 @@ export default function BookingEngine(props: BookingEngineProps) {
     )
     return (
         <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
+            {/* SEGMENTED-MOTION (BE-090): tree-wide thumb motion prefs. */}
+            <SegmentedMotionContext.Provider value={segmentedMotion}>
             <output
                 aria-live="polite"
                 aria-atomic="true"
@@ -9986,6 +10038,7 @@ export default function BookingEngine(props: BookingEngineProps) {
     opacity: 1;
 }
 `}</style>
+            </SegmentedMotionContext.Provider>
         </RootShell>
     )
 }
@@ -10743,6 +10796,56 @@ function phoneCountryByIso(iso: string): PhoneCountryTuple | undefined {
     const upper = (iso || "").toUpperCase()
     return PHONE_COUNTRIES.find((c) => c[0] === upper)
 }
+// BE-087: flags render as real images, not emoji — Windows has no flag-emoji
+// font and shows the bare letter pair instead (the reported "DZ" box). Images
+// come from the flagcdn CDN as SVG (BE-088 — vector, no retina set needed);
+// offline/unknown iso fails closed to a fixed-size two-letter badge, so the
+// slot geometry never shifts.
+function PhoneFlag(props: { iso: string }) {
+    const { iso } = props
+    const [failed, setFailed] = React.useState(false)
+    const upper = (iso || "").toUpperCase()
+    const known = /^[A-Z]{2}$/.test(upper) && phoneCountryByIso(upper) !== undefined
+    const showImg = known && !failed
+    return (
+        <span
+            aria-hidden="true"
+            style={{
+                width: 22,
+                height: 16,
+                borderRadius: 3,
+                overflow: "hidden",
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(128, 128, 128, 0.18)",
+                flexShrink: 0,
+            }}
+        >
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, lineHeight: 1 }}>
+                {upper.slice(0, 2)}
+            </span>
+            {showImg ? (
+                <img
+                    src={`https://flagcdn.com/${upper.toLowerCase()}.svg`}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    onError={() => setFailed(true)}
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                    }}
+                />
+            ) : null}
+        </span>
+    )
+}
 // BE-063: canonical representative per shared dial code, so parsing a stored
 // number with a foreign fallback iso still lands a deterministic flag
 // (+1 → US, +7 → RU, +44 → GB). Manual re-pick always wins afterwards.
@@ -10751,19 +10854,203 @@ const PHONE_DIAL_CANONICAL_ISO: Record<string, string> = { "1": "US", "7": "RU",
 // sides). Locale detection lands in a gated layout effect, never the first
 // markup, so there is no flag flash and no hydration mismatch.
 const PHONE_COUNTRY_DEFAULT_ISO = "US"
-function detectPhoneCountryIso(): string {
-    if (typeof navigator === "undefined") return PHONE_COUNTRY_DEFAULT_ISO
-    const lang = typeof navigator.language === "string" ? navigator.language : ""
-    const region = (lang.split(/[-_]/)[1] || "").toUpperCase()
-    if (region && phoneCountryByIso(region)) return region
-    return PHONE_COUNTRY_DEFAULT_ISO
+// BE-088: IANA-zone → country second signal for detection. Locale stays
+// first (an explicit locale region always wins); the timezone only resolves
+// the ambiguous cases — English-browser visitors abroad (en-US + Africa/Cairo
+// → EG) and region-less locales. No IP geolocation, fully offline.
+const PHONE_TIMEZONE_TO_ISO: Record<string, string> = {
+    "Africa/Cairo": "EG",
+    "Africa/Lagos": "NG",
+    "Africa/Nairobi": "KE",
+    "Africa/Johannesburg": "ZA",
+    "Africa/Casablanca": "MA",
+    "Africa/Algiers": "DZ",
+    "Africa/Tunis": "TN",
+    "Africa/Accra": "GH",
+    "Africa/Addis_Ababa": "ET",
+    "Africa/Khartoum": "SD",
+    "Africa/Tripoli": "LY",
+    "Africa/Dakar": "SN",
+    "Africa/Abidjan": "CI",
+    "Africa/Luanda": "AO",
+    "Africa/Dar_es_Salaam": "TZ",
+    "Africa/Kampala": "UG",
+    "Africa/Kigali": "RW",
+    "Africa/Windhoek": "NA",
+    "Africa/Maputo": "MZ",
+    "Africa/Harare": "ZW",
+    "Africa/Lusaka": "ZM",
+    "America/New_York": "US",
+    "America/Chicago": "US",
+    "America/Denver": "US",
+    "America/Los_Angeles": "US",
+    "America/Anchorage": "US",
+    "Pacific/Honolulu": "US",
+    "America/Toronto": "CA",
+    "America/Vancouver": "CA",
+    "America/Winnipeg": "CA",
+    "America/Halifax": "CA",
+    "America/St_Johns": "CA",
+    "America/Mexico_City": "MX",
+    "America/Cancun": "MX",
+    "America/Guatemala": "GT",
+    "America/Panama": "PA",
+    "America/Bogota": "CO",
+    "America/Lima": "PE",
+    "America/Santiago": "CL",
+    "America/Argentina/Buenos_Aires": "AR",
+    "America/Sao_Paulo": "BR",
+    "America/Montevideo": "UY",
+    "America/Asuncion": "PY",
+    "America/La_Paz": "BO",
+    "America/Caracas": "VE",
+    "America/Guyana": "GY",
+    "America/Paramaribo": "SR",
+    "America/Cayenne": "GF",
+    "America/Puerto_Rico": "PR",
+    "America/Santo_Domingo": "DO",
+    "America/Havana": "CU",
+    "America/Jamaica": "JM",
+    "America/Port_of_Spain": "TT",
+    "America/Barbados": "BB",
+    "America/Nassau": "BS",
+    "America/Belize": "BZ",
+    "America/Tegucigalpa": "HN",
+    "America/Managua": "NI",
+    "America/El_Salvador": "SV",
+    "America/Costa_Rica": "CR",
+    "America/Nuuk": "GL",
+    "America/Miquelon": "PM",
+    "Atlantic/Bermuda": "BM",
+    "Atlantic/Azores": "PT",
+    "Europe/London": "GB",
+    "Europe/Dublin": "IE",
+    "Europe/Paris": "FR",
+    "Europe/Berlin": "DE",
+    "Europe/Rome": "IT",
+    "Europe/Madrid": "ES",
+    "Europe/Amsterdam": "NL",
+    "Europe/Brussels": "BE",
+    "Europe/Zurich": "CH",
+    "Europe/Vienna": "AT",
+    "Europe/Stockholm": "SE",
+    "Europe/Oslo": "NO",
+    "Europe/Copenhagen": "DK",
+    "Europe/Helsinki": "FI",
+    "Europe/Warsaw": "PL",
+    "Europe/Prague": "CZ",
+    "Europe/Budapest": "HU",
+    "Europe/Bucharest": "RO",
+    "Europe/Athens": "GR",
+    "Europe/Istanbul": "TR",
+    "Europe/Moscow": "RU",
+    "Europe/Kyiv": "UA",
+    "Europe/Kiev": "UA",
+    "Europe/Minsk": "BY",
+    "Europe/Riga": "LV",
+    "Europe/Tallinn": "EE",
+    "Europe/Vilnius": "LT",
+    "Europe/Lisbon": "PT",
+    "Atlantic/Reykjavik": "IS",
+    "Europe/Luxembourg": "LU",
+    "Europe/Monaco": "MC",
+    "Europe/Malta": "MT",
+    "Asia/Nicosia": "CY",
+    "Europe/Tirane": "AL",
+    "Europe/Skopje": "MK",
+    "Europe/Sofia": "BG",
+    "Europe/Belgrade": "RS",
+    "Europe/Zagreb": "HR",
+    "Europe/Sarajevo": "BA",
+    "Europe/Podgorica": "ME",
+    "Europe/Chisinau": "MD",
+    "Asia/Dubai": "AE",
+    "Asia/Riyadh": "SA",
+    "Asia/Qatar": "QA",
+    "Asia/Kuwait": "KW",
+    "Asia/Bahrain": "BH",
+    "Asia/Muscat": "OM",
+    "Asia/Amman": "JO",
+    "Asia/Beirut": "LB",
+    "Asia/Damascus": "SY",
+    "Asia/Jerusalem": "IL",
+    "Asia/Gaza": "PS",
+    "Asia/Hebron": "PS",
+    "Asia/Baghdad": "IQ",
+    "Asia/Tehran": "IR",
+    "Asia/Yerevan": "AM",
+    "Asia/Baku": "AZ",
+    "Asia/Tbilisi": "GE",
+    "Asia/Karachi": "PK",
+    "Asia/Kolkata": "IN",
+    "Asia/Calcutta": "IN",
+    "Asia/Dhaka": "BD",
+    "Asia/Colombo": "LK",
+    "Asia/Kathmandu": "NP",
+    "Asia/Almaty": "KZ",
+    "Asia/Tashkent": "UZ",
+    "Asia/Bishkek": "KG",
+    "Asia/Dushanbe": "TJ",
+    "Asia/Ashgabat": "TM",
+    "Asia/Bangkok": "TH",
+    "Asia/Jakarta": "ID",
+    "Asia/Kuala_Lumpur": "MY",
+    "Asia/Singapore": "SG",
+    "Asia/Manila": "PH",
+    "Asia/Hong_Kong": "HK",
+    "Asia/Shanghai": "CN",
+    "Asia/Taipei": "TW",
+    "Asia/Seoul": "KR",
+    "Asia/Tokyo": "JP",
+    "Asia/Ulaanbaatar": "MN",
+    "Asia/Yangon": "MM",
+    "Asia/Phnom_Penh": "KH",
+    "Asia/Vientiane": "LA",
+    "Asia/Ho_Chi_Minh": "VN",
+    "Asia/Dili": "TL",
+    "Asia/Macau": "MO",
+    "Australia/Sydney": "AU",
+    "Australia/Melbourne": "AU",
+    "Australia/Brisbane": "AU",
+    "Australia/Perth": "AU",
+    "Australia/Adelaide": "AU",
+    "Australia/Darwin": "AU",
+    "Australia/Hobart": "AU",
+    "Pacific/Auckland": "NZ",
+    "Pacific/Fiji": "FJ",
+    "Pacific/Guam": "GU",
+    "Pacific/Port_Moresby": "PG",
+    "Pacific/Noumea": "NC",
+    "Pacific/Tahiti": "PF",
+    "Pacific/Apia": "WS",
+    "Pacific/Tongatapu": "TO",
+    "Pacific/Tarawa": "KI",
+    "Pacific/Majuro": "MH",
 }
-function phoneCountryFlag(iso: string): string {
-    const upper = (iso || "").toUpperCase()
-    if (!/^[A-Z]{2}$/.test(upper) || !phoneCountryByIso(upper)) return ""
-    return String.fromCodePoint(
-        ...upper.split("").map((c) => 127397 + c.charCodeAt(0))
-    )
+function detectPhoneCountryIso(): string {
+    let localeIso = ""
+    if (typeof navigator !== "undefined") {
+        const lang = typeof navigator.language === "string" ? navigator.language : ""
+        const region = (lang.split(/[-_]/)[1] || "").toUpperCase()
+        if (region && phoneCountryByIso(region)) localeIso = region
+    }
+    let tzIso = ""
+    try {
+        const zone =
+            typeof Intl !== "undefined"
+                ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+                : ""
+        const hit = PHONE_TIMEZONE_TO_ISO[zone]
+        if (hit && phoneCountryByIso(hit)) tzIso = hit
+    } catch {
+        tzIso = ""
+    }
+    // Explicit non-default locale wins; the timezone resolves the ambiguous
+    // remainder (default-locale visitors abroad, region-less locales).
+    if (localeIso && localeIso !== PHONE_COUNTRY_DEFAULT_ISO) return localeIso
+    if (tzIso) return tzIso
+    if (localeIso) return localeIso
+    return PHONE_COUNTRY_DEFAULT_ISO
 }
 // BE-063: split a stored full-international value ("+201012345678") into its
 // country + national parts. Legacy national-only values (no "+") keep the
@@ -11827,7 +12114,10 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     const beInteractive = useBeInteractive()
     const buttonRef = React.useRef<HTMLButtonElement | null>(null)
-    const menuRef = React.useRef<HTMLUListElement | null>(null)
+    // BE-086: the close-root is the whole dialog (search + list). Rooting it
+    // on the list alone treated search-box/padding presses as outside clicks
+    // and closed the menu mid-interaction.
+    const menuRef = React.useRef<HTMLDivElement | null>(null)
     const searchRef = React.useRef<HTMLInputElement | null>(null)
     const [iso, setIso] = React.useState(PHONE_COUNTRY_DEFAULT_ISO)
     const [national, setNational] = React.useState("")
@@ -11835,6 +12125,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     const [query, setQuery] = React.useState("")
     const [activeIndex, setActiveIndex] = React.useState(0)
     const [menuRect, setMenuRect] = React.useState<SelectMenuPlacement | null>(null)
+    const [triggerFocused, setTriggerFocused] = React.useState(false)
     const lastComposedRef = React.useRef<string | null>(null)
     const settledRef = React.useRef(false)
 
@@ -11965,7 +12256,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
         }
         document.addEventListener("pointerdown", onPointerDown)
         return () => document.removeEventListener("pointerdown", onPointerDown)
-    }, [open ])
+    }, [open])
 
     React.useEffect(() => {
         if (!open) return
@@ -12028,7 +12319,9 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
             case "ArrowDown":
                 event.preventDefault()
                 if (filtered.length > 0) {
-                    setActiveIndex((prev) => (Math.min(prev, filtered.length - 1) + 1) % filtered.length)
+                    setActiveIndex(
+                        (prev) => (Math.min(prev, filtered.length - 1) + 1) % filtered.length
+                    )
                 }
                 return
             case "ArrowUp":
@@ -12088,40 +12381,90 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     return (
         <div>
-            <div style={{ display: "flex", gap: 8, minWidth: 0 }}>
+            {/* BE-086: reui-style split input — flag-only trigger joined flush
+                to the number box (no gap, shared border, split radii). */}
+            <div style={{ display: "flex", minWidth: 0 }}>
                 <button
                     ref={buttonRef}
                     type="button"
-                    className={hasError ? "be-input be-input-invalid" : "be-input"}
                     style={{
                         ...inputBaseStyle,
                         width: "auto",
                         flexShrink: 0,
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 6,
+                        justifyContent: "center",
+                        gap: 4,
+                        paddingTop: padAxes.y,
+                        paddingBottom: padAxes.y,
+                        paddingLeft: 10,
+                        paddingRight: 8,
+                        borderRightWidth: 0,
+                        borderTopRightRadius: 0,
+                        borderBottomRightRadius: 0,
                         cursor: isSubmitting ? "not-allowed" : "pointer",
+                        position: "relative",
+                        zIndex: triggerFocused || open ? 1 : undefined,
+                        opacity: isSubmitting ? 0.5 : 1,
+                        color: theme.textSecondaryColor,
+                        // BE-090: focus treatment matches every other field —
+                        // inset accent ring, never the global button outline
+                        // (inset + outline had stacked into a muted double
+                        // ring). Gated on :focus-visible like the platform
+                        // heuristic, so mouse clicks stay ring-free.
+                        outline: "none",
+                        ...(triggerFocused
+                            ? {
+                                  boxShadow: `inset 0 0 0 2px ${fs?.focusBorderColor ?? theme.accentColor}`,
+                              }
+                            : {}),
                     }}
                     aria-haspopup="listbox"
                     aria-expanded={open}
                     aria-controls={listboxDomId}
                     aria-label={`${field.label} country code`}
+                    title={country[1]}
                     disabled={isSubmitting}
                     onClick={() => (open ? setOpen(false) : openMenu())}
                     onKeyDown={handleButtonKeyDown}
+                    onFocus={(e) =>
+                        setTriggerFocused(
+                            e.currentTarget.matches
+                                ? e.currentTarget.matches(":focus-visible")
+                                : true
+                        )
+                    }
+                    onBlur={() => setTriggerFocused(false)}
                 >
-                    <span aria-hidden="true">{phoneCountryFlag(country[0])}</span>
-                    <span>+{country[2]}</span>
-                    <span aria-hidden="true" style={{ fontSize: 10 }}>
-                        ▾
-                    </span>
+                    <PhoneFlag key={country[0]} iso={country[0]} />
+                    {/* BE-089: unfold-more affordance (author-supplied paths,
+                        both chevrons filled solid — the source file's upper
+                        chevron was stroke-only). Muted, fixed size: no layout
+                        shift, purely a clickable signal. */}
+                    <svg
+                        aria-hidden="true"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        style={{ display: "block", flexShrink: 0 }}
+                    >
+                        <path d="M10.3483 10H13.6517C15.6822 10 16.6974 10 16.9501 9.39139C17.2028 8.78277 16.4849 8.06648 15.0491 6.63391L13.3974 4.9859L13.3974 4.9859C12.7387 4.32863 12.4093 4 12 4C11.5907 4 11.2613 4.32864 10.6026 4.9859L8.95091 6.63391L8.95091 6.63391C7.51513 8.06649 6.79724 8.78277 7.0499 9.39139C7.30256 10 8.31781 10 10.3483 10Z" />
+                        <path d="M10.3483 14H13.6517C15.6822 14 16.6974 14 16.9501 14.6086C17.2028 15.2172 16.4849 15.9335 15.0491 17.3661L13.3974 19.0141C12.7387 19.6714 12.4093 20 12 20C11.5907 20 11.2613 19.6714 10.6026 19.0141L8.95091 17.3661C7.51513 15.9335 6.79724 15.2172 7.0499 14.6086C7.30256 14 8.31781 14 10.3483 14Z" />
+                    </svg>
                 </button>
                 <input
                     id={fieldDomId}
                     className={hasError ? "be-input be-input-invalid" : "be-input"}
                     type="tel"
                     inputMode="tel"
-                    style={{ ...inputBaseStyle, flex: 1, minWidth: 0 }}
+                    style={{
+                        ...inputBaseStyle,
+                        flex: 1,
+                        minWidth: 0,
+                        borderTopLeftRadius: 0,
+                        borderBottomLeftRadius: 0,
+                    }}
                     value={national}
                     placeholder={derivedPlaceholder}
                     required={field.required}
@@ -12136,106 +12479,163 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
             {open && typeof document !== "undefined"
                 ? (ReactDOM.createPortal(
                       <div
+                          ref={menuRef}
                           role="dialog"
                           aria-label={`${field.label} country code`}
-                          style={{ ...menuSurfaceStyle, padding: 4 }}
+                          style={{
+                              ...menuSurfaceStyle,
+                              padding: 4,
+                              display: "flex",
+                              flexDirection: "column",
+                              overflow: "hidden",
+                          }}
                       >
-                          <input
-                              ref={searchRef}
-                              type="text"
-                              role="combobox"
-                              aria-expanded="true"
-                              aria-controls={listboxDomId}
-                              aria-activedescendant={`${listboxDomId}-option-${clampedActive}`}
-                              aria-label="Search countries"
-                              className="be-input"
+                          {/* BE-088: plain search row — icon + borderless input, no
+                              box-in-box. Autofocus stays (typing works on
+                              open); no visible ring (no be-input class). */}
+                          <div
                               style={{
-                                  width: "100%",
-                                  boxSizing: "border-box",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
                                   padding: "8px 10px",
-                                  marginBottom: 4,
-                                  border: `1px solid ${theme.borderColor}`,
-                                  borderRadius: menuRowRadiusValue,
-                                  background: "transparent",
-                                  color: optionTextColor,
-                                  fontSize: fsInputFontSize,
-                                  outline: "none",
-                              }}
-                              value={query}
-                              placeholder="Search countries"
-                              onChange={(e) => {
-                                  setQuery(e.target.value)
-                                  setActiveIndex(0)
-                              }}
-                              onKeyDown={handleSearchKeyDown}
-                          />
-                          <ul
-                              ref={menuRef}
-                              id={listboxDomId}
-                              role="listbox"
-                              className="be-select-scroll"
-                              tabIndex={-1}
-                              style={{
-                                  margin: 0,
-                                  padding: 0,
-                                  listStyle: "none",
-                                  overflowY: "auto",
-                                  overscrollBehavior: "contain",
+                                  flexShrink: 0,
+                                  color: theme.textSecondaryColor,
                               }}
                           >
-                              {filtered.map((c, index) => {
-                                  const isSelected = c[0] === iso
-                                  const isActiveRow = index === clampedActive
-                                  return (
-                                      // biome-ignore lint/a11y/useFocusableInteractive: ARIA listbox option — focus stays in the search box via aria-activedescendant, options commit on pointerdown (rules 134/162).
-                                      <li
-                                          key={c[0]}
-                                          id={`${listboxDomId}-option-${index}`}
-                                          role="option"
-                                          aria-selected={isSelected}
-                                          onPointerDown={(event) => {
-                                              event.preventDefault()
-                                              commitCountry(index)
-                                          }}
-                                          onMouseEnter={() => setActiveIndex(index)}
-                                          style={{
-                                              padding: fsPadding,
-                                              borderRadius: menuRowRadiusValue,
-                                              margin: 0,
-                                              listStyle: "none",
-                                              cursor: "pointer",
-                                              display: "flex",
-                                              alignItems: "center",
-                                              gap: 8,
-                                              color: isSelected ? selectedRowText : optionTextColor,
-                                              background: isSelected
-                                                  ? selectedRowSurface
-                                                  : isActiveRow
-                                                    ? withAlpha(optionTextColor, 0.06)
-                                                    : "transparent",
-                                              transition: reducedMotion
-                                                  ? "none"
-                                                  : "background-color 0.15s ease",
-                                          }}
-                                      >
-                                          <span aria-hidden="true">{phoneCountryFlag(c[0])}</span>
-                                          <span style={{ flex: 1, minWidth: 0 }}>{c[1]}</span>
-                                          <span
+                              <svg
+                                  aria-hidden="true"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  style={{ flexShrink: 0, display: "block" }}
+                              >
+                                  <circle cx="11" cy="11" r="7" />
+                                  <path d="m20 20-3.5-3.5" />
+                              </svg>
+                              <input
+                                  ref={searchRef}
+                                  type="text"
+                                  role="combobox"
+                                  aria-expanded="true"
+                                  aria-controls={listboxDomId}
+                                  aria-activedescendant={
+                                      filtered.length > 0
+                                          ? `${listboxDomId}-option-${clampedActive}`
+                                          : undefined
+                                  }
+                                  aria-label="Search countries"
+                                  style={{
+                                      flex: 1,
+                                      minWidth: 0,
+                                      border: 0,
+                                      background: "transparent",
+                                      color: optionTextColor,
+                                      fontSize: fsInputFontSize,
+                                      outline: "none",
+                                      padding: 0,
+                                  }}
+                                  value={query}
+                                  placeholder="Search countries"
+                                  onChange={(e) => {
+                                      setQuery(e.target.value)
+                                      setActiveIndex(0)
+                                  }}
+                                  onKeyDown={handleSearchKeyDown}
+                              />
+                          </div>
+                          <div
+                              aria-hidden="true"
+                              style={{
+                                  height: 1,
+                                  flexShrink: 0,
+                                  background: theme.borderColor,
+                                  margin: "4px 0",
+                              }}
+                          />
+                          {filtered.length === 0 ? (
+                              <div
+                                  style={{
+                                      padding: "10px 14px",
+                                      fontSize: fsInputFontSize,
+                                      color: theme.textSecondaryColor,
+                                  }}
+                              >
+                                  No country found.
+                              </div>
+                          ) : (
+                              <ul
+                                  id={listboxDomId}
+                                  role="listbox"
+                                  tabIndex={-1}
+                                  className="be-select-scroll"
+                                  style={{
+                                      margin: 0,
+                                      padding: 0,
+                                      listStyle: "none",
+                                      flex: 1,
+                                      minHeight: 0,
+                                      overflowY: "auto",
+                                      overscrollBehavior: "contain",
+                                  }}
+                              >
+                                  {filtered.map((c, index) => {
+                                      const isSelected = c[0] === iso
+                                      const isActiveRow = index === clampedActive
+                                      return (
+                                          // biome-ignore lint/a11y/useFocusableInteractive: ARIA listbox option — focus stays in the search box via aria-activedescendant, options commit on pointerdown (rules 134/162).
+                                          <li
+                                              key={c[0]}
+                                              id={`${listboxDomId}-option-${index}`}
+                                              role="option"
+                                              aria-selected={isSelected}
+                                              onPointerDown={(event) => {
+                                                  event.preventDefault()
+                                                  commitCountry(index)
+                                              }}
+                                              onMouseEnter={() => setActiveIndex(index)}
                                               style={{
+                                                  padding: fsPadding,
+                                                  borderRadius: menuRowRadiusValue,
+                                                  margin: 0,
+                                                  listStyle: "none",
+                                                  cursor: "pointer",
+                                                  display: "flex",
+                                                  alignItems: "center",
+                                                  gap: 8,
                                                   color: isSelected
                                                       ? selectedRowText
-                                                      : theme.textSecondaryColor,
+                                                      : optionTextColor,
+                                                  background: isSelected
+                                                      ? selectedRowSurface
+                                                      : isActiveRow
+                                                        ? withAlpha(optionTextColor, 0.06)
+                                                        : "transparent",
+                                                  transition: reducedMotion
+                                                      ? "none"
+                                                      : "background-color 0.15s ease",
                                               }}
                                           >
-                                              +{c[2]}
-                                          </span>
-                                          {isSelected ? (
-                                              <span aria-hidden="true">✓</span>
-                                          ) : null}
-                                      </li>
-                                  )
-                              })}
-                          </ul>
+                                              <PhoneFlag key={c[0]} iso={c[0]} />
+                                              <span style={{ flex: 1, minWidth: 0 }}>{c[1]}</span>
+                                              <span
+                                                  style={{
+                                                      color: isSelected
+                                                          ? selectedRowText
+                                                          : theme.textSecondaryColor,
+                                                  }}
+                                              >
+                                                  +{c[2]}
+                                              </span>
+                                          </li>
+                                      )
+                                  })}
+                              </ul>
+                          )}
                       </div>,
                       document.body
                   ) as unknown as React.ReactNode)
@@ -12380,7 +12780,12 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ) : null
 
     const containerStyle: React.CSSProperties = {
-        gridColumn: field.width === "half" && isTwoCol ? "span 1" : "span 2",
+        // BE-091: textarea always spans both tracks even if a stored "half"
+        // value survives from before the Width control was hidden for it.
+        gridColumn:
+            field.fieldType === "textarea" || field.width !== "half" || !isTwoCol
+                ? "span 2"
+                : "span 1",
         display: "flex",
         flexDirection: "column",
         gap: fs?.spacing ?? 6,
@@ -14942,7 +15347,10 @@ function makeFieldObjectControls() {
             optionTitles: ["Fill", "Half"],
             defaultValue: "full",
             displaySegmentedControl: true,
-            hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
+            // BE-091: textarea is always full width (a tall half-width box
+            // next to a short field breaks the row) — no control, no choice.
+            hidden: (p: FieldControlProps) =>
+                p?.fieldType === "calendar-widget" || p?.fieldType === "textarea",
         },
         checkSize: {
             type: ct(ControlType.Number),
@@ -15403,6 +15811,26 @@ addPropertyControls(BookingEngine, {
                 ],
                 defaultValue: "blurScale",
             },
+            thumbStiffness: {
+                type: ControlType.Number,
+                title: "Thumb Stiffness",
+                defaultValue: 400,
+                min: 50,
+                max: 1000,
+                step: 10,
+                displayStepper: true,
+                description: "Slide speed of the segmented thumb — higher is snappier.",
+            },
+            thumbDamping: {
+                type: ControlType.Number,
+                title: "Thumb Damping",
+                defaultValue: 38,
+                min: 5,
+                max: 100,
+                step: 1,
+                displayStepper: true,
+                description: "Calmness of the segmented thumb — higher means less overshoot and bounce.",
+            },
         },
     },
     calApiKey: {
@@ -15682,7 +16110,7 @@ addPropertyControls(BookingEngine, {
                 title: "Instance ID",
                 placeholder: "e.g. main-booking",
                 description:
-                    "Use a unique ID when multiple identical Booking Engines share a page.",
+                    "Use a unique ID when multiple identical Booking share a page.",
                 defaultValue: "",
             },
         },

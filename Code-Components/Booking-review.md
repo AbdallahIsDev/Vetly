@@ -109,3 +109,107 @@
 - **Additional Context:** Reported 2026-09-09 with Cal.com dark-UI screenshots (Egypt +20 auto-detected, search field, per-country dial codes). Largest of the three — independent vertical slice.
 - **Implementation record (2026-09-11):** `PhoneFieldControl` (country button + national input + portaled searchable listbox, select/calendar-menu mechanics mirrored: fixed positioning, scroll/resize reposition, outside/Escape close, arrows/Home/End, Enter commits, focus returns to trigger). ~230-row `[iso, name, dial]` table; emoji regional-indicator flags (table-membership-guarded); detection = `navigator.language` region → table hit else US (one-shot, interaction-gated per rule 109; US default renders both sides first per rule 42). Stored value full-international (`+{dial}{digits}`, dial-only never stored); restore parses with current-country-wins + canonical representatives (+1→US, +7→RU, +44→GB). Author phone placeholder inert (derived `+{dial}` always). Existing `validatePhone`/sanitize/max-40 preserved underneath; hidden input keeps name transport. 14 helper unit tests pass on the real extracted code.
 
+---
+
+### BE-086 — Phone UI follows the attached reui component; dropdown interact/scroll fixed
+
+- **Status:** Done (2026-09-11)
+- **Description:** The shipped phone picker had three UI defects against the attached reui `phone-input.tsx` reference: the country trigger showed flag + dial + chevron (should be flag-only), the trigger and number box were separated by a gap (should be joined flush), and the dropdown misbehaved — its scrollbar was hidden by the shared `be-select-scroll` rule so it could not be dragged, and its outside-close root sat on the list alone so pressing the search box or menu padding closed the menu mid-interaction.
+- **Current Behavior:** (pre-fix) wide trigger (flag + `+dial` + chevron), `gap: 8` between trigger and input with full radii on both, `be-select-scroll` hiding the country-list scrollbar, `menuRef` on the `<ul>` only.
+- **Expected Behavior:** Flag-only trigger joined flush to the number box (no gap, shared border, split radii, focus raises trigger above input edge), dropdown rows flag + name + dial-at-far-right with no check glyph, native visible scrollbar on the country list, whole dialog as the close-root, empty-state row when search matches nothing.
+- **Acceptance Criteria:**
+  - [x] Trigger renders the flag only (native `title` tooltip carries the country name; aria-label unchanged).
+  - [x] Trigger + input share one border with split radii and zero gap, in every Radius/field-style configuration.
+  - [x] Country list scrolls with a visible native scrollbar (draggable); single/multi select menus keep their hidden-scrollbar treatment untouched.
+  - [x] Pressing search, padding, rows, or scrollbar never closes the menu; outside/Escape still do.
+  - [x] Stored values, detection, parse, validation, placeholder derivation unchanged (rule 196 mechanics intact).
+- **Constraints / Must Not Do:** Do not import the attached file or its dependencies (react-phone-number-input, lucide, cmdk-style packages, Tailwind) — UI contract only, reimplemented in plain inline styles; do not touch the `.be-select-scroll` rule itself (select menus rely on it); no new controls.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — reui UI contract); rules 42/109 (unchanged), 134/162 (menu mechanics unchanged).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with the reui reference file (`Code-Components/phone-input.tsx`, not imported) and docs link. The attached file is reference-only and must never be imported by the engine.
+- **Implementation record (2026-09-11):** Trigger trimmed to flag-only (`title` = country name, `px 10px`, right border/radius zeroed, focus z-index); input left radii zeroed, container gap removed; dialog root owns `menuRef`, flex-column with hidden overflow, search fixed + separator + internally-scrolling list; rows without the check glyph (accent selected surface remains the indicator); "No country found." empty state; `aria-activedescendant` guarded on non-empty results. (BE-088 supersedes the scrollbar half: author ordered the hidden treatment back — country list takes `be-select-scroll` like the select menus.)
+- **Implementation record 2 (2026-09-11, BE-087):** Flags are `PhoneFlag` images (flagcdn `w40` + `w80` retina, `key={iso}`, `onError` fail-closed to a styled two-letter badge) inside a fixed 22×16 slot — emoji rendering deleted (Windows has no flag-emoji font). Trigger drops the `be-input` class so keyboard focus shows only the standard platform button outline (the inset input ring + global button outline had stacked into a double ring); raised z-index keeps it visible over the input edge. Slot geometry is fixed everywhere, so country changes cause no layout shift.
+
+---
+
+### BE-087 — Phone flags render as boxes, trigger width shifts, focus ring is wrong
+
+- **Status:** Done (2026-09-11)
+- **Description:** On Windows the flag column shows the bare two-letter code ("DZ") instead of a flag — Windows ships no flag-emoji font, so regional-indicator pairs degrade to letters. The letters render at input font size in a fluid-width box, so picking countries with different code widths shifts the trigger layout. Keyboard focus on the trigger also stacks two rings (the `be-input` inset ring plus the global button outline) into one odd-looking double ring.
+- **Current Behavior:** (pre-fix) emoji flags via `phoneCountryFlag`; trigger carries `be-input` class; flag slot fluid width.
+- **Expected Behavior:** Real flag images with an offline-safe badge fallback, fixed-size flag slot in trigger and rows, single standard button focus outline on the trigger.
+- **Acceptance Criteria:**
+  - [x] Flags visible on Windows/macOS, online and offline (badge fallback), with zero layout shift on country change.
+  - [x] Trigger focus shows exactly the platform button outline (same as Back/Continue), no double ring.
+  - [x] No emoji-flag code remains; helpers/detection/parse/validation untouched.
+- **Constraints / Must Not Do:** No flag packages, no raster assets shipped, no external JS dependencies; do not reintroduce emoji flags; do not touch select-menu scrollbar treatment.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — flag/ slot/ focus contract).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (DZ box + +213 placeholder).
+- **Implementation record (2026-09-11):** New `PhoneFlag` component (flagcdn SVG image + badge fallback, fixed 22×16 slot, `key={iso}` resets error state); `phoneCountryFlag` helper deleted; trigger `be-input` class removed (keeps border styling incl. error color + focus z-index); rows use the same slot. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-088 — SVG flags, timezone-aware detection, borderless search, hidden list scrollbar
+
+- **Status:** Done (2026-09-11)
+- **Description:** Follow-up polish on the phone picker: flags should be SVG rather than PNG; auto-detect must catch visitors whose browser locale is English but whose device is elsewhere (reported: Egypt); the search row should lose its bordered box (icon + borderless input, no ring, autofocus kept); the country-list scrollbar should be hidden like the select menus after all.
+- **Current Behavior:** (pre-fix) flagcdn PNG (`w40`/`w80`); detection from `navigator.language` only (en-US browser in Cairo → US); search as a bordered box with `be-input` ring; country list with a visible native scrollbar.
+- **Expected Behavior:** flagcdn SVG; detection chain locale-first then timezone (`PHONE_TIMEZONE_TO_ISO`, ~140 zones); search row plain (icon + text, separator below, autofocus retained, no ring); country list under `be-select-scroll` (scroll via wheel/touch/arrows).
+- **Acceptance Criteria:**
+  - [x] SVG flags render (badge fallback untouched); no PNG references remain.
+  - [x] en-US + Africa/Cairo → EG; explicit non-default locale still wins (fr-FR + Cairo → FR); verified by 7 unit tests on the real detection code.
+  - [x] Search has no box/border/ring; icon + placeholder; typing works immediately on open.
+  - [x] No visible scrollbar on the country list; select menus untouched.
+- **Constraints / Must Not Do:** No IP geolocation (timezone table only); do not re-add a search border or ring; do not touch the `.be-select-scroll` rule; no new controls.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — SVG, timezone chain, search, scrollbar).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot of the bordered search box.
+- **Implementation record (2026-09-11):** `PhoneFlag` src → `flagcdn.com/{iso}.svg` (srcSet dropped — vector needs none); `PHONE_TIMEZONE_TO_ISO` + chained `detectPhoneCountryIso` (locale-first, timezone second, US last); search rebuilt as icon + borderless input (no `be-input` class, autofocus effect kept); country `<ul>` takes `be-select-scroll`. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-089 — Unfold indicator next to the selected flag
+
+- **Status:** Done (2026-09-11)
+- **Description:** The flag-only trigger gives no clickable signal. Author supplied an unfold-more glyph (up/down chevrons) and ordered both chevrons filled solid — the source file's upper chevron was stroke-only.
+- **Current Behavior:** (pre-fix) trigger shows the flag alone.
+- **Expected Behavior:** Flag + muted 16px unfold indicator (both chevrons filled, author paths verbatim) with a 4px gap; trigger width stays fixed (no layout shift); everything else untouched.
+- **Acceptance Criteria:**
+  - [x] Both chevrons render filled solid (no stroke); icon muted, fixed size, aria-hidden.
+  - [x] Trigger width constant across countries; accessible name/tooltip unchanged.
+- **Constraints / Must Not Do:** No icon packages; do not reintroduce dial text or chevron-text; do not touch the joined-border geometry.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — indicator contract).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with the author-supplied SVG paths.
+- **Implementation record (2026-09-11):** Inline SVG (author paths, `fill="currentColor"`, no stroke attrs) beside the flag; button muted via `theme.textSecondaryColor`, `gap: 4`, right padding 8. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-090 — Phone trigger focus ring + segmented thumb bounce controls
+
+- **Status:** Done (2026-09-11)
+- **Description:** Two reports in one: (1) tabbing to the country trigger shows a muted OUTER outline stacked over the still-visible normal border — while every other field shows an inset accent ring; (2) the segmented thumb spring overshoots visibly (thumb exits the track edge and bounces back) and the author wants it calmer plus dedicated controls for the bounce/sensitivity.
+- **Current Behavior:** (pre-fix) trigger carries no `be-input` class so keyboard focus falls back to the global `:is(button,a):focus-visible` outline (muted currentColor, offset outside) while its own dark border stays inside; thumb spring hardcoded at stiffness 400 / damping 30 (damping ratio ~0.75 — visibly underdamped).
+- **Expected Behavior:** Trigger focus renders the same inset accent ring as every other field (focus color, `:focus-visible`-gated so mouse clicks stay ring-free, global outline suppressed as replaced); thumb defaults to stiffness 400 / damping 38 (ratio ~0.95 — effectively no overshoot) with two Transition-submenu Number controls to tune it.
+- **Acceptance Criteria:**
+  - [x] Trigger Tab-focus: single inset ring in the focus color (black on the author's theme), no outer outline, no double border; mouse-click focus shows no ring (platform convention).
+  - [x] Thumb no longer exits the track on normal selection changes; reduced-motion path untouched.
+  - [x] Thumb Stiffness (50-1000, default 400) and Thumb Damping (5-100, default 38) controls work on both the 12h/24h toggle and segmented choice fields; out-of-range values clamp; sibling engines with different settings stay isolated.
+- **Constraints / Must Not Do:** Do not restyle the number input's own focus (already correct); do not add a top-level control group for two numbers (Transition submenu hosts them); do not use module-level mutable motion state (rule 94).
+- **Related AGENTS.md Rule(s):** New rule 197 (SEGMENTED-MOTION + trigger focus contract).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with two screenshots (muted outer trigger ring; thumb overshoot).
+- **Implementation record (2026-09-11):** Trigger: `outline: none` + `:focus-visible`-gated inset `box-shadow` in `fs.focusBorderColor ?? accent` (the exact `.be-input` expression). Thumb: `SegmentedMotionContext` (tree-scoped, memoized value) consumed by the shared `SegmentedControl`; resolution + clamping in `useBookingEngineState`, threaded via its return; provider wraps the main `RootShell` children; defaults 400/38. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-091 — Textarea has no Width control; always full width
+
+- **Status:** Done (2026-09-11)
+- **Description:** The per-field Width row (Fill/Half) shows for textarea fields. A half-width textarea renders a tall box beside a short field and breaks the row, so authors must never be able to pick Half for it.
+- **Current Behavior:** (pre-fix) Width visible for every field type except `calendar-widget`; a stored `half` textarea renders `span 1`.
+- **Expected Behavior:** The Width row hides for `textarea` (same `hidden()` as `calendar-widget`); the render forces `span 2` for textarea even when a stored `half` survives, so old canvases heal instead of breaking.
+- **Acceptance Criteria:**
+  - [x] Width row absent on textarea fields; present everywhere else as before.
+  - [x] Stored-half textarea renders full width; all other width/grid behavior byte-identical.
+- **Constraints / Must Not Do:** Do not coerce or strip the stored value (inert carrier); do not touch the half-grid derivation itself.
+- **Related AGENTS.md Rule(s):** Rule 192a (amended — textarea-always-full).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (Phone half + tall textarea).
+- **Implementation record (2026-09-11):** `hidden()` covers `textarea`; `containerStyle.gridColumn` forces `span 2` for textarea (logic provably identical for all other types). Biome at the pre-existing baseline.
+
