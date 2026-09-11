@@ -651,6 +651,23 @@ function fontPixelSize(value: string | number | undefined): number | undefined {
     return undefined
 }
 
+// BE-096: per-type default placeholders. The author's configured Placeholder
+// always wins when set; these show for empty ones. Free-text types get the
+// industry-standard generic ("Your answer"); format types get a format hint.
+// BE-099/BE-101: read with || — never-set and cleared both arrive as "" from
+// the panel (Framer materializes "" for untouched rows), so the two states
+// cannot be told apart and empty always shows the default. A single space
+// renders a visually-empty placeholder.
+const DEFAULT_PLACEHOLDER_BY_TYPE: Record<string, string> = {
+    text: "Your answer",
+    textarea: "Your answer",
+    email: "name@example.com",
+    number: "0",
+    url: "example.com",
+}
+function defaultFieldPlaceholder(fieldType: string | undefined): string {
+    return DEFAULT_PLACEHOLDER_BY_TYPE[(fieldType || "").toLowerCase()] ?? ""
+}
 function resolveFieldBorder(
     fs: FieldStyleOverrides | undefined,
     fieldType?: FieldType
@@ -4941,7 +4958,8 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
             {
                 label: "Field Label",
                 fieldType: "text",
-                placeholder: "",
+                // BE-099: no placeholder key — a fresh blank field is
+                // never-set, so the per-type default shows in preview.
                 required: false,
                 width: "full",
             },
@@ -5317,6 +5335,32 @@ function validatePhone(str: string, vc: ValidationCopy): string | null {
 const PHONE_DISALLOWED_CHARS = /[^0-9+()\-. ]/g
 function sanitizePhoneInput(value: string): string {
     return value.replace(PHONE_DISALLOWED_CHARS, "")
+}
+
+// BE-092: number fields accept digits and a single leading minus only.
+// Letters, the decimal point, and every other symbol are stripped at the
+// write point so they never appear (rule 97 phone precedent). The PLUS SIGN
+// IS NOT RECOGNIZED AT ALL — stripped like a letter (author order, BE-100):
+// Cal.com ignores it completely, and a phone-number use belongs to the phone
+// type, never number. A repeat or interior minus is swallowed (the key simply
+// does not register): "-1" + "-" stays "-1", so "-1" + "1" is "-11".
+// BE-100: Cal.com's exact blur cleanup — a leading "+" is dropped and
+// everything from the first remaining "+" is cut ("+1" → "1", "1+5" → "1").
+// Typing can never produce "+" (stripped at write), so this fires for legacy
+// or pasted values; minus is never touched on blur.
+const NUMBER_DISALLOWED_CHARS = /[^0-9-]/g
+function sanitizeNumberInput(value: string): string {
+    const clean = value.replace(NUMBER_DISALLOWED_CHARS, "")
+    if (!clean) return ""
+    const collapsed = clean.replace(/-{2,}/g, "-")
+    if (!collapsed.startsWith("-")) return collapsed.replace(/-/g, "")
+    return `-${collapsed.slice(1).replace(/-/g, "")}`
+}
+function normalizeNumberOnBlur(value: string): string {
+    let s = value || ""
+    if (s.startsWith("+")) s = s.slice(1)
+    const cut = s.indexOf("+")
+    return cut >= 0 ? s.slice(0, cut) : s
 }
 
 function isValidNumberInput(str: string): boolean {
@@ -8185,7 +8229,9 @@ function useBookingEngineState(
             return {
                 id: `auto-cal-${f.slug}`,
                 label: f.label || f.slug,
-                placeholder: f.placeholder || "",
+                // BE-099: Cal-provided placeholder only — absent stays
+                // undefined so the per-type default shows.
+                ...(f.placeholder ? { placeholder: f.placeholder } : {}),
                 required: f.required,
                 fieldType,
                 width: "full" as const,
@@ -9264,23 +9310,6 @@ export default function BookingEngine(props: BookingEngineProps) {
     const primaryIx = useButtonInteraction()
     const animateIx = !prefersReducedMotion
 
-    const [engineWidth, setEngineWidth] = React.useState<number>(320)
-    const beInteractiveForWidth = useBeInteractive()
-    React.useEffect(() => {
-        if (!beInteractiveForWidth) return
-        const node = engineRootRef.current
-        if (!node || typeof ResizeObserver === "undefined") return
-        const observer = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                React.startTransition(() => {
-                    setEngineWidth(entry.contentRect.width)
-                })
-            }
-        })
-        observer.observe(node)
-        return () => observer.disconnect()
-    }, [beInteractiveForWidth])
-
     const isStaticRender = useIsStaticRenderer()
 
     // BE-051: ARIA labels are fixed internal constants, never controls.
@@ -9829,6 +9858,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                 aria-label={ariaLabels.bookingForm}
                 id={reactInstanceId ? `be-booking-form-${reactInstanceId}` : "be-booking-form"}
                 noValidate
+                className="be-form-scope"
                 onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
                     e.preventDefault()
                     handleContinue()
@@ -9950,7 +9980,6 @@ export default function BookingEngine(props: BookingEngineProps) {
                                     onRetrySlots={slotsRefetch}
                                     retryLabel={retryLabel}
                                     hideDemoWhenUnconfigured={!isCanvas && needsCalSetup}
-                                    engineWidth={engineWidth}
                                     isSubmitting={isSubmitting}
                                     eventMeta={calEventMeta}
                                     eventMetaStatus={calEventMetaStatus}
@@ -10144,6 +10173,17 @@ const RootShell = React.memo(function RootShell(props: {
 
 .be-select-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-select-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* FIELD-GRID (BE-102): the step field grid is container-responsive — the form
+ * is the query container, so columns follow the embed width with no JS
+ * measurement pass (the old measured-width state painted single-column first
+ * and snapped: the reported rows flash). 768px mirrors COMPACT_BREAKPOINT.
+ * Markup is width-independent (data-two-col derives from field config), so
+ * server, prerender, and first client paint are byte-identical. */
+.be-form-scope { container-type: inline-size; }
+.be-form-grid { grid-template-columns: 1fr; }
+@container (min-width: 768px) {
+    .be-form-grid[data-two-col="true"] { grid-template-columns: 1fr 1fr; }
+}
 .be-skeleton { animation: be-skeleton-pulse 1.6s ease-in-out infinite; }
 @keyframes be-skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .be-skeleton { animation: none; } }
@@ -10198,7 +10238,6 @@ interface StepBodyProps {
     /** ERROR-RETRY-BUTTON: resolved Retry label (Buttons group, legacy
      *  Copy fallback) so the slots inline-retry matches the error screen. */
     retryLabel: string
-    engineWidth: number
     isSubmitting?: boolean
     eventMeta?: CalEventMeta | null
     eventMetaStatus?: CalEventMetaStatus
@@ -10272,7 +10311,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
         calendarSurface,
         errorCopy,
         instanceId = "",
-        engineWidth,
         isSubmitting = false,
         eventMeta,
         eventMetaStatus,
@@ -10296,21 +10334,18 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
     }, [touched, errors])
 
     const renderFormFields = () => {
-        // BE-082: the grid derives from field widths - any Half field makes
-        // the step two-column; stored step.layout survives as an inert legacy
-        // carrier (old two-column canvases render identically: full fields
-        // span the whole row either way).
-        const isTwoCol =
-            engineWidth >= COMPACT_BREAKPOINT &&
-            step.fields.some((field) => field.width === "half")
+        // BE-082/BE-102: the grid derives from field widths - any Half field
+        // marks the step two-column; the column switch itself lives in CSS
+        // (.be-form-grid + container query), so the first paint is already
+        // correct and never snaps.
         return (
             <div
                 style={{
                     display: "grid",
-                    gridTemplateColumns: isTwoCol ? "1fr 1fr" : "1fr",
                     gap: fieldGap,
                 }}
                 className={`be-form-grid`}
+                data-two-col={step.fields.some((field) => field.width === "half") || undefined}
             >
                 {step.fields.map((field) => (
                     <FieldRenderer
@@ -10320,7 +10355,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         error={touched[field.id] ? errors[field.id] : null}
                         theme={theme}
                         borderRadius={borderRadius}
-                        isTwoCol={isTwoCol}
                         onFieldChange={onFieldChange}
                         choiceGroupAriaLabel={ariaLabels.choiceGroup}
                         isSubmitting={isSubmitting}
@@ -10337,9 +10371,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
             touched[SELECTED_SLOT_KEY] && errors[SELECTED_SLOT_KEY]
                 ? errors[SELECTED_SLOT_KEY]
                 : null
-        const isTwoCol =
-            engineWidth >= COMPACT_BREAKPOINT &&
-            step.fields.some((field) => field.width === "half")
 
         const calendarBlock = (
             <div style={{ gridColumn: "1 / -1" }}>
@@ -10513,10 +10544,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
             <div
                 style={{
                     display: "grid",
-                    gridTemplateColumns: isTwoCol ? "1fr 1fr" : "1fr",
                     gap: fieldGap,
                 }}
                 className={`be-form-grid`}
+                data-two-col={step.fields.some((field) => field.width === "half") || undefined}
             >
                 {calendarBlock}
                 {step.fields
@@ -10529,7 +10560,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             error={touched[field.id] ? errors[field.id] : null}
                             theme={theme}
                             borderRadius={borderRadius}
-                            isTwoCol={isTwoCol}
                             onFieldChange={onFieldChange}
                             choiceGroupAriaLabel={ariaLabels.choiceGroup}
                             isSubmitting={isSubmitting}
@@ -11086,7 +11116,6 @@ interface FieldRendererProps {
     error: string | null
     theme: StepBodyProps["theme"]
     borderRadius: string | number
-    isTwoCol: boolean
     onFieldChange: (fieldId: string, value: string | boolean | Array<string> | undefined) => void
     choiceGroupAriaLabel: string
     isSubmitting?: boolean
@@ -12126,6 +12155,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     const [activeIndex, setActiveIndex] = React.useState(0)
     const [menuRect, setMenuRect] = React.useState<SelectMenuPlacement | null>(null)
     const [triggerFocused, setTriggerFocused] = React.useState(false)
+    const [inputFocused, setInputFocused] = React.useState(false)
     const lastComposedRef = React.useRef<string | null>(null)
     const settledRef = React.useRef(false)
 
@@ -12377,7 +12407,20 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     }
 
     const listboxDomId = `${fieldDomId}-country`
-    const derivedPlaceholder = `+${country[2]}`
+    // BE-098/BE-101: empty panel row always renders the dynamic dial code.
+    // (BE-099's ?? tried to separate never-set from cleared, but Framer
+    // stores "" for both — an untouched row arrives as "", so ?? never fires
+    // for panel fields. To show NO placeholder at all, type a single space.)
+    const derivedPlaceholder = field.placeholder || `+${country[2]}`
+    // BE-103: one continuous focus ring around the JOINED control — each half
+    // omits its seam side (trigger skips right, input skips left), so the
+    // 1px divider never doubles under focus. Same color other fields use
+    // (error-aware), just joint-aware geometry.
+    const focusRingColor = hasError
+        ? theme.errorColor
+        : (fs?.focusBorderColor ?? theme.accentColor)
+    const triggerRing = `inset 2px 0 0 0 ${focusRingColor}`
+    const inputRing = `inset -2px 0 0 0 ${focusRingColor}`
 
     return (
         <div>
@@ -12415,7 +12458,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         outline: "none",
                         ...(triggerFocused
                             ? {
-                                  boxShadow: `inset 0 0 0 2px ${fs?.focusBorderColor ?? theme.accentColor}`,
+                                  boxShadow: triggerRing,
                               }
                             : {}),
                     }}
@@ -12464,6 +12507,9 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         minWidth: 0,
                         borderTopLeftRadius: 0,
                         borderBottomLeftRadius: 0,
+                        // BE-103: joint-aware ring (skips the seam side) —
+                        // inline wins over the be-input class ring, same color.
+                        ...(inputFocused ? { boxShadow: inputRing } : {}),
                     }}
                     value={national}
                     placeholder={derivedPlaceholder}
@@ -12473,6 +12519,14 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     aria-invalid={hasError || undefined}
                     aria-describedby={hasError ? errorDomId : undefined}
                     onChange={(e) => emitNational(e.target.value)}
+                    onFocus={(e) =>
+                        setInputFocused(
+                            e.currentTarget.matches
+                                ? e.currentTarget.matches(":focus-visible")
+                                : true
+                        )
+                    }
+                    onBlur={() => setInputFocused(false)}
                 />
                 <input type="hidden" name={field.calFieldId || field.id} value={full} />
             </div>
@@ -12651,7 +12705,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         error,
         theme,
         borderRadius,
-        isTwoCol,
         onFieldChange,
         choiceGroupAriaLabel,
         isSubmitting = false,
@@ -12780,12 +12833,11 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ) : null
 
     const containerStyle: React.CSSProperties = {
-        // BE-091: textarea always spans both tracks even if a stored "half"
-        // value survives from before the Width control was hidden for it.
+        // BE-091/BE-102: spans are config-only and width-agnostic — span 1 in
+        // a single-track grid still fills the whole row, so no measurement is
+        // ever needed here. Textarea always spans both tracks.
         gridColumn:
-            field.fieldType === "textarea" || field.width !== "half" || !isTwoCol
-                ? "span 2"
-                : "span 1",
+            field.fieldType === "textarea" || field.width !== "half" ? "span 2" : "span 1",
         display: "flex",
         flexDirection: "column",
         gap: fs?.spacing ?? 6,
@@ -12843,7 +12895,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         name={field.calFieldId || field.id}
                         className={error ? "be-input be-input-invalid" : "be-input"}
                         value={typeof value === "string" ? value : ""}
-                        placeholder={field.placeholder || ""}
+                        placeholder={field.placeholder || defaultFieldPlaceholder(field.fieldType)}
                         required={field.required}
                         autoComplete={autocompleteToken(field)}
                         disabled={isSubmitting}
@@ -13187,15 +13239,31 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                                     : undefined
                         }
                         value={typeof value === "string" ? value : ""}
-                        placeholder={field.placeholder || ""}
+                        placeholder={field.placeholder || defaultFieldPlaceholder(field.fieldType)}
                         required={field.required}
                         autoComplete={autocompleteToken(field)}
                         disabled={isSubmitting}
                         onChange={(e) =>
                             onFieldChange(
                                 field.id,
-                                e.target.value
+                                field.fieldType === "number"
+                                    ? sanitizeNumberInput(e.target.value)
+                                    : e.target.value
                             )
+                        }
+                        onBlur={
+                            field.fieldType === "number"
+                                ? (e) => {
+                                      // BE-100: Cal.com's blur cleanup for
+                                      // legacy/pasted plus signs (typing can
+                                      // never produce one). Value-only; the
+                                      // error surface follows the normal flow.
+                                      const next = normalizeNumberOnBlur(e.target.value)
+                                      if (next !== e.target.value) {
+                                          onFieldChange(field.id, next)
+                                      }
+                                  }
+                                : undefined
                         }
                         aria-invalid={!!error}
                         aria-describedby={error ? errorDomId : undefined}
@@ -15261,7 +15329,9 @@ function makeFieldObjectControls() {
         placeholder: {
             type: ct(ControlType.String),
             title: "Placeholder",
-            defaultValue: "",
+            // BE-099: intentionally NO defaultValue — a never-set placeholder
+            // stays undefined (type default shows) while a cleared one stores
+            // "" (renders nothing). A "" default would fuse the two states.
             hidden: (p: FieldControlProps) =>
                 p?.fieldType === "calendar-widget" ||
                 p?.fieldType === "checkbox" ||

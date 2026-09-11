@@ -58,158 +58,202 @@
 
 ---
 
-### BE-061 — Split full name (first + last) vs single name field
+### BE-092 — Number field strips everything except digits and signs at the write point
 
 - **Status:** Done (2026-09-11)
-- **Description:** Cal.com name question has a "Split Full Name into First Name and Last Name" switch. When on, Cal expects first and last names separately; the engine only collects one full-name string. A booking can arrive with the name in a shape Cal does not expect.
-- **Current Behavior:** Single Primary Name text field always; `CalBookingField` normalizer does not capture the name `variant`, so the engine cannot even tell split mode is on.
-- **Expected Behavior:** Engine detects the split variant from event metadata and handles it — either renders two inputs (First/Last) when split is on, or splits the single string on submit (first token + remainder). Implementer picks after reading the actual `variant` values from the API.
+- **Description:** The `number` field behaved like a text field: typed letters appeared in the box (validation only complained afterwards). Author order: letters must never appear at all, and no symbol except minus/plus may appear either. This regressed before — it must never regress again.
+- **Current Behavior:** (pre-fix) default-branch `onChange` passed `e.target.value` through verbatim for `number`; `"12ab"` displayed `"12ab"` until submit-time validation.
+- **Expected Behavior:** `sanitizeNumberInput` (`/[^0-9+-]/g`) runs at the keystroke handler — only `0-9`, `+`, `-` survive; letters, dots, commas, parens, spaces-in-middle never render. Validation (`isValidNumberInput`, max 250, no min-length) judges shape on what remains, unchanged.
 - **Acceptance Criteria:**
-  - [x] `variant` (or equivalent) captured in `CalBookingField` normalize.
-  - [x] Split-on mode produces first+last in the shape Cal validates (verified against a real split-mode event or documented API shape).
-  - [x] Single-name events byte-identical to today.
-- **Constraints / Must Not Do:** Do not guess the variant vocabulary — read it from a live event response first; do not break the first-wins identity rules (167/173); do not add author-facing name-format controls.
-- **Related AGENTS.md Rule(s):** Rules 38 (metadata never blocks), 76 (auto-inject), 167/173 (identity); new rule 194.
-- **Additional Context:** Reported 2026-09-09 with Cal.com dashboard screenshots. The name edit popup only allows label/placeholder edits plus the split switch; name stays always-required.
-- **Implementation record (2026-09-11):** `variant` captured verbatim (`"fullName" | "firstAndLastName"`, exact-match only, else undefined) — this is the documented Cal.com vocabulary (verified via Cal.com PR calcom/cal.diy#8671/#7826, not guessed): the engine keeps ONE name input and keeps sending the full string as `attendee.name` (always a plain string in the v2 bookings contract), because Cal.com converts server-side with documented parity (`name=John Johny Janardan` → firstName `John`, lastName `John Janardan`; conversions both ways handled without crashing). Single-name events byte-identical (unknown/absent variant = full-name path). No controls, no second input, first-wins untouched. Live verification against a real split-mode event still wanted (same caveat as BE-036).
+  - [x] Typing letters/symbols shows nothing; digits and leading signs work normally.
+  - [x] 14 unit tests pass (strip cases + validation-on-remainder cases).
+  - [x] Non-number field types byte-identical (arm is `number`-gated).
+- **Constraints / Must Not Do:** Do not weaken back to validation-only messaging; do not add min-length; do not coerce to numeric JSON (rule 184 stands otherwise).
+- **Related AGENTS.md Rule(s):** Rule 184 (amended — total write-point strip); rule 97 (same precedent as phone).
+- **Additional Context:** Reported 2026-09-11 (Arabic). Deliberate consequence recorded: the decimal point is stripped too, so only whole/signed integers are enterable and the decimal branch of `isValidNumberInput` is unreachable by typing.
+- **Implementation record (2026-09-11):** `NUMBER_DISALLOWED_CHARS` + `sanitizeNumberInput` beside the phone sanitizer; one `number`-gated arm in the default input `onChange`. tsc clean (full-file parity run); biome at the pre-existing baseline.
 
 ---
 
-### BE-062 — Cal.com-disabled email must un-force the engine's required email
+### BE-093 — Number field collapses repeated signs to one leading sign
 
 - **Status:** Done (2026-09-11)
-- **Description:** The engine forces the first email-typed field to required (rules 167/173). But Cal.com email can be toggled off (Hidden) per event. Then the engine demands an email Cal.com does not ask for — forced input with nowhere meaningful to go, and a flow that can feel broken to the visitor.
-- **Current Behavior:** Email always forced required regardless of Cal email state. `missingRequiredCalFields` already skips `hidden` Cal fields, but identity forcing does not consult Cal state.
-- **Expected Behavior:** When event metadata shows the Cal email question hidden/disabled, the engine's email field becomes optional (NOT hidden — the author configured it visibly; never yank visible fields). Booking POST keeps sending attendee email when provided. When Cal email is on, today's forced-required stands.
+- **Description:** After BE-092, `-`/`+` survive the strip but stack without limit — `-+-+-+-+-+-+-+-` renders as typed. Signs are only meaningful as a single leading character.
+- **Current Behavior:** (pre-fix) every typed sign survives wherever it lands.
+- **Expected Behavior:** At most one leading sign survives; interior signs are dropped. First typed char wins (`-+-+-+-+-` → `-`, `+-12` → `+12`, `5-3` → `53`).
 - **Acceptance Criteria:**
-  - [x] Cal email hidden → engine email optional, no required error, booking succeeds with and without an entered email.
-  - [x] Cal email on → byte-identical to today (forced required + warnings).
-  - [x] Metadata failure/offline → today's behavior (force required; fail closed, never block).
-- **Constraints / Must Not Do:** Do not hide the author's email field automatically; do not drop attendee email from the POST when entered; metadata failure must never change validation (rule 38 spirit).
-- **Related AGENTS.md Rule(s):** Rules 38, 76, 167/173; new rule 195.
-- **Additional Context:** Reported 2026-09-09. Name can never be disabled in Cal (always required) so only email needs this treatment; phone keeps its own toggle.
-- **Implementation record (2026-09-11):** `calEmailHidden` memo (positive hidden signal only: slug `email` or default-typed `email` with `hidden === true`; absent/failed metadata → false, fail closed). `effectiveActiveSteps` relaxes the FIRST email field to `required: false` when true — one site covering render, Continue/keystroke validation, and submit (canvas keeps rendering the field; `isCanvas` path untouched). First-email canvas warnings gated on `!calEmailHidden` (multi-email warning rewords its identity clause conditionally). POST omits `email` from `attendee` when empty instead of sending `""` (unreachable when Cal email is on — validation still forces non-empty there).
+  - [x] The screenshot string collapses to `-`; normal signed/unsigned entry unchanged.
+  - [x] 14 unit tests pass (collapse + prior strip cases).
+- **Constraints / Must Not Do:** Do not move into validation-only; do not touch the allowed set (rule 184).
+- **Related AGENTS.md Rule(s):** Rule 184 (amended — single-sign collapse).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (`-+-+-+-+-+-+-+-` in the box).
+- **Implementation record (2026-09-11):** `sanitizeNumberInput` keeps the first char iff sign, strips all other `+-`. Biome parses (pre-existing baseline); change is expression-local to the tested helper.
 
 ---
 
-### BE-063 — Phone field with country picker (flag dropdown + search + auto-detect)
+### BE-094 — Number field matches Cal.com's intermediate set (trailing minus displays)
 
 - **Status:** Done (2026-09-11)
-- **Description:** Cal.com's phone input shows a country-flag button opening a searchable all-countries dropdown, auto-detects the visitor's country (flag + dial code pre-selected), and shows the dial code as a dynamic placeholder that follows the chosen country. Ours is a plain text box — nothing signals "phone" until you read the label, and non-local visitors must know to type `+code` themselves.
-- **Current Behavior:** Plain text-like input, digits-only validation (7+ digits), author-typed placeholder.
-- **Expected Behavior:** Country button (flag + dial code) opening a searchable dropdown of all countries; initial country auto-detected (browser locale first, documented fallback); picking a country updates the dial prefix + placeholder; typed national number validated as today; submitted value includes the full international number.
+- **Description:** After BE-093, typing `4-` swallowed the minus — the visitor could not type Cal.com's intermediate states. Investigation (mandated by the reporter: do exactly like Cal.com) proved Cal renders native `type="number"` with zero JS filtering (`NumberWidget` passes `e.target.value` verbatim) and validates on submit.
+- **Current Behavior:** (pre-fix) only a single leading sign survived; `4-` collapsed to `4` on keystroke.
+- **Expected Behavior:** The display permits Cal.com's exact intermediate set `[+-]?digits*[+-]?` (`4-`, `-4-` show while typing); letters/symbols still never appear; submit validation unchanged and still rejects non-shapes. True native stays banned (controlled-wipe + spinners/locale chaos, rule 184).
 - **Acceptance Criteria:**
-  - [x] Flag+code button, searchable country list, keyboard operable, closes on outside/Escape.
-  - [x] Auto-detect documented (source + fallback); manual pick always wins.
-  - [x] Placeholder shows the selected country's dial code and updates on change.
-  - [x] Submitted value is the full international number; existing digits-only validation preserved underneath.
-  - [x] Hydration-safe first render (deterministic default, no flag flash).
-- **Constraints / Must Not Do:** Do not call IP-geolocation services (no new network dependency for detection — locale/timezone heuristics only); do not ship raster flag assets (emoji regional indicators or inline SVG, documented choice); no second styling system (shared Field Styles); respect rules 64/103.
-- **Related AGENTS.md Rule(s):** Rules 42 (hydration), 64/103 (a11y), 131/154 (styles); new rule 196.
-- **Additional Context:** Reported 2026-09-09 with Cal.com dark-UI screenshots (Egypt +20 auto-detected, search field, per-country dial codes). Largest of the three — independent vertical slice.
-- **Implementation record (2026-09-11):** `PhoneFieldControl` (country button + national input + portaled searchable listbox, select/calendar-menu mechanics mirrored: fixed positioning, scroll/resize reposition, outside/Escape close, arrows/Home/End, Enter commits, focus returns to trigger). ~230-row `[iso, name, dial]` table; emoji regional-indicator flags (table-membership-guarded); detection = `navigator.language` region → table hit else US (one-shot, interaction-gated per rule 109; US default renders both sides first per rule 42). Stored value full-international (`+{dial}{digits}`, dial-only never stored); restore parses with current-country-wins + canonical representatives (+1→US, +7→RU, +44→GB). Author phone placeholder inert (derived `+{dial}` always). Existing `validatePhone`/sanitize/max-40 preserved underneath; hidden input keeps name transport. 14 helper unit tests pass on the real extracted code.
+  - [x] `4-` and `-4-` display; `-+-+-` still collapses; letters/dots never appear.
+  - [x] 19 unit tests pass on the real extracted helper (including the over-merge the harness caught mid-session).
+  - [x] `4-` displays but never submits (validation rejects) — Cal parity.
+- **Constraints / Must Not Do:** Do not switch to native `type="number"`; do not weaken letter-stripping; do not touch validation.
+- **Related AGENTS.md Rule(s):** Rule 184 (amended — Cal-parity intermediates).
+- **Additional Context:** Reported 2026-09-11 (English): "i still cant type 4-". Cal.com evidence: `packages/features/form-builder/widgets.tsx` (`NumberWidget`), plus `fieldTypes.ts` (`number.isTextType` is dashboard-side config, not the booker renderer).
+- **Implementation record (2026-09-11):** `sanitizeNumberInput` takes optional single head + single tail (adjacent/sign-only middles merge); body interior signs still dropped. Biome parses (pre-existing baseline); tsc unaffected (expression-local).
 
 ---
 
-### BE-086 — Phone UI follows the attached reui component; dropdown interact/scroll fixed
+### BE-095 — Accepted signs are never eaten: interior minus migrates front
 
 - **Status:** Done (2026-09-11)
-- **Description:** The shipped phone picker had three UI defects against the attached reui `phone-input.tsx` reference: the country trigger showed flag + dial + chevron (should be flag-only), the trigger and number box were separated by a gap (should be joined flush), and the dropdown misbehaved — its scrollbar was hidden by the shared `be-select-scroll` rule so it could not be dragged, and its outside-close root sat on the list alone so pressing the search box or menu padding closed the menu mid-interaction.
-- **Current Behavior:** (pre-fix) wide trigger (flag + `+dial` + chevron), `gap: 8` between trigger and input with full radii on both, `be-select-scroll` hiding the country-list scrollbar, `menuRef` on the `<ul>` only.
-- **Expected Behavior:** Flag-only trigger joined flush to the number box (no gap, shared border, split radii, focus raises trigger above input edge), dropdown rows flag + name + dial-at-far-right with no check glyph, native visible scrollbar on the country list, whole dialog as the close-root, empty-state row when search matches nothing.
+- **Description:** Typing `4` after an accepted trailing minus (`4-`) collapsed to `44` — a character the visitor saw was deleted by the next keystroke. The minus must survive: it migrates to the front instead.
+- **Current Behavior:** (pre-fix) lone interior signs were dropped (`4-` + `4` → `44`).
+- **Expected Behavior:** Runs collapse first, then: zero signs → digits; one sign (leading/trailing/interior) → keep or migrate front (`4-4` → `-44`, `5-3` → `-53` — supersedes BE-093's `53`); leading+trailing pair → keep (`-4-`); 3+ signs → first front, rest dropped. Every display state is submittable except trailing-pending (`4-`), which still only displays.
 - **Acceptance Criteria:**
-  - [x] Trigger renders the flag only (native `title` tooltip carries the country name; aria-label unchanged).
-  - [x] Trigger + input share one border with split radii and zero gap, in every Radius/field-style configuration.
-  - [x] Country list scrolls with a visible native scrollbar (draggable); single/multi select menus keep their hidden-scrollbar treatment untouched.
-  - [x] Pressing search, padding, rows, or scrollbar never closes the menu; outside/Escape still do.
-  - [x] Stored values, detection, parse, validation, placeholder derivation unchanged (rule 196 mechanics intact).
-- **Constraints / Must Not Do:** Do not import the attached file or its dependencies (react-phone-number-input, lucide, cmdk-style packages, Tailwind) — UI contract only, reimplemented in plain inline styles; do not touch the `.be-select-scroll` rule itself (select menus rely on it); no new controls.
-- **Related AGENTS.md Rule(s):** Rule 196 (amended — reui UI contract); rules 42/109 (unchanged), 134/162 (menu mechanics unchanged).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with the reui reference file (`Code-Components/phone-input.tsx`, not imported) and docs link. The attached file is reference-only and must never be imported by the engine.
-- **Implementation record (2026-09-11):** Trigger trimmed to flag-only (`title` = country name, `px 10px`, right border/radius zeroed, focus z-index); input left radii zeroed, container gap removed; dialog root owns `menuRef`, flex-column with hidden overflow, search fixed + separator + internally-scrolling list; rows without the check glyph (accent selected surface remains the indicator); "No country found." empty state; `aria-activedescendant` guarded on non-empty results. (BE-088 supersedes the scrollbar half: author ordered the hidden treatment back — country list takes `be-select-scroll` like the select menus.)
-- **Implementation record 2 (2026-09-11, BE-087):** Flags are `PhoneFlag` images (flagcdn `w40` + `w80` retina, `key={iso}`, `onError` fail-closed to a styled two-letter badge) inside a fixed 22×16 slot — emoji rendering deleted (Windows has no flag-emoji font). Trigger drops the `be-input` class so keyboard focus shows only the standard platform button outline (the inset input ring + global button outline had stacked into a double ring); raised z-index keeps it visible over the input edge. Slot geometry is fixed everywhere, so country changes cause no layout shift.
+  - [x] `4-` + `4` → `-44`; no typed sign ever vanishes; no sign salad possible.
+  - [x] 23 unit tests pass on the real extracted helper.
+  - [x] Letters/dots still never appear; validation untouched.
+- **Constraints / Must Not Do:** Do not return to swallowing typed signs; do not switch to native input; do not touch validation.
+- **Related AGENTS.md Rule(s):** Rule 184 (amended — migrate-front).
+- **Additional Context:** Reported 2026-09-11 (English): "if i typed 4 after the - it will be 44 not 4-4".
+- **Implementation record (2026-09-11):** `sanitizeNumberInput` rewritten around run-collapse + positional rule (leading/trailing keep, lone interior migrates, pair-kept, multi-dropped). Prior `5-3 → 53` / `1+2+3 → 123` expectations superseded openly to `-53` / `+123`. Biome parses (pre-existing baseline).
 
 ---
 
-### BE-087 — Phone flags render as boxes, trigger width shifts, focus ring is wrong
+### BE-096 — Default placeholders: author value wins, per-type defaults underneath
 
 - **Status:** Done (2026-09-11)
-- **Description:** On Windows the flag column shows the bare two-letter code ("DZ") instead of a flag — Windows ships no flag-emoji font, so regional-indicator pairs degrade to letters. The letters render at input font size in a fluid-width box, so picking countries with different code widths shifts the trigger layout. Keyboard focus on the trigger also stacks two rings (the `be-input` inset ring plus the global button outline) into one odd-looking double ring.
-- **Current Behavior:** (pre-fix) emoji flags via `phoneCountryFlag`; trigger carries `be-input` class; flag slot fluid width.
-- **Expected Behavior:** Real flag images with an offline-safe badge fallback, fixed-size flag slot in trigger and rows, single standard button focus outline on the trigger.
+- **Description:** Phone fields ignored the configured Placeholder (always showed the derived dial code), and every other input type defaulted to an empty placeholder. Authors get a working placeholder everywhere with a sensible type-based default underneath.
+- **Current Behavior:** (pre-fix) phone placeholder hardwired to `+{dial}`; text/textarea/email/number/url render `""` when unconfigured.
+- **Expected Behavior:** Configured Placeholder wins on every type. Empty falls back to `DEFAULT_PLACEHOLDER_BY_TYPE`: text/textarea → "Your answer" (industry-standard generic), email → "name@example.com", number → "0", url → "example.com", phone → derived `+{dial}` (existing logic). Choice types untouched (no placeholder surface).
 - **Acceptance Criteria:**
-  - [x] Flags visible on Windows/macOS, online and offline (badge fallback), with zero layout shift on country change.
-  - [x] Trigger focus shows exactly the platform button outline (same as Back/Continue), no double ring.
-  - [x] No emoji-flag code remains; helpers/detection/parse/validation untouched.
-- **Constraints / Must Not Do:** No flag packages, no raster assets shipped, no external JS dependencies; do not reintroduce emoji flags; do not touch select-menu scrollbar treatment.
-- **Related AGENTS.md Rule(s):** Rule 196 (amended — flag/ slot/ focus contract).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (DZ box + +213 placeholder).
-- **Implementation record (2026-09-11):** New `PhoneFlag` component (flagcdn SVG image + badge fallback, fixed 22×16 slot, `key={iso}` resets error state); `phoneCountryFlag` helper deleted; trigger `be-input` class removed (keeps border styling incl. error color + focus z-index); rows use the same slot. tsc clean; biome at the pre-existing baseline.
+  - [x] Setting a Placeholder shows it verbatim on every input type (incl. phone).
+  - [x] Empty shows the per-type default; untouched canvases gain the hint with no other change.
+- **Constraints / Must Not Do:** Do not add a placeholder control (already exists); do not touch choice/multiselect trigger text; phone dial-derivation stays the phone default.
+- **Related AGENTS.md Rule(s):** Rule 196 (phone placeholder sentence).
+- **Additional Context:** Reported 2026-09-11 (English): "add default placeholder to the field type phone" + "all the other fields based on their types".
+- **Implementation record (2026-09-11):** `DEFAULT_PLACEHOLDER_BY_TYPE` + `defaultFieldPlaceholder()` beside the field resolvers; applied at the textarea and default-input render sites. Phone part superseded same-day by BE-097 (below) — the author-wins branch lived for one session only.
 
 ---
 
-### BE-088 — SVG flags, timezone-aware detection, borderless search, hidden list scrollbar
+### BE-097 — Phone has no Placeholder row; dial code is the only placeholder
 
 - **Status:** Done (2026-09-11)
-- **Description:** Follow-up polish on the phone picker: flags should be SVG rather than PNG; auto-detect must catch visitors whose browser locale is English but whose device is elsewhere (reported: Egypt); the search row should lose its bordered box (icon + borderless input, no ring, autofocus kept); the country-list scrollbar should be hidden like the select menus after all.
-- **Current Behavior:** (pre-fix) flagcdn PNG (`w40`/`w80`); detection from `navigator.language` only (en-US browser in Cairo → US); search as a bordered box with `be-input` ring; country list with a visible native scrollbar.
-- **Expected Behavior:** flagcdn SVG; detection chain locale-first then timezone (`PHONE_TIMEZONE_TO_ISO`, ~140 zones); search row plain (icon + text, separator below, autofocus retained, no ring); country list under `be-select-scroll` (scroll via wheel/touch/arrows).
+- **Description:** The Placeholder row still shows for phone fields, but the phone input already carries a dynamic dial-code placeholder — the row is redundant panel noise next to a value that always wins.
+- **Current Behavior:** (pre-fix) Placeholder row visible for phone; BE-096's author-wins branch briefly honored it.
+- **Expected Behavior:** The Placeholder row hides for `phone` (same `hidden()` as `calendar-widget`); the national box always renders the derived `+{dial}`; any stored phone placeholder is inert.
 - **Acceptance Criteria:**
-  - [x] SVG flags render (badge fallback untouched); no PNG references remain.
-  - [x] en-US + Africa/Cairo → EG; explicit non-default locale still wins (fr-FR + Cairo → FR); verified by 7 unit tests on the real detection code.
-  - [x] Search has no box/border/ring; icon + placeholder; typing works immediately on open.
-  - [x] No visible scrollbar on the country list; select menus untouched.
-- **Constraints / Must Not Do:** No IP geolocation (timezone table only); do not re-add a search border or ring; do not touch the `.be-select-scroll` rule; no new controls.
-- **Related AGENTS.md Rule(s):** Rule 196 (amended — SVG, timezone chain, search, scrollbar).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot of the bordered search box.
-- **Implementation record (2026-09-11):** `PhoneFlag` src → `flagcdn.com/{iso}.svg` (srcSet dropped — vector needs none); `PHONE_TIMEZONE_TO_ISO` + chained `detectPhoneCountryIso` (locale-first, timezone second, US last); search rebuilt as icon + borderless input (no `be-input` class, autofocus effect kept); country `<ul>` takes `be-select-scroll`. tsc clean; biome at the pre-existing baseline.
+  - [x] No Placeholder row on phone fields; all other types unchanged.
+  - [x] Phone box always shows the current country's dial code.
+- **Constraints / Must Not Do:** Do not strip stored values (inert carriers); do not touch the type-default map for other types.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — derived-always).
+- **Additional Context:** Reported 2026-09-11 (English) with a screenshot of the Fields panel.
+- **Implementation record (2026-09-11):** `hidden()` covers `phone`; `PhoneFieldControl` back to derived-only. Biome at the pre-existing baseline.
 
 ---
 
-### BE-089 — Unfold indicator next to the selected flag
+### BE-098 — Phone placeholder row restored: empty shows dial code, typed overrides
 
 - **Status:** Done (2026-09-11)
-- **Description:** The flag-only trigger gives no clickable signal. Author supplied an unfold-more glyph (up/down chevrons) and ordered both chevrons filled solid — the source file's upper chevron was stroke-only.
-- **Current Behavior:** (pre-fix) trigger shows the flag alone.
-- **Expected Behavior:** Flag + muted 16px unfold indicator (both chevrons filled, author paths verbatim) with a 4px gap; trigger width stays fixed (no layout shift); everything else untouched.
+- **Description:** Author reconsidered BE-097 on reflection: hiding the row restricts freedom — better to keep the Placeholder row (empty by default), render the dynamic country code for empty, and let anything typed override it.
+- **Current Behavior:** (pre-fix, BE-097) no Placeholder row for phone; derived dial code always.
+- **Expected Behavior:** Placeholder row visible for phone (empty default); empty renders the current country's dial code; typed content takes over verbatim.
 - **Acceptance Criteria:**
-  - [x] Both chevrons render filled solid (no stroke); icon muted, fixed size, aria-hidden.
-  - [x] Trigger width constant across countries; accessible name/tooltip unchanged.
-- **Constraints / Must Not Do:** No icon packages; do not reintroduce dial text or chevron-text; do not touch the joined-border geometry.
-- **Related AGENTS.md Rule(s):** Rule 196 (amended — indicator contract).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with the author-supplied SVG paths.
-- **Implementation record (2026-09-11):** Inline SVG (author paths, `fill="currentColor"`, no stroke attrs) beside the flag; button muted via `theme.textSecondaryColor`, `gap: 4`, right padding 8. tsc clean; biome at the pre-existing baseline.
+  - [x] Row present and empty by default; empty shows `+{dial}` following country changes.
+  - [x] Typed placeholder renders verbatim instead of the dial code.
+- **Constraints / Must Not Do:** Do not change the dial-derivation; do not touch other types.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — author-wins restored).
+- **Additional Context:** Reported 2026-09-11 (Arabic): author chose freedom over restriction.
+- **Implementation record (2026-09-11):** Reverted BE-097's two edits (row unhidden, author-wins branch restored with a BE-098 comment). Biome at the pre-existing baseline.
 
 ---
 
-### BE-090 — Phone trigger focus ring + segmented thumb bounce controls
+### BE-099 — Never-set shows the type default; cleared renders nothing
 
 - **Status:** Done (2026-09-11)
-- **Description:** Two reports in one: (1) tabbing to the country trigger shows a muted OUTER outline stacked over the still-visible normal border — while every other field shows an inset accent ring; (2) the segmented thumb spring overshoots visibly (thumb exits the track edge and bounces back) and the author wants it calmer plus dedicated controls for the bounce/sensitivity.
-- **Current Behavior:** (pre-fix) trigger carries no `be-input` class so keyboard focus falls back to the global `:is(button,a):focus-visible` outline (muted currentColor, offset outside) while its own dark border stays inside; thumb spring hardcoded at stiffness 400 / damping 30 (damping ratio ~0.75 — visibly underdamped).
-- **Expected Behavior:** Trigger focus renders the same inset accent ring as every other field (focus color, `:focus-visible`-gated so mouse clicks stay ring-free, global outline suppressed as replaced); thumb defaults to stiffness 400 / damping 38 (ratio ~0.95 — effectively no overshoot) with two Transition-submenu Number controls to tune it.
+- **Description:** BE-096's `||` fallback fused two states: a never-set placeholder and a deliberately cleared one both rendered the generic default — so an author could never have NO placeholder, and new fields arrived empty in the panel. The correct contract: new fields arrive carrying a placeholder (panel row filled, preview shows it); editing changes it; deleting it removes it entirely.
+- **Current Behavior:** (pre-fix) `field.placeholder || default` at all three render sites; Placeholder row `defaultValue: ""`; blank-step seed sets `placeholder: ""`.
+- **Expected Behavior:** Render sites read `field.placeholder ?? default` — `undefined` (never set) shows the type default, `""` (cleared) renders nothing. The Placeholder row carries no `defaultValue`; the blank-step seed omits the key; auto-injected Cal fields omit the key when Cal sends none. Stored `""` from the old-default era renders nothing (same as its pre-BE-096 look — recorded migration wart).
 - **Acceptance Criteria:**
-  - [x] Trigger Tab-focus: single inset ring in the focus color (black on the author's theme), no outer outline, no double border; mouse-click focus shows no ring (platform convention).
-  - [x] Thumb no longer exits the track on normal selection changes; reduced-motion path untouched.
-  - [x] Thumb Stiffness (50-1000, default 400) and Thumb Damping (5-100, default 38) controls work on both the 12h/24h toggle and segmented choice fields; out-of-range values clamp; sibling engines with different settings stay isolated.
-- **Constraints / Must Not Do:** Do not restyle the number input's own focus (already correct); do not add a top-level control group for two numbers (Transition submenu hosts them); do not use module-level mutable motion state (rule 94).
-- **Related AGENTS.md Rule(s):** New rule 197 (SEGMENTED-MOTION + trigger focus contract).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with two screenshots (muted outer trigger ring; thumb overshoot).
-- **Implementation record (2026-09-11):** Trigger: `outline: none` + `:focus-visible`-gated inset `box-shadow` in `fs.focusBorderColor ?? accent` (the exact `.be-input` expression). Thumb: `SegmentedMotionContext` (tree-scoped, memoized value) consumed by the shared `SegmentedControl`; resolution + clamping in `useBookingEngineState`, threaded via its return; provider wraps the main `RootShell` children; defaults 400/38. tsc clean; biome at the pre-existing baseline.
+  - [x] New blank field/step arrives with the type default visible in preview.
+  - [x] Clearing the row removes the preview placeholder completely (no generic resurrection).
+  - [x] Typing shows verbatim; shipped seeds with explicit placeholders untouched.
+- **Constraints / Must Not Do:** Do not re-add a `""` default to the row; do not coerce `undefined` to `""` in normalize (it doesn't — verified); do not touch choice trigger text.
+- **Related AGENTS.md Rule(s):** None new (mechanism lives on BE-096's rule-196 sentence + code comments).
+- **Additional Context:** Reported 2026-09-11 (Arabic) — clarification of the BE-096 order.
+- **Implementation record (2026-09-11):** `??` at phone/textarea/default sites; row `defaultValue` deleted with rationale comment; blank seed key omitted; auto-inject uses conditional spread. Biome at the pre-existing baseline.
 
 ---
 
-### BE-091 — Textarea has no Width control; always full width
+### BE-100 — Number follows observed Cal.com behavior: ignore plus, block repeats, blur cleanup
 
 - **Status:** Done (2026-09-11)
-- **Description:** The per-field Width row (Fill/Half) shows for textarea fields. A half-width textarea renders a tall box beside a short field and breaks the row, so authors must never be able to pick Half for it.
-- **Current Behavior:** (pre-fix) Width visible for every field type except `calendar-widget`; a stored `half` textarea renders `span 1`.
-- **Expected Behavior:** The Width row hides for `textarea` (same `hidden()` as `calendar-widget`); the render forces `span 2` for textarea even when a stored `half` survives, so old canvases heal instead of breaking.
+- **Description:** The reporter tested Cal.com's number field and specified its exact mechanism: leading minus works; a repeated minus never registers; plus is ignored completely (stripped on blur: `+1` becomes `1`); typing `1+5` then blurring cuts everything from the `+` (leaves `1`). Our `-1` + `-` + `1` chain produced `-11`/`-111` because the accepted trailing minus combined with the next digit.
+- **Current Behavior:** (pre-fix) lone interior/trailing signs displayed (BE-094/BE-095); `+` survivable; no blur pass.
+- **Expected Behavior:** Typing allows digits + one leading minus only (repeat/interior minus swallowed, `+` stripped like a letter); a number-only `onBlur` applies Cal's cleanup (drop leading `+`, cut from first remaining `+`) for legacy/pasted values; minus never touched on blur; validation unchanged.
 - **Acceptance Criteria:**
-  - [x] Width row absent on textarea fields; present everywhere else as before.
-  - [x] Stored-half textarea renders full width; all other width/grid behavior byte-identical.
-- **Constraints / Must Not Do:** Do not coerce or strip the stored value (inert carrier); do not touch the half-grid derivation itself.
-- **Related AGENTS.md Rule(s):** Rule 192a (amended — textarea-always-full).
-- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (Phone half + tall textarea).
-- **Implementation record (2026-09-11):** `hidden()` covers `textarea`; `containerStyle.gridColumn` forces `span 2` for textarea (logic provably identical for all other types). Biome at the pre-existing baseline.
+  - [x] `-` `1` `-` `1` `1` types `-1`, `-1`, `-11`, `-111` exactly (reporter's chain).
+  - [x] `+` never appears by typing; blur maps `+1`→`1`, `1+5`→`1`.
+  - [x] 27 unit tests pass on the real extracted helpers.
+- **Constraints / Must Not Do:** Do not switch to native input (controlled-wipe + spinners/locale chaos); do not reintroduce `+` recognition or trailing-minus display; do not touch validation.
+- **Related AGENTS.md Rule(s):** Rule 184 (rewritten — Cal-shaped write point + blur).
+- **Additional Context:** Reported 2026-09-11 (Arabic + English) after the reporter probed Cal.com directly. Cal evidence: native `type="number"` with verbatim `setValue` (their `widgets.tsx`); the blur-strip is their observed behavior.
+- **Implementation record (2026-09-11):** `sanitizeNumberInput` reduced to `-?digits*` (disallowed class drops `+`); new `normalizeNumberOnBlur`; number-gated `onBlur` on the default input (value-only update). Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-101 — Empty panel placeholder always shows the default (platform fuses empty states)
+
+- **Status:** Done (2026-09-11)
+- **Description:** After BE-099, a phone field with an empty panel Placeholder showed no preview placeholder at all — the `??` never fired because Framer stores `""` for untouched rows too, so never-set and cleared are indistinguishable at runtime.
+- **Current Behavior:** (pre-fix) `field.placeholder ?? default` at phone/textarea/default sites; empty panel renders nothing.
+- **Expected Behavior:** All three sites read `field.placeholder || default` — empty (however it got empty) always shows the type default/dial code; typed shows verbatim. To render NO placeholder at all, type a single space.
+- **Acceptance Criteria:**
+  - [x] Empty phone Placeholder row previews the current dial code; typing overrides.
+  - [x] Same empty-shows-default on textarea/default inputs; BE-096 map unchanged.
+- **Constraints / Must Not Do:** Do not attempt unset-vs-cleared separation again (platform-impossible); BE-099's cleared-renders-nothing is superseded openly.
+- **Related AGENTS.md Rule(s):** Rule 196 (BE-101 tag).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a screenshot (empty row, empty preview).
+- **Implementation record (2026-09-11):** `??` → `||` at the three sites + comment correction. Biome at the pre-existing baseline.
+
+---
+
+### BE-102 — Field grid switches columns in CSS; measured-width state deleted
+
+- **Status:** Done (2026-09-11)
+- **Description:** Steps with Half fields flashed on load/preview: six full-width rows snapped to three paired rows with a height jump. Root cause was architectural, not timing — `engineWidth` initialized at 320 (always single-column) and corrected only after a gated passive measure, so the first paint was definitionally wrong.
+- **Current Behavior:** (pre-fix) `useState(320)` + interaction-gated `ResizeObserver` + `isTwoCol` plumbing through StepBody into every field's inline span.
+- **Expected Behavior:** Columns flip in CSS only: the form carries `container-type: inline-size`, `.be-form-grid` goes two-track under a container query at 768px when config-derived `data-two-col` is set; spans are config-only and width-agnostic. Markup is width-independent, so server, prerender, and first paint are byte-identical. No measure, no gate, no snap — on any embed width.
+- **Acceptance Criteria:**
+  - [x] Six-half-field step paints three paired rows on the very first paint (no rows flash, no height jump).
+  - [x] Narrow embeds still stack single-column; textarea still spans both.
+  - [x] Zero hydration-mismatch risk (no width in markup; ungating the measure would reintroduce it).
+  - [x] `engineWidth` state, observer, gate usage, and all `isTwoCol` plumbing deleted (no dead code).
+- **Constraints / Must Not Do:** Do not ungate or reintroduce JS width measurement for the grid (rules 42/109); do not touch the calendar's separate `measuredWidth` path; keep 768px synced with `COMPACT_BREAKPOINT`.
+- **Related AGENTS.md Rule(s):** Rule 192a (amended — CSS columns clause).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a slow-motion description (six rows → three rows + height shrink). Same flash class rule 180 already fixed for cards with pure CSS.
+- **Implementation record (2026-09-11):** Container query block in RootShell constant CSS; `be-form-scope` on `motion.form`; both grid divs drop the inline template for `data-two-col`; `containerStyle.gridColumn` drops the width condition; `isTwoCol` prop/interface/passes/consts and the whole `engineWidth` apparatus removed. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-103 — Phone seam divider can never double; trigger ring is error-aware
+
+- **Status:** Done (2026-09-11)
+- **Description:** In the error state the divider between the country trigger and the number box rendered as a 2px line (trigger right border + input left border side by side). Separately, the trigger's focus ring ignored the error state while every other field switches its ring to the error color when invalid.
+- **Current Behavior:** (pre-fix) trigger `borderRightWidth: 0` beside the input's full left border; trigger focus ring always accent-colored.
+- **Expected Behavior:** The number input overlaps the trigger edge by 1px (`marginLeft: -1`) so exactly one divider line paints no matter which side renders (later sibling on top); the trigger focus ring uses the error color when invalid — mirroring `.be-input.be-input-invalid:focus-visible` exactly.
+- **Acceptance Criteria:**
+  - [x] Seam reads as a single 1px divider in normal, error, focused, and error+focused states.
+  - [x] Trigger Tab-focus in error shows the error-colored inset ring (not accent).
+- **Constraints / Must Not Do:** Do not remove either side's border (overlap, not deletion); do not re-add `be-input` to the trigger.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — seam + ring contract).
+- **Additional Context:** Reported 2026-09-11 (English) with an error-state screenshot.
+- **Implementation record (2026-09-11):** `marginLeft: -1` on the national input with rationale comment; focus `boxShadow` branches on `hasError`. Biome at the pre-existing baseline.
+- **Implementation record 2 (2026-09-11, seam revert):** The overlap hid the divider instead of protecting it — the trigger is `position: relative` and paints above the pulled-under input border, so the normal-state divider vanished (the error divider the reporter saw was the focused inset ring stacked beside the input border — identical to every other focused-invalid field, not a seam bug). Overlap removed; seam is trigger-right(0) + input-left(1px) adjacent again: exactly one divider in every state. The error-aware focus ring stays.
+- **Implementation record 3 (2026-09-11, joint-aware rings):** The error-state thickness came from the focused half's own full ring (2px) stacking against the 1px divider. Both halves now paint three-sided rings omitting the seam edge (`inset 2px 0 0 0` trigger / `inset -2px 0 0 0` input, error-aware color) — one continuous ring around the joined control, single divider preserved in every focus state.
 
