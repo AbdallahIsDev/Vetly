@@ -376,6 +376,11 @@ const DEFAULT_COPY_NOTES_SELECTED_TIME_LABEL = "Selected Time"
 const DEFAULT_COPY_NOTES_DATE_PREFIX = "Date: "
 const DEFAULT_COPY_NOTES_TIME_PREFIX = "Time: "
 const DEFAULT_COPY_STEP_COUNTER_TEMPLATE = "Step {current} of {total}"
+const DEFAULT_COPY_SUCCESS_TITLE = "Booked Successfully"
+const DEFAULT_COPY_SUCCESS_SUBTITLE =
+    "Your appointment details are below, add them to your calendar."
+const DEFAULT_COPY_ERROR_TITLE = "Something went wrong while processing your booking"
+const DEFAULT_COPY_ERROR_SUBTITLE = "Your details are saved, try again in a moment."
 const DEFAULT_COPY_TIMEFORMAT_LABEL = "Time format"
 const DEFAULT_COPY_LOADING_LABEL = "Loading availability…"
 const DEFAULT_COPY_NO_TIMES_LABEL = "No available times on the selected date. Try another day."
@@ -2873,7 +2878,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                             return "nd"
                                         case 3:
                                             return "rd"
-                                        default:
+        default:
                                             return "th"
                                     }
                                 })()}
@@ -4697,6 +4702,7 @@ interface BookingEngineCopyProps {
             continueLabel?: string
             backLabel?: string
             finalActionLabel?: string
+            manageLinkLabel?: string
         }
         continueButton?: ButtonStyleGroup
         backButton?: ButtonStyleGroup
@@ -4719,17 +4725,28 @@ interface BookingEngineCopyProps {
         retryButton?: ButtonStyleGroup
     }
     copy: {
-        successTitle: string
-        successSubtitle: string
-        errorTitle: string
-        errorSubtitle: string
-        stepCounterTemplate: string
-        rescheduleOrCancelLabel: string
-        stepProgressLabel: string
-        stepAnnouncementTemplate: string
-        unknownErrorLabel: string
-        errorFallbackMessage: string
-        icsLocationLabel: string
+        // BE-083 nested groups (new canonical path).
+        success?: {
+            successTitle?: string
+            successSubtitle?: string
+        }
+        failure?: {
+            errorTitle?: string
+            errorSubtitle?: string
+            unknownErrorLabel?: string
+            errorFallbackMessage?: string
+        }
+        // Legacy flat carriers (pre-grouping canvases).
+        successTitle?: string
+        successSubtitle?: string
+        errorTitle?: string
+        errorSubtitle?: string
+        stepCounterTemplate?: string
+        rescheduleOrCancelLabel?: string
+        stepProgressLabel?: string
+        stepAnnouncementTemplate?: string
+        unknownErrorLabel?: string
+        errorFallbackMessage?: string
         calEventMetaUnavailableCopy: string
         errorCopy: ErrorCopy
         validation?: Partial<ValidationCopy>
@@ -4762,6 +4779,11 @@ interface BookingEngineConfigProps {
         showTextContent?: boolean
         progressText?: "top" | "bottom"
         stepCountPosition?: "top" | "bottom"
+        content?: {
+            stepCounterTemplate?: string
+            stepProgressLabel?: string
+            stepAnnouncementTemplate?: string
+        }
     }
     header?: {
         alignment?: "left" | "center" | "right"
@@ -5046,10 +5068,45 @@ function applyMandatoryIdentityFields(steps: NormalizedStep[]): NormalizedStep[]
     }))
 }
 
+function resurrectNameField(steps: NormalizedStep[]): NormalizedStep[] {
+    if (steps.some((step) => step.fields.some((field) => isNameFlagged(field)))) return steps
+    if (findNameField(steps)) return steps
+    const nameField: NormalizedField = {
+        id: "auto-name-field",
+        label: "Full Name",
+        fieldType: "text",
+        required: true,
+        isPrimaryName: true,
+        width: "full",
+        validationRule: "type",
+        minLength: undefined,
+        maxLength: 0,
+        customRegex: undefined,
+        regexPreviewInput: undefined,
+    }
+    if (steps.length === 0) {
+        return [
+            {
+                id: "step-auto-name",
+                enabled: true,
+                showHeader: true,
+                stepType: "form",
+                title: "Your details",
+                subtitle: "",
+                layout: "single-column",
+                fields: [nameField],
+            },
+        ]
+    }
+    const [first, ...rest] = steps
+    return [{ ...first, fields: [nameField, ...first.fields] }, ...rest]
+}
+
 function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
     return applyMandatoryIdentityFields(
-        (steps || [])
-            .map((step, stepIdx) => ({
+        resurrectNameField(
+            (steps || [])
+                .map((step, stepIdx) => ({
                 ...step,
                 id: `step-${stepIdx}`,
                 enabled: step.enabled !== false,
@@ -5074,6 +5131,7 @@ function normalizeSteps(steps: StepConfig[]): NormalizedStep[] {
             }))
             .filter((step) => !(step.stepType === "form" && step.fields.length === 0))
             .filter((step) => (step.stepType as string) !== "review")
+        )
     )
 }
 
@@ -5935,6 +5993,10 @@ interface CalBookingField {
     isDefault: boolean
     placeholder?: string
     options?: string[]
+    // BE-061: Cal.com name-question variant, captured verbatim from the
+    // event-type response ("fullName" default, "firstAndLastName" split).
+    // Anything else normalizes to undefined — never guessed.
+    variant?: "fullName" | "firstAndLastName"
 }
 
 function normalizeCalBookingFields(data: unknown): CalBookingField[] {
@@ -5953,6 +6015,18 @@ function normalizeCalBookingFields(data: unknown): CalBookingField[] {
         const hidden = f.hidden === true
         const isDefault = f.isDefault === true
         const placeholder = typeof f.placeholder === "string" ? f.placeholder : undefined
+        // BE-061: capture the name variant verbatim (documented Cal.com
+        // vocabulary: "fullName" | "firstAndLastName"). Unknown values stay
+        // undefined — the payload path treats every non-split variant as one
+        // full-name string, which Cal.com converts server-side (documented
+        // prefill/conversion parity: "John Johny Janardan" → firstName "John",
+        // lastName "John Janardan"; attendee.name is always a plain string in
+        // the v2 bookings contract, so no second input and no shape change).
+        const rawVariant = f.variant
+        const variant =
+            rawVariant === "fullName" || rawVariant === "firstAndLastName"
+                ? rawVariant
+                : undefined
         let options: string[] | undefined
         const rawOptions =
             (f as { options?: unknown; variants?: unknown }).options ??
@@ -5973,7 +6047,7 @@ function normalizeCalBookingFields(data: unknown): CalBookingField[] {
                 .filter((v) => v.length > 0)
             if (parsed.length) options = parsed
         }
-        out.push({ slug, label, type, required, hidden, isDefault, placeholder, options })
+        out.push({ slug, label, type, required, hidden, isDefault, placeholder, options, variant })
     }
     return out
 }
@@ -6235,7 +6309,10 @@ async function submitCalcomBooking(params: {
                 })(),
                 attendee: {
                     name,
-                    email,
+                    // BE-062: an empty email is omitted, never sent as "".
+                    // Reachable only when the Cal email question is hidden
+                    // (validation forces a non-empty email otherwise).
+                    ...(email.trim() ? { email } : {}),
                     timeZone,
                     language:
                         (typeof navigator !== "undefined" && navigator.language?.slice(0, 2)) ||
@@ -7186,7 +7263,52 @@ function useBookingEngineState(
 
     const instanceIdProp = advanced?.instanceId ?? props.instanceId ?? ""
 
-    const copy = advanced?.copy ?? props.copy
+    // BE-083: screen-grouped copy with the flat keys as readable legacy
+    // carriers - one resolution site, ?? chains (never ||).
+    const rawCopy = advanced?.copy ?? props.copy
+    const copy = {
+        ...rawCopy,
+        successTitle:
+            rawCopy?.success?.successTitle ??
+            rawCopy?.successTitle ??
+            DEFAULT_COPY_SUCCESS_TITLE,
+        successSubtitle:
+            rawCopy?.success?.successSubtitle ??
+            rawCopy?.successSubtitle ??
+            DEFAULT_COPY_SUCCESS_SUBTITLE,
+        errorTitle:
+            rawCopy?.failure?.errorTitle ??
+            rawCopy?.errorTitle ??
+            DEFAULT_COPY_ERROR_TITLE,
+        errorSubtitle:
+            rawCopy?.failure?.errorSubtitle ??
+            rawCopy?.errorSubtitle ??
+            DEFAULT_COPY_ERROR_SUBTITLE,
+        unknownErrorLabel:
+            rawCopy?.failure?.unknownErrorLabel ??
+            rawCopy?.unknownErrorLabel ??
+            DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
+        errorFallbackMessage:
+            rawCopy?.failure?.errorFallbackMessage ??
+            rawCopy?.errorFallbackMessage ??
+            DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
+        stepCounterTemplate:
+            progressBar?.content?.stepCounterTemplate ??
+            rawCopy?.stepCounterTemplate ??
+            DEFAULT_COPY_STEP_COUNTER_TEMPLATE,
+        stepProgressLabel:
+            progressBar?.content?.stepProgressLabel ??
+            rawCopy?.stepProgressLabel ??
+            DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
+        stepAnnouncementTemplate:
+            progressBar?.content?.stepAnnouncementTemplate ??
+            rawCopy?.stepAnnouncementTemplate ??
+            DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
+        rescheduleOrCancelLabel:
+            buttonLabels?.buttonTexts?.manageLinkLabel ??
+            rawCopy?.rescheduleOrCancelLabel ??
+            DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
+    }
 
     const validation = copy?.validation ?? props.validation
 
@@ -7972,9 +8094,39 @@ function useBookingEngineState(
         )
     }, [calBookingFields, baseActiveSteps, hasCalConfig, hasDatetimeStep])
 
+    // BE-062: Cal.com email can be toggled off (Hidden) per event. When the
+    // event metadata positively shows the Cal email question hidden, the
+    // engine's first email field becomes optional — never hidden (the author
+    // configured it visibly). Absent/failed metadata resolves to false (fail
+    // closed: today's forced-required stands, never blocks — rule 38).
+    const calEmailHidden = React.useMemo(() => {
+        if (!hasCalConfig || !hasDatetimeStep) return false
+        return (calBookingFields || []).some(
+            (f) =>
+                f.hidden === true &&
+                (f.slug.toLowerCase() === "email" ||
+                    (f.isDefault && f.type.toLowerCase() === "email"))
+        )
+    }, [calBookingFields, hasCalConfig, hasDatetimeStep])
+
     const effectiveActiveSteps = React.useMemo(() => {
-        if (missingCalFields.length === 0) return baseActiveSteps
+        if (missingCalFields.length === 0 && !calEmailHidden) return baseActiveSteps
         if (isCanvas) return baseActiveSteps
+        let steps = baseActiveSteps
+        if (calEmailHidden) {
+            let relaxed = false
+            steps = baseActiveSteps.map((step) => ({
+                ...step,
+                fields: step.fields.map((field) => {
+                    if (!relaxed && field.fieldType === "email") {
+                        relaxed = true
+                        return { ...field, required: false }
+                    }
+                    return field
+                }),
+            }))
+        }
+        if (missingCalFields.length === 0) return steps
         const autoFields: NormalizedField[] = missingCalFields.map((f) => {
             const calKind = (f.type || "").toLowerCase()
             const hasOptions = !!f.options && f.options.length > 0
@@ -8004,8 +8156,8 @@ function useBookingEngineState(
             layout: "single-column",
             fields: autoFields,
         }
-        return [...baseActiveSteps, autoStep]
-    }, [baseActiveSteps, missingCalFields, isCanvas])
+        return [...steps, autoStep]
+    }, [baseActiveSteps, missingCalFields, isCanvas, calEmailHidden])
 
     const calendarStageConfig: CalendarStageConfig = React.useMemo(() => {
         if (calendar) {
@@ -8143,7 +8295,7 @@ function useBookingEngineState(
         const typedEmails = identityFields.filter((field) => field.fieldType === "email")
         if (flaggedNames.length > 1) {
             warnings.push(
-                `Multiple fields are marked "Primary Name" (${flaggedNames
+                `Multiple fields are marked "Name" (${flaggedNames
                     .map((f) => `"${f.label}"`)
                     .join(
                         ", "
@@ -8156,13 +8308,17 @@ function useBookingEngineState(
                     .map((f) => `"${f.label}"`)
                     .join(
                         ", "
-                    )}). Only the first is the required booking identity (its Required off is ignored); later Email fields use their own Required setting.`
+                    )}). Only the first is the booking contact identity${
+                    calEmailHidden
+                        ? " (optional while the Cal.com email question is hidden)"
+                        : " and is always required (its Required off is ignored)"
+                }; later Email fields use their own Required setting.`
             )
         }
         const rawFirstEmail = (effectiveStepsConfig || [])
             .flatMap((step) => step.fields || [])
             .find((field) => field.fieldType === "email")
-        if (rawFirstEmail && rawFirstEmail.required === false) {
+        if (rawFirstEmail && rawFirstEmail.required === false && !calEmailHidden) {
             warnings.push(
                 `The first Email field ("${rawFirstEmail.label || "Email"}") has Required off, but it stays required as the booking contact identity — the toggle is ignored. Later Email fields obey their own Required setting.`
             )
@@ -8171,7 +8327,7 @@ function useBookingEngineState(
             const fallbackName = findNameField(baseActiveSteps)
             if (fallbackName) {
                 warnings.push(
-                    `No field is marked "Primary Name", so "${fallbackName.label}" is used as the booking attendee name (matched by label) and is always required. Mark it "Primary Name" to make this explicit.`
+                    `No field is marked "Name", so "${fallbackName.label}" is used as the booking attendee name (matched by label) and is always required. Mark it "Name" to make this explicit.`
                 )
             }
         }
@@ -8183,6 +8339,15 @@ function useBookingEngineState(
                 )
             }
         }
+        if (
+            baseActiveSteps.some((step) =>
+                step.fields.some((field) => field.id === "auto-name-field")
+            )
+        ) {
+            warnings.push(
+                `A "Full Name" field was restored automatically - Cal.com bookings cannot exist without an attendee name. Add your own text field and mark it "Name" to customize it.`
+            )
+        }
         return warnings
     }, [
         normalizedSteps,
@@ -8193,6 +8358,7 @@ function useBookingEngineState(
         calApiKey,
         calEventTypeId,
         missingCalFields,
+        calEmailHidden,
     ])
 
     const emitAnalytics = React.useCallback(
@@ -9237,8 +9403,8 @@ export default function BookingEngine(props: BookingEngineProps) {
                     animateInteractions={animateIx}
                     timeZone={timeZone}
                     eventTitle={calEventMeta?.title}
+                    eventLocation={calEventMeta?.locationLabel}
                     rescheduleOrCancelLabel={copy.rescheduleOrCancelLabel}
-                    icsLocationLabel={copy.icsLocationLabel}
                     meetingDurationMs={meetingDurationMs}
                     transitionVariant={resolvedTransitionVariant}
                     baseTransition={stepTransition}
@@ -9447,7 +9613,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                     }}
                 >
                     Cal.com requires a name and email field somewhere in this flow. Add a required
-                    text field (and tick "Primary Name") and an email-typed field to enable booking
+                    text field (and tick "Name") and an email-typed field to enable booking
                     submission.
                 </output>
             ) : null}
@@ -10077,7 +10243,13 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
     }, [touched, errors])
 
     const renderFormFields = () => {
-        const isTwoCol = step.layout === "two-column" && engineWidth >= COMPACT_BREAKPOINT
+        // BE-082: the grid derives from field widths - any Half field makes
+        // the step two-column; stored step.layout survives as an inert legacy
+        // carrier (old two-column canvases render identically: full fields
+        // span the whole row either way).
+        const isTwoCol =
+            engineWidth >= COMPACT_BREAKPOINT &&
+            step.fields.some((field) => field.width === "half")
         return (
             <div
                 style={{
@@ -10112,7 +10284,9 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
             touched[SELECTED_SLOT_KEY] && errors[SELECTED_SLOT_KEY]
                 ? errors[SELECTED_SLOT_KEY]
                 : null
-        const isTwoCol = step.layout === "two-column" && engineWidth >= COMPACT_BREAKPOINT
+        const isTwoCol =
+            engineWidth >= COMPACT_BREAKPOINT &&
+            step.fields.some((field) => field.width === "half")
 
         const calendarBlock = (
             <div style={{ gridColumn: "1 / -1" }}>
@@ -10316,6 +10490,308 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 
     return renderFormFields()
 }, areStepBodyPropsEqual)
+
+// PHONE-COUNTRY (BE-063): [ISO-3166, English name, ITU dial code]. The dial
+// code owns the "+" prefix; the stored value is always full-international.
+type PhoneCountryTuple = [iso: string, name: string, dial: string]
+const PHONE_COUNTRIES: PhoneCountryTuple[] = [
+    ["AF", "Afghanistan", "93"],
+    ["AL", "Albania", "355"],
+    ["DZ", "Algeria", "213"],
+    ["AS", "American Samoa", "1684"],
+    ["AD", "Andorra", "376"],
+    ["AO", "Angola", "244"],
+    ["AI", "Anguilla", "1264"],
+    ["AG", "Antigua and Barbuda", "1268"],
+    ["AR", "Argentina", "54"],
+    ["AM", "Armenia", "374"],
+    ["AW", "Aruba", "297"],
+    ["AU", "Australia", "61"],
+    ["AT", "Austria", "43"],
+    ["AZ", "Azerbaijan", "994"],
+    ["BS", "Bahamas", "1242"],
+    ["BH", "Bahrain", "973"],
+    ["BD", "Bangladesh", "880"],
+    ["BB", "Barbados", "1246"],
+    ["BY", "Belarus", "375"],
+    ["BE", "Belgium", "32"],
+    ["BZ", "Belize", "501"],
+    ["BJ", "Benin", "229"],
+    ["BM", "Bermuda", "1441"],
+    ["BT", "Bhutan", "975"],
+    ["BO", "Bolivia", "591"],
+    ["BA", "Bosnia and Herzegovina", "387"],
+    ["BW", "Botswana", "267"],
+    ["BR", "Brazil", "55"],
+    ["IO", "British Indian Ocean Territory", "246"],
+    ["VG", "British Virgin Islands", "1284"],
+    ["BN", "Brunei", "673"],
+    ["BG", "Bulgaria", "359"],
+    ["BF", "Burkina Faso", "226"],
+    ["BI", "Burundi", "257"],
+    ["KH", "Cambodia", "855"],
+    ["CM", "Cameroon", "237"],
+    ["CA", "Canada", "1"],
+    ["CV", "Cape Verde", "238"],
+    ["KY", "Cayman Islands", "1345"],
+    ["CF", "Central African Republic", "236"],
+    ["TD", "Chad", "235"],
+    ["CL", "Chile", "56"],
+    ["CN", "China", "86"],
+    ["CX", "Christmas Island", "61"],
+    ["CC", "Cocos Islands", "61"],
+    ["CO", "Colombia", "57"],
+    ["KM", "Comoros", "269"],
+    ["CG", "Congo", "242"],
+    ["CD", "Congo (DRC)", "243"],
+    ["CK", "Cook Islands", "682"],
+    ["CR", "Costa Rica", "506"],
+    ["CI", "Côte d'Ivoire", "225"],
+    ["HR", "Croatia", "385"],
+    ["CU", "Cuba", "53"],
+    ["CW", "Curaçao", "599"],
+    ["CY", "Cyprus", "357"],
+    ["CZ", "Czechia", "420"],
+    ["DK", "Denmark", "45"],
+    ["DJ", "Djibouti", "253"],
+    ["DM", "Dominica", "1767"],
+    ["DO", "Dominican Republic", "1809"],
+    ["EC", "Ecuador", "593"],
+    ["EG", "Egypt", "20"],
+    ["SV", "El Salvador", "503"],
+    ["GQ", "Equatorial Guinea", "240"],
+    ["ER", "Eritrea", "291"],
+    ["EE", "Estonia", "372"],
+    ["SZ", "Eswatini", "268"],
+    ["ET", "Ethiopia", "251"],
+    ["FK", "Falkland Islands", "500"],
+    ["FO", "Faroe Islands", "298"],
+    ["FJ", "Fiji", "679"],
+    ["FI", "Finland", "358"],
+    ["FR", "France", "33"],
+    ["GF", "French Guiana", "594"],
+    ["PF", "French Polynesia", "689"],
+    ["GA", "Gabon", "241"],
+    ["GM", "Gambia", "220"],
+    ["GE", "Georgia", "995"],
+    ["DE", "Germany", "49"],
+    ["GH", "Ghana", "233"],
+    ["GI", "Gibraltar", "350"],
+    ["GR", "Greece", "30"],
+    ["GL", "Greenland", "299"],
+    ["GD", "Grenada", "1473"],
+    ["GP", "Guadeloupe", "590"],
+    ["GU", "Guam", "1671"],
+    ["GT", "Guatemala", "502"],
+    ["GG", "Guernsey", "44"],
+    ["GN", "Guinea", "224"],
+    ["GW", "Guinea-Bissau", "245"],
+    ["GY", "Guyana", "592"],
+    ["HT", "Haiti", "509"],
+    ["HN", "Honduras", "504"],
+    ["HK", "Hong Kong", "852"],
+    ["HU", "Hungary", "36"],
+    ["IS", "Iceland", "354"],
+    ["IN", "India", "91"],
+    ["ID", "Indonesia", "62"],
+    ["IR", "Iran", "98"],
+    ["IQ", "Iraq", "964"],
+    ["IE", "Ireland", "353"],
+    ["IM", "Isle of Man", "44"],
+    ["IL", "Israel", "972"],
+    ["IT", "Italy", "39"],
+    ["JM", "Jamaica", "1876"],
+    ["JP", "Japan", "81"],
+    ["JE", "Jersey", "44"],
+    ["JO", "Jordan", "962"],
+    ["KZ", "Kazakhstan", "7"],
+    ["KE", "Kenya", "254"],
+    ["KI", "Kiribati", "686"],
+    ["XK", "Kosovo", "383"],
+    ["KW", "Kuwait", "965"],
+    ["KG", "Kyrgyzstan", "996"],
+    ["LA", "Laos", "856"],
+    ["LV", "Latvia", "371"],
+    ["LB", "Lebanon", "961"],
+    ["LS", "Lesotho", "266"],
+    ["LR", "Liberia", "231"],
+    ["LY", "Libya", "218"],
+    ["LI", "Liechtenstein", "423"],
+    ["LT", "Lithuania", "370"],
+    ["LU", "Luxembourg", "352"],
+    ["MO", "Macao", "853"],
+    ["MG", "Madagascar", "261"],
+    ["MW", "Malawi", "265"],
+    ["MY", "Malaysia", "60"],
+    ["MV", "Maldives", "960"],
+    ["ML", "Mali", "223"],
+    ["MT", "Malta", "356"],
+    ["MH", "Marshall Islands", "692"],
+    ["MQ", "Martinique", "596"],
+    ["MR", "Mauritania", "222"],
+    ["MU", "Mauritius", "230"],
+    ["YT", "Mayotte", "262"],
+    ["MX", "Mexico", "52"],
+    ["FM", "Micronesia", "691"],
+    ["MD", "Moldova", "373"],
+    ["MC", "Monaco", "377"],
+    ["MN", "Mongolia", "976"],
+    ["ME", "Montenegro", "382"],
+    ["MS", "Montserrat", "1664"],
+    ["MA", "Morocco", "212"],
+    ["MZ", "Mozambique", "258"],
+    ["MM", "Myanmar", "95"],
+    ["NA", "Namibia", "264"],
+    ["NR", "Nauru", "674"],
+    ["NP", "Nepal", "977"],
+    ["NL", "Netherlands", "31"],
+    ["NC", "New Caledonia", "687"],
+    ["NZ", "New Zealand", "64"],
+    ["NI", "Nicaragua", "505"],
+    ["NE", "Niger", "227"],
+    ["NG", "Nigeria", "234"],
+    ["NU", "Niue", "683"],
+    ["NF", "Norfolk Island", "672"],
+    ["KP", "North Korea", "850"],
+    ["MK", "North Macedonia", "389"],
+    ["MP", "Northern Mariana Islands", "1670"],
+    ["NO", "Norway", "47"],
+    ["OM", "Oman", "968"],
+    ["PK", "Pakistan", "92"],
+    ["PW", "Palau", "680"],
+    ["PS", "Palestine", "970"],
+    ["PA", "Panama", "507"],
+    ["PG", "Papua New Guinea", "675"],
+    ["PY", "Paraguay", "595"],
+    ["PE", "Peru", "51"],
+    ["PH", "Philippines", "63"],
+    ["PL", "Poland", "48"],
+    ["PT", "Portugal", "351"],
+    ["PR", "Puerto Rico", "1787"],
+    ["QA", "Qatar", "974"],
+    ["RE", "Réunion", "262"],
+    ["RO", "Romania", "40"],
+    ["RU", "Russia", "7"],
+    ["RW", "Rwanda", "250"],
+    ["BL", "Saint Barthélemy", "590"],
+    ["SH", "Saint Helena", "290"],
+    ["KN", "Saint Kitts and Nevis", "1869"],
+    ["LC", "Saint Lucia", "1758"],
+    ["MF", "Saint Martin", "590"],
+    ["PM", "Saint Pierre and Miquelon", "508"],
+    ["VC", "Saint Vincent and the Grenadines", "1784"],
+    ["WS", "Samoa", "685"],
+    ["SM", "San Marino", "378"],
+    ["ST", "São Tomé and Príncipe", "239"],
+    ["SA", "Saudi Arabia", "966"],
+    ["SN", "Senegal", "221"],
+    ["RS", "Serbia", "381"],
+    ["SC", "Seychelles", "248"],
+    ["SL", "Sierra Leone", "232"],
+    ["SG", "Singapore", "65"],
+    ["SX", "Sint Maarten", "1721"],
+    ["SK", "Slovakia", "421"],
+    ["SI", "Slovenia", "386"],
+    ["SB", "Solomon Islands", "677"],
+    ["SO", "Somalia", "252"],
+    ["ZA", "South Africa", "27"],
+    ["GS", "South Georgia", "500"],
+    ["KR", "South Korea", "82"],
+    ["SS", "South Sudan", "211"],
+    ["ES", "Spain", "34"],
+    ["LK", "Sri Lanka", "94"],
+    ["SD", "Sudan", "249"],
+    ["SR", "Suriname", "597"],
+    ["SJ", "Svalbard", "47"],
+    ["SE", "Sweden", "46"],
+    ["CH", "Switzerland", "41"],
+    ["SY", "Syria", "963"],
+    ["TW", "Taiwan", "886"],
+    ["TJ", "Tajikistan", "992"],
+    ["TZ", "Tanzania", "255"],
+    ["TH", "Thailand", "66"],
+    ["TL", "Timor-Leste", "670"],
+    ["TG", "Togo", "228"],
+    ["TK", "Tokelau", "690"],
+    ["TO", "Tonga", "676"],
+    ["TT", "Trinidad and Tobago", "1868"],
+    ["TN", "Tunisia", "216"],
+    ["TR", "Türkiye", "90"],
+    ["TM", "Turkmenistan", "993"],
+    ["TC", "Turks and Caicos", "1649"],
+    ["TV", "Tuvalu", "688"],
+    ["VI", "US Virgin Islands", "1340"],
+    ["UG", "Uganda", "256"],
+    ["UA", "Ukraine", "380"],
+    ["AE", "United Arab Emirates", "971"],
+    ["GB", "United Kingdom", "44"],
+    ["US", "United States", "1"],
+    ["UY", "Uruguay", "598"],
+    ["UZ", "Uzbekistan", "998"],
+    ["VU", "Vanuatu", "678"],
+    ["VA", "Vatican City", "379"],
+    ["VE", "Venezuela", "58"],
+    ["VN", "Vietnam", "84"],
+    ["WF", "Wallis and Futuna", "681"],
+    ["EH", "Western Sahara", "212"],
+    ["YE", "Yemen", "967"],
+    ["ZM", "Zambia", "260"],
+    ["ZW", "Zimbabwe", "263"],
+    ["AX", "Åland", "358"],
+]
+function phoneCountryByIso(iso: string): PhoneCountryTuple | undefined {
+    const upper = (iso || "").toUpperCase()
+    return PHONE_COUNTRIES.find((c) => c[0] === upper)
+}
+// BE-063: canonical representative per shared dial code, so parsing a stored
+// number with a foreign fallback iso still lands a deterministic flag
+// (+1 → US, +7 → RU, +44 → GB). Manual re-pick always wins afterwards.
+const PHONE_DIAL_CANONICAL_ISO: Record<string, string> = { "1": "US", "7": "RU", "44": "GB" }
+// BE-063: deterministic pre-paint default (rule 42 — pure constant both
+// sides). Locale detection lands in a gated layout effect, never the first
+// markup, so there is no flag flash and no hydration mismatch.
+const PHONE_COUNTRY_DEFAULT_ISO = "US"
+function detectPhoneCountryIso(): string {
+    if (typeof navigator === "undefined") return PHONE_COUNTRY_DEFAULT_ISO
+    const lang = typeof navigator.language === "string" ? navigator.language : ""
+    const region = (lang.split(/[-_]/)[1] || "").toUpperCase()
+    if (region && phoneCountryByIso(region)) return region
+    return PHONE_COUNTRY_DEFAULT_ISO
+}
+function phoneCountryFlag(iso: string): string {
+    const upper = (iso || "").toUpperCase()
+    if (!/^[A-Z]{2}$/.test(upper) || !phoneCountryByIso(upper)) return ""
+    return String.fromCodePoint(
+        ...upper.split("").map((c) => 127397 + c.charCodeAt(0))
+    )
+}
+// BE-063: split a stored full-international value ("+201012345678") into its
+// country + national parts. Legacy national-only values (no "+") keep the
+// fallback country. The current country wins ties on shared dial codes
+// (+1 US/CA/…, +7 RU/KZ, +44 GB/GG/IM/JE) so typing never flips the flag.
+function splitStoredPhone(stored: string, fallbackIso: string): { iso: string; national: string } {
+    const text = (stored || "").trim()
+    if (!text) return { iso: fallbackIso, national: "" }
+    const digits = text.replace(/\D/g, "")
+    if (text.startsWith("+")) {
+        const prefer = phoneCountryByIso(fallbackIso)
+        if (prefer && digits.startsWith(prefer[2]) && digits.length > prefer[2].length) {
+            return { iso: prefer[0], national: digits.slice(prefer[2].length) }
+        }
+        for (let len = 4; len >= 1; len--) {
+            const prefix = digits.slice(0, len)
+            if (!prefix) continue
+            const canonical = PHONE_DIAL_CANONICAL_ISO[prefix]
+            const hit =
+                (canonical && phoneCountryByIso(canonical)) ||
+                PHONE_COUNTRIES.find((c) => c[2] === prefix)
+            if (hit && digits.length > len) {
+                return { iso: hit[0], national: digits.slice(len) }
+            }
+        }
+    }
+    return { iso: fallbackIso, national: digits }
+}
 
 interface FieldRendererProps {
     field: NormalizedField
@@ -11309,6 +11785,465 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     )
 })
 
+// PHONE-FIELD (BE-063): country button + national-number input. The stored
+// value is always full-international ("+201012345678"); the "+" prefix is
+// owned by the country button, never typed. First render is the deterministic
+// US default on both sides (rule 42); restore/detection land pre-paint.
+interface PhoneFieldControlProps {
+    field: NormalizedField
+    value: string | boolean | Array<string> | undefined
+    hasError: boolean
+    isSubmitting: boolean
+    onFieldChange: (fieldId: string, value: string | boolean | Array<string> | undefined) => void
+    fs: FieldStyleOverrides | undefined
+    inputBaseStyle: React.CSSProperties
+    fsInputFontSize: number
+    fsPadding: string
+    fsRadius: string
+    fsBorder: { width: number; style: string; color: string | undefined }
+    theme: Theme
+    fieldDomId: string
+    errorDomId: string
+    reducedMotion: boolean
+}
+const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFieldControlProps) {
+    const {
+        field,
+        value,
+        hasError,
+        isSubmitting,
+        onFieldChange,
+        fs,
+        inputBaseStyle,
+        fsInputFontSize,
+        fsPadding,
+        fsRadius,
+        fsBorder,
+        theme,
+        fieldDomId,
+        errorDomId,
+        reducedMotion,
+    } = props
+
+    const beInteractive = useBeInteractive()
+    const buttonRef = React.useRef<HTMLButtonElement | null>(null)
+    const menuRef = React.useRef<HTMLUListElement | null>(null)
+    const searchRef = React.useRef<HTMLInputElement | null>(null)
+    const [iso, setIso] = React.useState(PHONE_COUNTRY_DEFAULT_ISO)
+    const [national, setNational] = React.useState("")
+    const [open, setOpen] = React.useState(false)
+    const [query, setQuery] = React.useState("")
+    const [activeIndex, setActiveIndex] = React.useState(0)
+    const [menuRect, setMenuRect] = React.useState<SelectMenuPlacement | null>(null)
+    const lastComposedRef = React.useRef<string | null>(null)
+    const settledRef = React.useRef(false)
+
+    const full = typeof value === "string" ? value : ""
+    const country =
+        phoneCountryByIso(iso) ??
+        phoneCountryByIso(PHONE_COUNTRY_DEFAULT_ISO) ?? ["US", "United States", "1"]
+
+    // Adopt external value changes (autosave restore, reset). Skips echoes of
+    // our own emits so typing never fights the parse.
+    useIsomorphicLayoutEffect(() => {
+        if (full === lastComposedRef.current) return
+        lastComposedRef.current = full
+        if (!full) {
+            setNational("")
+            return
+        }
+        const parsed = splitStoredPhone(full, iso)
+        setIso((prev) => (prev === parsed.iso ? prev : parsed.iso))
+        setNational(parsed.national)
+        settledRef.current = true
+    }, [full, iso])
+
+    // One-shot locale detection for fresh empty fields — gated (rule 109):
+    // the prerender must never commit a detected country.
+    useIsomorphicLayoutEffect(() => {
+        if (!beInteractive || settledRef.current) return
+        if (full !== "") return
+        settledRef.current = true
+        const detected = detectPhoneCountryIso()
+        setIso((prev) => (prev === detected ? prev : detected))
+    }, [beInteractive, full])
+
+    const emitNational = React.useCallback(
+        (nextNational: string) => {
+            // BE-063 + rule 97: letters/symbols stripped at the write point;
+            // the "+" prefix belongs to the country button, never the box.
+            const clean = sanitizePhoneInput(nextNational).replace(/\+/g, "")
+            const digits = clean.replace(/\D/g, "")
+            const nextFull = digits ? `+${country[2]}${digits}` : ""
+            setNational(clean)
+            settledRef.current = true
+            lastComposedRef.current = nextFull
+            onFieldChange(field.id, nextFull)
+        },
+        [country, field.id, onFieldChange]
+    )
+
+    const filtered = React.useMemo(() => {
+        const q = query.trim().toLowerCase()
+        if (!q) return PHONE_COUNTRIES
+        return PHONE_COUNTRIES.filter(
+            (c) =>
+                c[1].toLowerCase().includes(q) ||
+                c[0].toLowerCase().includes(q) ||
+                c[2].includes(q.replace(/\D/g, "") || "§")
+        )
+    }, [query])
+
+    const padAxes = paddingAxesFrom(fsPadding) ?? { y: 14, x: 14 }
+    const rowEstimate = padAxes.y * 2 + Math.round(Math.max(fsInputFontSize, 13) * 1.25) + 2
+    const computePlacement = React.useCallback((): SelectMenuPlacement | null => {
+        const el = buttonRef.current
+        if (!el || typeof window === "undefined") return null
+        const r = el.getBoundingClientRect()
+        const viewportH = window.innerHeight || 0
+        const cap = Math.min(viewportH * SELECT_MENU_VIEWPORT_RATIO, SELECT_MENU_MAX_PX)
+        const est = Math.min(Math.max(filtered.length, 1) * rowEstimate + 48, cap)
+        const spaceBelow = viewportH - r.bottom - 8
+        const spaceAbove = r.top - 8
+        const openBelow = spaceBelow >= Math.min(est, 160) || spaceBelow >= spaceAbove
+        const maxH = Math.max(120, Math.min(cap, openBelow ? spaceBelow : spaceAbove))
+        return {
+            left: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 248) - 8)),
+            top: openBelow ? r.bottom + 4 : Math.max(8, r.top - est - 4),
+            width: Math.max(r.width, 248),
+            maxHeight: maxH,
+        }
+    }, [filtered.length, rowEstimate])
+
+    const openMenu = React.useCallback(() => {
+        if (isSubmitting) return
+        const placement = computePlacement()
+        if (!placement) return
+        setQuery("")
+        setMenuRect(placement)
+        const selectedIdx = filtered.findIndex((c) => c[0] === iso)
+        setActiveIndex(selectedIdx >= 0 ? selectedIdx : 0)
+        setOpen(true)
+    }, [computePlacement, filtered, iso, isSubmitting])
+
+    const closeMenu = React.useCallback(() => {
+        setOpen(false)
+        setQuery("")
+        buttonRef.current?.focus()
+    }, [])
+
+    const commitCountry = React.useCallback(
+        (index: number) => {
+            const picked = filtered[index]
+            if (!picked) return
+            settledRef.current = true
+            setIso(picked[0])
+            const digits = national.replace(/\D/g, "")
+            const nextFull = digits ? `+${picked[2]}${digits}` : ""
+            lastComposedRef.current = nextFull
+            onFieldChange(field.id, nextFull)
+            setOpen(false)
+            setQuery("")
+            buttonRef.current?.focus()
+        },
+        [filtered, national, field.id, onFieldChange]
+    )
+
+    React.useEffect(() => {
+        if (isSubmitting) setOpen(false)
+    }, [isSubmitting])
+
+    React.useEffect(() => {
+        if (!open) return
+        if (typeof document === "undefined") return
+        const onPointerDown = (event: PointerEvent) => {
+            const target = event.target as Node | null
+            if (!target) return
+            if (buttonRef.current?.contains(target)) return
+            if (menuRef.current?.contains(target)) return
+            setOpen(false)
+        }
+        document.addEventListener("pointerdown", onPointerDown)
+        return () => document.removeEventListener("pointerdown", onPointerDown)
+    }, [open ])
+
+    React.useEffect(() => {
+        if (!open) return
+        if (typeof window === "undefined") return
+        let raf = 0
+        const reposition = () => {
+            cancelAnimationFrame(raf)
+            raf = requestAnimationFrame(() => {
+                const next = computePlacement()
+                if (!next) return
+                setMenuRect((prev) => {
+                    if (
+                        prev &&
+                        prev.left === next.left &&
+                        prev.top === next.top &&
+                        prev.width === next.width &&
+                        prev.maxHeight === next.maxHeight
+                    )
+                        return prev
+                    return next
+                })
+            })
+        }
+        window.addEventListener("scroll", reposition, true)
+        window.addEventListener("resize", reposition)
+        return () => {
+            cancelAnimationFrame(raf)
+            window.removeEventListener("scroll", reposition, true)
+            window.removeEventListener("resize", reposition)
+        }
+    }, [open, computePlacement])
+
+    React.useEffect(() => {
+        if (open) searchRef.current?.focus()
+    }, [open])
+
+    const clampedActive = filtered.length === 0 ? 0 : Math.min(activeIndex, filtered.length - 1)
+
+    const handleButtonKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (isSubmitting) return
+        if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+            event.preventDefault()
+            if (!open) openMenu()
+        } else if (event.key === "Escape" && open) {
+            event.preventDefault()
+            setOpen(false)
+        }
+    }
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        switch (event.key) {
+            case "Escape":
+                event.preventDefault()
+                closeMenu()
+                return
+            case "Enter":
+                event.preventDefault()
+                if (filtered.length > 0) commitCountry(clampedActive)
+                return
+            case "ArrowDown":
+                event.preventDefault()
+                if (filtered.length > 0) {
+                    setActiveIndex((prev) => (Math.min(prev, filtered.length - 1) + 1) % filtered.length)
+                }
+                return
+            case "ArrowUp":
+                event.preventDefault()
+                if (filtered.length > 0) {
+                    setActiveIndex((prev) => {
+                        const cur = Math.min(prev, filtered.length - 1)
+                        return cur - 1 < 0 ? filtered.length - 1 : cur - 1
+                    })
+                }
+                return
+            case "Home":
+                event.preventDefault()
+                setActiveIndex(0)
+                return
+            case "End":
+                event.preventDefault()
+                if (filtered.length > 0) setActiveIndex(filtered.length - 1)
+                return
+            default:
+                return
+        }
+    }
+
+    const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4)
+    const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0
+    const selectedRowText =
+        fs?.selected?.textColor ??
+        fs?.selectedTextColor ??
+        theme.accentForegroundColor ??
+        TEXT_ON_ACCENT
+    const selectedRowSurface =
+        fs?.selected?.backgroundColor ?? fs?.selectedBackgroundColor ?? theme.accentColor
+    const optionTextColor = fs?.textColor ?? theme.textPrimaryColor
+
+    const menuSurfaceStyle: React.CSSProperties = {
+        position: "fixed",
+        left: menuRect?.left,
+        top: menuRect?.top,
+        width: menuRect?.width,
+        maxHeight: menuRect?.maxHeight,
+        margin: 0,
+        padding: 4,
+        boxSizing: "border-box",
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+        zIndex: SELECT_MENU_Z_INDEX,
+        background: fs?.backgroundColor ?? theme.surfaceColor,
+        border: `${fsBorder.width}px ${fsBorder.style} ${fsBorder.color ?? theme.borderColor}`,
+        borderRadius: fsRadius,
+        color: optionTextColor,
+        ...shadowStyle(fs?.shadow),
+    }
+
+    const listboxDomId = `${fieldDomId}-country`
+    const derivedPlaceholder = `+${country[2]}`
+
+    return (
+        <div>
+            <div style={{ display: "flex", gap: 8, minWidth: 0 }}>
+                <button
+                    ref={buttonRef}
+                    type="button"
+                    className={hasError ? "be-input be-input-invalid" : "be-input"}
+                    style={{
+                        ...inputBaseStyle,
+                        width: "auto",
+                        flexShrink: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        cursor: isSubmitting ? "not-allowed" : "pointer",
+                    }}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-controls={listboxDomId}
+                    aria-label={`${field.label} country code`}
+                    disabled={isSubmitting}
+                    onClick={() => (open ? setOpen(false) : openMenu())}
+                    onKeyDown={handleButtonKeyDown}
+                >
+                    <span aria-hidden="true">{phoneCountryFlag(country[0])}</span>
+                    <span>+{country[2]}</span>
+                    <span aria-hidden="true" style={{ fontSize: 10 }}>
+                        ▾
+                    </span>
+                </button>
+                <input
+                    id={fieldDomId}
+                    className={hasError ? "be-input be-input-invalid" : "be-input"}
+                    type="tel"
+                    inputMode="tel"
+                    style={{ ...inputBaseStyle, flex: 1, minWidth: 0 }}
+                    value={national}
+                    placeholder={derivedPlaceholder}
+                    required={field.required}
+                    autoComplete="tel"
+                    disabled={isSubmitting}
+                    aria-invalid={hasError || undefined}
+                    aria-describedby={hasError ? errorDomId : undefined}
+                    onChange={(e) => emitNational(e.target.value)}
+                />
+                <input type="hidden" name={field.calFieldId || field.id} value={full} />
+            </div>
+            {open && typeof document !== "undefined"
+                ? (ReactDOM.createPortal(
+                      <div
+                          role="dialog"
+                          aria-label={`${field.label} country code`}
+                          style={{ ...menuSurfaceStyle, padding: 4 }}
+                      >
+                          <input
+                              ref={searchRef}
+                              type="text"
+                              role="combobox"
+                              aria-expanded="true"
+                              aria-controls={listboxDomId}
+                              aria-activedescendant={`${listboxDomId}-option-${clampedActive}`}
+                              aria-label="Search countries"
+                              className="be-input"
+                              style={{
+                                  width: "100%",
+                                  boxSizing: "border-box",
+                                  padding: "8px 10px",
+                                  marginBottom: 4,
+                                  border: `1px solid ${theme.borderColor}`,
+                                  borderRadius: menuRowRadiusValue,
+                                  background: "transparent",
+                                  color: optionTextColor,
+                                  fontSize: fsInputFontSize,
+                                  outline: "none",
+                              }}
+                              value={query}
+                              placeholder="Search countries"
+                              onChange={(e) => {
+                                  setQuery(e.target.value)
+                                  setActiveIndex(0)
+                              }}
+                              onKeyDown={handleSearchKeyDown}
+                          />
+                          <ul
+                              ref={menuRef}
+                              id={listboxDomId}
+                              role="listbox"
+                              className="be-select-scroll"
+                              tabIndex={-1}
+                              style={{
+                                  margin: 0,
+                                  padding: 0,
+                                  listStyle: "none",
+                                  overflowY: "auto",
+                                  overscrollBehavior: "contain",
+                              }}
+                          >
+                              {filtered.map((c, index) => {
+                                  const isSelected = c[0] === iso
+                                  const isActiveRow = index === clampedActive
+                                  return (
+                                      // biome-ignore lint/a11y/useFocusableInteractive: ARIA listbox option — focus stays in the search box via aria-activedescendant, options commit on pointerdown (rules 134/162).
+                                      <li
+                                          key={c[0]}
+                                          id={`${listboxDomId}-option-${index}`}
+                                          role="option"
+                                          aria-selected={isSelected}
+                                          onPointerDown={(event) => {
+                                              event.preventDefault()
+                                              commitCountry(index)
+                                          }}
+                                          onMouseEnter={() => setActiveIndex(index)}
+                                          style={{
+                                              padding: fsPadding,
+                                              borderRadius: menuRowRadiusValue,
+                                              margin: 0,
+                                              listStyle: "none",
+                                              cursor: "pointer",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 8,
+                                              color: isSelected ? selectedRowText : optionTextColor,
+                                              background: isSelected
+                                                  ? selectedRowSurface
+                                                  : isActiveRow
+                                                    ? withAlpha(optionTextColor, 0.06)
+                                                    : "transparent",
+                                              transition: reducedMotion
+                                                  ? "none"
+                                                  : "background-color 0.15s ease",
+                                          }}
+                                      >
+                                          <span aria-hidden="true">{phoneCountryFlag(c[0])}</span>
+                                          <span style={{ flex: 1, minWidth: 0 }}>{c[1]}</span>
+                                          <span
+                                              style={{
+                                                  color: isSelected
+                                                      ? selectedRowText
+                                                      : theme.textSecondaryColor,
+                                              }}
+                                          >
+                                              +{c[2]}
+                                          </span>
+                                          {isSelected ? (
+                                              <span aria-hidden="true">✓</span>
+                                          ) : null}
+                                      </li>
+                                  )
+                              })}
+                          </ul>
+                      </div>,
+                      document.body
+                  ) as unknown as React.ReactNode)
+                : null}
+        </div>
+    )
+})
+
 const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProps) {
     const {
         field,
@@ -11439,7 +12374,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                     color: theme.errorColor,
                 }}
             >
-                Duplicate "Primary Name" — only the first flagged field is used as the booking
+                Duplicate "Name" — only the first flagged field is used as the booking
                 attendee name. Remove this flag.
             </output>
         ) : null
@@ -11792,6 +12727,35 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                 </div>
             )
         }
+        case "phone":
+            return (
+                <div style={containerStyle} data-field-id={field.id}>
+                    {labelEl}
+                    {duplicatePrimaryNotice}
+                    <PhoneFieldControl
+                        field={field}
+                        value={
+                            typeof value === "string" || typeof value === "boolean"
+                                ? value
+                                : undefined
+                        }
+                        hasError={!!error}
+                        isSubmitting={isSubmitting}
+                        onFieldChange={onFieldChange}
+                        fs={fs}
+                        inputBaseStyle={inputBaseStyle}
+                        fsInputFontSize={fsInputFontSize}
+                        fsPadding={fsPadding}
+                        fsRadius={fsRadius}
+                        fsBorder={fsBorder}
+                        theme={theme}
+                        fieldDomId={fieldDomId}
+                        errorDomId={errorDomId}
+                        reducedMotion={reducedMotion}
+                    />
+                    {errorEl}
+                </div>
+            )
         default:
             return (
                 <div style={containerStyle} data-field-id={field.id}>
@@ -11804,22 +12768,18 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         type={
                             field.fieldType === "email"
                                 ? "email"
-                                : field.fieldType === "phone"
-                                  ? "tel"
-                                  : field.fieldType === "url"
-                                    ? "url"
-                                    : "text"
+                                : field.fieldType === "url"
+                                  ? "url"
+                                  : "text"
                         }
                         inputMode={
                             field.fieldType === "email"
                                 ? "email"
-                                : field.fieldType === "phone"
-                                  ? "tel"
-                                  : field.fieldType === "number"
-                                    ? "decimal"
-                                    : field.fieldType === "url"
-                                      ? "url"
-                                      : undefined
+                                : field.fieldType === "number"
+                                  ? "decimal"
+                                  : field.fieldType === "url"
+                                    ? "url"
+                                    : undefined
                         }
                         value={typeof value === "string" ? value : ""}
                         placeholder={field.placeholder || ""}
@@ -11829,9 +12789,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         onChange={(e) =>
                             onFieldChange(
                                 field.id,
-                                field.fieldType === "phone"
-                                    ? sanitizePhoneInput(e.target.value)
-                                    : e.target.value
+                                e.target.value
                             )
                         }
                         aria-invalid={!!error}
@@ -12741,8 +13699,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
     baseTransition: Transition
     timeZone: string
     eventTitle?: string
+    eventLocation?: string
     rescheduleOrCancelLabel: string
-    icsLocationLabel?: string
     meetingDurationMs: number
 }) {
     const {
@@ -12777,8 +13735,8 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         baseTransition,
         timeZone,
         eventTitle,
+        eventLocation,
         rescheduleOrCancelLabel,
-        icsLocationLabel,
         meetingDurationMs,
     } = props
 
@@ -12910,7 +13868,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                       undefined,
                       undefined,
                       meetingDurationMs,
-                      typeof icsLocationLabel === "string" ? icsLocationLabel : "",
+                      typeof eventLocation === "string" ? eventLocation : "",
                       bookingResult?.uid ?? undefined
                   )
                 : "",
@@ -12919,7 +13877,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
             icsDescription,
             calendarExportTitle,
             meetingDurationMs,
-            icsLocationLabel,
+            eventLocation,
             bookingResult,
         ]
     )
@@ -13938,9 +14896,8 @@ function makeFieldObjectControls() {
         },
         isPrimaryName: {
             type: ct(ControlType.Boolean),
-            title: "Primary Name",
+            title: "Name",
             defaultValue: false,
-            description: "The first flagged field is the booking attendee name — flag exactly one.",
             hidden: (p: FieldControlProps) => p?.fieldType !== "text",
         },
         optionValues: {
@@ -13982,7 +14939,7 @@ function makeFieldObjectControls() {
             type: ct(ControlType.Enum),
             title: "Width",
             options: ["full", "half"],
-            optionTitles: ["Full", "Fit"],
+            optionTitles: ["Fill", "Half"],
             defaultValue: "full",
             displaySegmentedControl: true,
             hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
@@ -14045,14 +15002,6 @@ function makeStepControl(slotIndex: number, defaults: StepConfig) {
                 defaultValue: defaults.subtitle || "",
                 displayTextArea: true,
                 hidden: (p: StepSlotControlProps) => p?.showHeader === false,
-            },
-            layout: {
-                type: ct(ControlType.Enum),
-                title: "Layout",
-                options: ["single-column", "two-column"],
-                optionTitles: ["1 Col", "2 Col"],
-                defaultValue: defaults.layout,
-                displaySegmentedControl: true,
             },
             fields: {
                 type: ct(ControlType.Array),
@@ -14348,6 +15297,12 @@ addPropertyControls(BookingEngine, {
                         title: "Final Action",
                         defaultValue: "Book Now",
                     },
+                    // BE-083: the Manage menu-item label moved here from Copy.
+                    manageLinkLabel: {
+                        type: ControlType.String,
+                        title: "Manage Link",
+                        defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
+                    },
                 },
             },
             // BUTTON-GROUPS-REMOVED (BE-027/BE-028): per-button
@@ -14390,6 +15345,32 @@ addPropertyControls(BookingEngine, {
                 hidden: (p: ProgressBarControlProps) =>
                     (p?.showText ?? p?.showTextContent) === false ||
                     (p?.barVisible ?? p?.visible) === false,
+            },
+            // BE-083: progress copy moved here from Copy (grouped with its control).
+            content: {
+                type: ControlType.Object,
+                title: "Content",
+                icon: "object",
+                buttonTitle: "Content",
+                optional: true,
+                controls: {
+                    stepCounterTemplate: {
+                        type: ControlType.String,
+                        title: "Step Counter",
+                        defaultValue: "Step {current} of {total}",
+                    },
+                    stepProgressLabel: {
+                        type: ControlType.String,
+                        title: "Step Progress",
+                        defaultValue: DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
+                    },
+                    stepAnnouncementTemplate: {
+                        type: ControlType.String,
+                        title: "Step Announcement Template",
+                        defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
+                        displayTextArea: true,
+                    },
+                },
             },
         },
     },
@@ -14449,65 +15430,57 @@ addPropertyControls(BookingEngine, {
                 icon: "object",
                 buttonTitle: "Copy",
                 controls: {
-                    successTitle: {
-                        type: ControlType.String,
-                        title: "Success Title",
-                        defaultValue: "Booked Successfully",
+                    success: {
+                        type: ControlType.Object,
+                        title: "Success Screen",
+                        icon: "object",
+                        buttonTitle: "Success Screen",
+                        optional: true,
+                        controls: {
+                            successTitle: {
+                                type: ControlType.String,
+                                title: "Success Title",
+                                defaultValue: "Booked Successfully",
+                            },
+                            successSubtitle: {
+                                type: ControlType.String,
+                                title: "Success Subtitle",
+                                defaultValue:
+                                    "Your appointment details are below, add them to your calendar.",
+                                displayTextArea: true,
+                            },
+                        },
                     },
-                    successSubtitle: {
-                        type: ControlType.String,
-                        title: "Success Subtitle",
-                        defaultValue:
-                            "Your appointment details are below, add them to your calendar.",
-                        displayTextArea: true,
-                    },
-                    errorTitle: {
-                        type: ControlType.String,
-                        title: "Error Title",
-                        defaultValue: "Something went wrong while processing your booking",
-                    },
-                    errorSubtitle: {
-                        type: ControlType.String,
-                        title: "Error Subtitle",
-                        defaultValue: "Your details are saved, try again in a moment.",
-                        displayTextArea: true,
-                    },
-                    stepCounterTemplate: {
-                        type: ControlType.String,
-                        title: "Step Counter",
-                        defaultValue: "Step {current} of {total}",
-                    },
-                    rescheduleOrCancelLabel: {
-                        type: ControlType.String,
-                        title: "Manage Link",
-                        defaultValue: DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
-                    },
-                    stepProgressLabel: {
-                        type: ControlType.String,
-                        title: "Step Progress",
-                        defaultValue: DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
-                    },
-                    stepAnnouncementTemplate: {
-                        type: ControlType.String,
-                        title: "Step Announcement Template",
-                        defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
-                        displayTextArea: true,
-                    },
-                    unknownErrorLabel: {
-                        type: ControlType.String,
-                        title: "Unknown Error",
-                        defaultValue: DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
-                    },
-                    errorFallbackMessage: {
-                        type: ControlType.String,
-                        title: "Submit Error Fallback",
-                        defaultValue: DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
-                        displayTextArea: true,
-                    },
-                    icsLocationLabel: {
-                        type: ControlType.String,
-                        title: "ICS Location",
-                        defaultValue: "",
+                    failure: {
+                        type: ControlType.Object,
+                        title: "Error Screen",
+                        icon: "object",
+                        buttonTitle: "Error Screen",
+                        optional: true,
+                        controls: {
+                            errorTitle: {
+                                type: ControlType.String,
+                                title: "Error Title",
+                                defaultValue: "Something went wrong while processing your booking",
+                            },
+                            errorSubtitle: {
+                                type: ControlType.String,
+                                title: "Error Subtitle",
+                                defaultValue: "Your details are saved, try again in a moment.",
+                                displayTextArea: true,
+                            },
+                            unknownErrorLabel: {
+                                type: ControlType.String,
+                                title: "Unknown Error",
+                                defaultValue: DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
+                            },
+                            errorFallbackMessage: {
+                                type: ControlType.String,
+                                title: "Submit Error Fallback",
+                                defaultValue: DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
+                                displayTextArea: true,
+                            },
+                        },
                     },
                     calEventMetaUnavailableCopy: {
                         type: ControlType.String,
@@ -14695,7 +15668,6 @@ addPropertyControls(BookingEngine, {
                                 title: "Past Time",
                                 defaultValue: DEFAULT_VALIDATION_COPY.pastTimeError,
                             },
-                            // VALIDATION-REMOVED (rule 100): no custom pattern or min-length controls.
                         },
                     },
                 },
