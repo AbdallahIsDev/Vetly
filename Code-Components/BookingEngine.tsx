@@ -2206,6 +2206,8 @@ interface CalendarGridProps {
     onMoveFocus: (date: Date) => void
     onHoverChange: (dateKey: string | null) => void
     onFocusChange: (dateKey: string | null) => void
+    /** BE-125: author-selected Transition Type for the grid enter shape. */
+    transitionVariant: TransitionVariantId
 }
 
 const CalendarGrid = React.memo(function CalendarGrid({
@@ -2248,6 +2250,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
     onMoveFocus,
     onHoverChange,
     onFocusChange,
+    transitionVariant,
 }: CalendarGridProps) {
     const gridLabelId = instanceId
         ? `${instanceId}-be-calendar-grid-label`
@@ -2278,7 +2281,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
     }
     const gridEnter =
         !gridAnimMeta.first && !gridLoading && !gridReducedMotion
-            ? { opacity: 0, x: gridAnimMeta.dir * 20 }
+            ? surfaceEnterExit(transitionVariant, gridAnimMeta.dir).enter
             : false
     const rows: React.ReactNode[] = []
     const weeksToRender = weeksInMonthView(
@@ -2554,7 +2557,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
                 role="grid"
                 aria-labelledby={gridLabelId}
                 initial={gridEnter}
-                animate={{ opacity: 1, x: 0 }}
+                animate={SURFACE_ANIMATE_RESET}
                 transition={{ duration: 0.2, ease: "easeOut" }}
                 style={{
                     display: "grid",
@@ -2696,6 +2699,8 @@ interface TimeSlotListProps {
     slotDateLabel?: string
     slotError?: string | null
     slotErrorId?: string
+    /** BE-125: author-selected Transition Type for the list enter shape. */
+    transitionVariant: TransitionVariantId
 }
 
 const TimeSlotButton = React.memo(function TimeSlotButton(props: {
@@ -2840,6 +2845,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
         timeZone,
         slotError,
         slotErrorId,
+        transitionVariant,
     } = props
     // BE-124 batch 2: day/format swaps replay a soft fade; first paint and
     // loading skeletons stay instant.
@@ -3121,8 +3127,12 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                         <motion.div
                             key={`${selectedDate ? selectedDate.getTime() : "none"}-${activeTimeFormat}`}
                             ref={slotGridRef}
-                            initial={slotMounted ? { opacity: 0, y: 8 } : false}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={
+                                slotMounted
+                                    ? surfaceEnterExit(transitionVariant, 1).enter
+                                    : false
+                            }
+                            animate={SURFACE_ANIMATE_RESET}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             style={{
                                 display: "grid",
@@ -3924,6 +3934,8 @@ interface DateAndTimeInlineProps {
     calEventMetaUnavailableCopy?: string
     hourSuffix?: string
     minuteSuffix?: string
+    /** BE-125: author-selected Transition Type for grid/list/info surfaces. */
+    transitionVariant: TransitionVariantId
 }
 
 const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTimeInlineProps) {
@@ -3973,6 +3985,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
         calEventMetaUnavailableCopy = CAL_META_UNAVAILABLE_COPY,
         hourSuffix = DEFAULT_COPY_HOUR_SUFFIX,
         minuteSuffix = DEFAULT_COPY_MINUTE_SUFFIX,
+        transitionVariant,
     } = props
 
     const [clockReady, setClockReady] = React.useState(false)
@@ -4458,8 +4471,12 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                         {eventMetaStatus === "ready" && eventMeta ? (
                             <motion.div
                                 key="ready"
-                                initial={metaMounted ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
+                                initial={
+                                    metaMounted
+                                        ? surfaceEnterExit(transitionVariant, 1).enter
+                                        : false
+                                }
+                                animate={SURFACE_ANIMATE_RESET}
                                 transition={{ duration: 0.18, ease: "easeOut" }}
                             >
                             <CalEventInfoPanel
@@ -4477,8 +4494,12 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                         ) : eventMetaStatus === "failed" ? (
                             <motion.div
                                 key="failed"
-                                initial={metaMounted ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
+                                initial={
+                                    metaMounted
+                                        ? surfaceEnterExit(transitionVariant, 1).enter
+                                        : false
+                                }
+                                animate={SURFACE_ANIMATE_RESET}
                                 transition={{ duration: 0.18, ease: "easeOut" }}
                             >
                             <div
@@ -4590,6 +4611,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                         onMoveFocus={moveFocus}
                         onHoverChange={setHoveredDateKey}
                         onFocusChange={setFocusedKey}
+                        transitionVariant={transitionVariant}
                     />
                 </section>
 
@@ -4635,6 +4657,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                     timeZone={timeZone}
                     slotError={slotError}
                     slotErrorId={slotErrorId}
+                    transitionVariant={transitionVariant}
                 />
             </div>
         </div>
@@ -7201,6 +7224,44 @@ const TRANSITION_VARIANT_DEFS: Record<
     },
 }
 
+// BE-125: every surface appearance follows the author-selected Transition
+// Type family — blur stays blur everywhere, slide stays slide. Resolves the
+// variant's inactive shape (the same language steps speak) for a travel
+// direction; surfaces keep their own fixed quick timing (the footer-label
+// precedent — a full step-length spring on a menu would feel broken).
+// Micro property-flips (colors, rings, thumb/progress springs, spinner,
+// skeleton pulse, focus rings) and tiny text/icon swaps are not surfaces and
+// keep their own fades.
+const SURFACE_ANIMATE_RESET: TargetAndTransition = {
+    opacity: 1,
+    x: 0,
+    y: 0,
+    scale: 1,
+    filter: "blur(0px)",
+}
+// Plain scalar target for the `initial` prop (this framer-motion version
+// types `initial` as TargetProperties — TargetAndTransition is rejected).
+type SurfaceEnterShape = {
+    opacity?: number
+    x?: number | string
+    y?: number | string
+    scale?: number
+    filter?: string
+}
+function surfaceEnterExit(
+    variant: TransitionVariantId,
+    direction: number
+): { enter: SurfaceEnterShape; exit: TargetAndTransition } {
+    const inactive = TRANSITION_VARIANT_DEFS[variant].variants.inactive
+    const resolved =
+        typeof inactive === "function"
+            ? (inactive as (custom: number) => TargetAndTransition)(direction)
+            : (inactive as TargetAndTransition)
+    const { opacity, x, y, scale, filter } = resolved as SurfaceEnterShape
+    const enter: SurfaceEnterShape = { opacity, x, y, scale, filter }
+    return { enter, exit: { ...resolved, pointerEvents: "none" as const } }
+}
+
 class BeErrorBoundary extends React.Component<
     { stepKey: string; children: React.ReactNode },
     { failed: boolean }
@@ -9658,6 +9719,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                     retryPressed={retryButtonGroup?.pressed}
                     retryAnimate={animateIx}
                     actionJustify={terminalActionJustify}
+                    transitionVariant={resolvedTransitionVariant}
                 />
             )
         ) : null
@@ -9788,10 +9850,16 @@ export default function BookingEngine(props: BookingEngineProps) {
                     <motion.div
                         key={flowStatus}
                         initial={
-                            !mountedOnce || prefersReducedMotion ? false : { opacity: 0 }
+                            !mountedOnce || prefersReducedMotion
+                                ? false
+                                : surfaceEnterExit(resolvedTransitionVariant, 1).enter
                         }
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+                        animate={SURFACE_ANIMATE_RESET}
+                        exit={
+                            prefersReducedMotion
+                                ? { opacity: 0 }
+                                : surfaceEnterExit(resolvedTransitionVariant, -1).exit
+                        }
                         transition={{
                             duration: prefersReducedMotion ? 0 : 0.16,
                             ease: "easeOut",
@@ -9803,10 +9871,16 @@ export default function BookingEngine(props: BookingEngineProps) {
                     <motion.div
                         key="flow"
                         initial={
-                            !mountedOnce || prefersReducedMotion ? false : { opacity: 0 }
+                            !mountedOnce || prefersReducedMotion
+                                ? false
+                                : surfaceEnterExit(resolvedTransitionVariant, -1).enter
                         }
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
+                        animate={SURFACE_ANIMATE_RESET}
+                        exit={
+                            prefersReducedMotion
+                                ? { opacity: 0 }
+                                : surfaceEnterExit(resolvedTransitionVariant, 1).exit
+                        }
                         transition={{
                             duration: prefersReducedMotion ? 0 : 0.16,
                             ease: "easeOut",
@@ -9903,8 +9977,15 @@ export default function BookingEngine(props: BookingEngineProps) {
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
                 <motion.div
-                    initial={mountedOnce ? { opacity: 0, height: 0 } : false}
-                    animate={{ opacity: 1, height: "auto" }}
+                    initial={
+                        mountedOnce
+                            ? {
+                                  ...surfaceEnterExit(resolvedTransitionVariant, 1).enter,
+                                  height: 0,
+                              }
+                            : false
+                    }
+                    animate={{ ...SURFACE_ANIMATE_RESET, height: "auto" }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
                     style={{ marginBottom: sectionSpacing.progress, overflow: "hidden" }}
                 >
@@ -10193,6 +10274,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                     eventMetaFallbackDurationMinutes={Math.round(
                                         meetingDurationMs / 60000
                                     )}
+                                    transitionVariant={resolvedTransitionVariant}
                                 />
                             </BeErrorBoundary>
                         </StepVisibilityWrapper>
@@ -10458,6 +10540,9 @@ interface StepBodyProps {
     eventMeta?: CalEventMeta | null
     eventMetaStatus?: CalEventMetaStatus
     eventMetaFallbackDurationMinutes?: number
+    /** BE-125: author-selected Transition Type — every surface appearance
+     *  follows its family (blur stays blur). */
+    transitionVariant: TransitionVariantId
 }
 
 const STEP_BODY_FLOW_MAPS = ["values", "errors", "touched"] as const
@@ -10531,6 +10616,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
         eventMeta,
         eventMetaStatus,
         eventMetaFallbackDurationMinutes,
+        transitionVariant,
     } = props
 
     const slotErrorId = `${instanceId ? `${instanceId}-` : ""}be-slot-error`
@@ -10576,6 +10662,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         isSubmitting={isSubmitting}
                         instanceId={instanceId}
                         globalFieldStyles={globalFieldStyles}
+                        transitionVariant={transitionVariant}
                     />
                 ))}
             </div>
@@ -10592,8 +10679,8 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
             <div style={{ gridColumn: "1 / -1" }}>
                 {hasCalConfig && slotsError ? (
                     <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
+                        initial={surfaceEnterExit(transitionVariant, 1).enter}
+                        animate={SURFACE_ANIMATE_RESET}
                         transition={{ duration: 0.16, ease: "easeOut" }}
                         style={{
                             display: "flex",
@@ -10738,6 +10825,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             calEventMetaUnavailableCopy={copy.calEventMetaUnavailableCopy}
                             hourSuffix={DEFAULT_COPY_HOUR_SUFFIX}
                             minuteSuffix={DEFAULT_COPY_MINUTE_SUFFIX}
+                            transitionVariant={transitionVariant}
                         />
                     )}
                 </div>
@@ -10784,6 +10872,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             isSubmitting={isSubmitting}
                             instanceId={instanceId}
                             globalFieldStyles={globalFieldStyles}
+                            transitionVariant={transitionVariant}
                         />
                     ))}
             </div>
@@ -11392,16 +11481,20 @@ interface FieldRendererProps {
     isSubmitting?: boolean
     globalFieldStyles?: FieldStyleOverrides
     instanceId: string
+    /** BE-125: author-selected Transition Type for menu surfaces. */
+    transitionVariant: TransitionVariantId
 }
 
 function FieldErrorMessage({
     domId,
     message,
     color,
+    transitionVariant,
 }: {
     domId: string
     message: string
     color: string
+    transitionVariant: TransitionVariantId
 }) {
     const announcedRef = React.useRef(false)
     const firstAppearance = !announcedRef.current
@@ -11416,8 +11509,8 @@ function FieldErrorMessage({
                 fontSize: 12,
             }}
             role={firstAppearance ? "alert" : "status"}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={surfaceEnterExit(transitionVariant, 1).enter}
+            animate={SURFACE_ANIMATE_RESET}
             transition={{ duration: 0.15, ease: "easeOut" }}
         >
             {message}
@@ -11462,6 +11555,8 @@ interface MultiSelectFieldControlProps {
     fieldDomId: string
     errorDomId: string
     reducedMotion: boolean
+    /** BE-125: author-selected Transition Type for the menu surface. */
+    transitionVariant: TransitionVariantId
 }
 
 // BE-055: multi-pick combobox. Same trigger + portaled listbox mechanics as the
@@ -11487,6 +11582,7 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
         fieldDomId,
         errorDomId,
         reducedMotion,
+        transitionVariant,
     } = props
 
     const triggerRef = React.useRef<HTMLDivElement | null>(null)
@@ -11497,6 +11593,8 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
     const [menuFont, setMenuFont] = React.useState<SelectMenuFont | null>(null)
 
     const listboxDomId = `${fieldDomId}-multiselect-listbox`
+    // BE-125: menu surface follows the Transition Type family.
+    const menuShapes = surfaceEnterExit(transitionVariant, 1)
 
     const picked: Array<string> = Array.isArray(value) ? value : []
     const pickedSet = React.useMemo(() => new Set(picked), [picked])
@@ -11873,8 +11971,8 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                         return (
                             <motion.span
                                 key={v}
-                                initial={{ opacity: 0, scale: 0.85 }}
-                                animate={{ opacity: 1, scale: 1 }}
+                                initial={menuShapes.enter}
+                                animate={SURFACE_ANIMATE_RESET}
                                 transition={{ duration: 0.14, ease: "easeOut" }}
                                 style={{
                                     display: "inline-flex",
@@ -11989,13 +12087,9 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                   className="be-select-scroll"
                                   tabIndex={-1}
                                   style={menuSurfaceStyle}
-                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{
-                                      opacity: 0,
-                                      y: reducedMotion ? 0 : -4,
-                                      pointerEvents: "none" as const,
-                                  }}
+                                  initial={reducedMotion ? false : menuShapes.enter}
+                                  animate={SURFACE_ANIMATE_RESET}
+                                  exit={reducedMotion ? { opacity: 0 } : menuShapes.exit}
                                   transition={{
                                       duration: reducedMotion ? 0 : 0.14,
                                       ease: "easeOut",
@@ -12029,6 +12123,8 @@ interface SelectFieldControlProps {
     fieldDomId: string
     errorDomId: string
     reducedMotion: boolean
+    /** BE-125: author-selected Transition Type for the menu surface. */
+    transitionVariant: TransitionVariantId
 }
 
 const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectFieldControlProps) {
@@ -12049,6 +12145,7 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
         fieldDomId,
         errorDomId,
         reducedMotion,
+        transitionVariant,
     } = props
 
     const beInteractive = useBeInteractive()
@@ -12060,6 +12157,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     const [menuFont, setMenuFont] = React.useState<SelectMenuFont | null>(null)
 
     const listboxDomId = `${fieldDomId}-listbox`
+    // BE-125: menu surface follows the Transition Type family.
+    const menuShapes = surfaceEnterExit(transitionVariant, 1)
 
     const storedValue = typeof value === "string" ? value : ""
     const matchedOption = opts.find((o) => optionValue(o) === storedValue)
@@ -12461,13 +12560,9 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                                   className="be-select-scroll"
                                   tabIndex={-1}
                                   style={menuSurfaceStyle}
-                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{
-                                      opacity: 0,
-                                      y: reducedMotion ? 0 : -4,
-                                      pointerEvents: "none" as const,
-                                  }}
+                                  initial={reducedMotion ? false : menuShapes.enter}
+                                  animate={SURFACE_ANIMATE_RESET}
+                                  exit={reducedMotion ? { opacity: 0 } : menuShapes.exit}
                                   transition={{
                                       duration: reducedMotion ? 0 : 0.14,
                                       ease: "easeOut",
@@ -12504,6 +12599,8 @@ interface PhoneFieldControlProps {
     fieldDomId: string
     errorDomId: string
     reducedMotion: boolean
+    /** BE-125: author-selected Transition Type for the dialog surface. */
+    transitionVariant: TransitionVariantId
 }
 const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFieldControlProps) {
     const {
@@ -12522,6 +12619,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
         fieldDomId,
         errorDomId,
         reducedMotion,
+        transitionVariant,
     } = props
 
     const beInteractive = useBeInteractive()
@@ -12852,6 +12950,8 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     }
 
     const listboxDomId = `${fieldDomId}-country`
+    // BE-125: dialog surface follows the Transition Type family.
+    const menuShapes = surfaceEnterExit(transitionVariant, 1)
 
     return (
         <div>
@@ -13124,13 +13224,9 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                       flexDirection: "column",
                                       overflow: "hidden",
                                   }}
-                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{
-                                      opacity: 0,
-                                      y: reducedMotion ? 0 : -4,
-                                      pointerEvents: "none" as const,
-                                  }}
+                                  initial={reducedMotion ? false : menuShapes.enter}
+                                  animate={SURFACE_ANIMATE_RESET}
+                                  exit={reducedMotion ? { opacity: 0 } : menuShapes.exit}
                                   transition={{
                                       duration: reducedMotion ? 0 : 0.14,
                                       ease: "easeOut",
@@ -13304,6 +13400,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         isSubmitting = false,
         instanceId = "",
         globalFieldStyles,
+        transitionVariant,
     } = props
 
     const domIdPrefix = instanceId ? `${instanceId}-` : ""
@@ -13406,7 +13503,12 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     )
 
     const errorEl = error ? (
-        <FieldErrorMessage domId={errorDomId} message={error} color={theme.errorColor} />
+        <FieldErrorMessage
+            domId={errorDomId}
+            message={error}
+            color={theme.errorColor}
+            transitionVariant={transitionVariant}
+        />
     ) : null
 
     // BE-052: canvas-only escalation for duplicate Primary-Name flags —
@@ -13533,6 +13635,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         fieldDomId={fieldDomId}
                         errorDomId={errorDomId}
                         reducedMotion={reducedMotion}
+                        transitionVariant={transitionVariant}
                     />
                     {errorEl}
                 </div>
@@ -13558,6 +13661,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         fieldDomId={fieldDomId}
                         errorDomId={errorDomId}
                         reducedMotion={reducedMotion}
+                        transitionVariant={transitionVariant}
                     />
                     {errorEl}
                 </div>
@@ -13803,6 +13907,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         fieldDomId={fieldDomId}
                         errorDomId={errorDomId}
                         reducedMotion={reducedMotion}
+                        transitionVariant={transitionVariant}
                     />
                     {errorEl}
                 </div>
@@ -14418,6 +14523,8 @@ interface CalendarExportMenuProps {
     borderColor: string
     borderRadius: string | number
     reducedMotion: boolean
+    /** BE-125: author-selected Transition Type for the menu surface. */
+    transitionVariant: TransitionVariantId
 }
 
 const CalendarExportMenu = React.memo(function CalendarExportMenu(props: CalendarExportMenuProps) {
@@ -14435,6 +14542,7 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
         borderColor,
         borderRadius,
         reducedMotion,
+        transitionVariant,
     } = props
 
     const triggerRef = React.useRef<HTMLButtonElement | null>(null)
@@ -14662,23 +14770,29 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                   ref={menuRef}
                                   role="menu"
                                   aria-label={triggerLabel}
-                                  style={menuSurfaceStyle}
-                                  initial={
-                                      reducedMotion
-                                          ? false
-                                          : { opacity: 0, y: menuRect.openBelow ? -4 : 4 }
-                                  }
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{
-                                      opacity: 0,
-                                      y: reducedMotion ? 0 : menuRect.openBelow ? -4 : 4,
-                                      pointerEvents: "none" as const,
-                                  }}
-                                  transition={{
-                                      duration: reducedMotion ? 0 : 0.14,
-                                      ease: "easeOut",
-                                  }}
-                                  onKeyDown={(event) => {
+                              style={menuSurfaceStyle}
+                              initial={
+                                  reducedMotion
+                                      ? false
+                                      : surfaceEnterExit(
+                                            transitionVariant,
+                                            menuRect.openBelow ? 1 : -1
+                                        ).enter
+                              }
+                              animate={SURFACE_ANIMATE_RESET}
+                              exit={
+                                  reducedMotion
+                                      ? { opacity: 0 }
+                                      : surfaceEnterExit(
+                                            transitionVariant,
+                                            menuRect.openBelow ? 1 : -1
+                                        ).exit
+                              }
+                              transition={{
+                                  duration: reducedMotion ? 0 : 0.14,
+                                  ease: "easeOut",
+                              }}
+                              onKeyDown={(event) => {
                               if (event.key === "Escape") {
                                   event.preventDefault()
                                   closeMenu(true)
@@ -15145,9 +15259,11 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                     <motion.div
                         key={entry.id || entry.label + idx}
                         initial={
-                            isStaticRender || reducedMotion ? false : { opacity: 0, y: 8 }
+                            isStaticRender || reducedMotion
+                                ? false
+                                : surfaceEnterExit(transitionVariant, 1).enter
                         }
-                        animate={{ opacity: 1, y: 0 }}
+                        animate={SURFACE_ANIMATE_RESET}
                         transition={{
                             duration: isStaticRender || reducedMotion ? 0 : 0.18,
                             delay: isStaticRender || reducedMotion ? 0 : 0.35 + idx * 0.04,
@@ -15186,8 +15302,12 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
             </div>
 
             <motion.div
-                initial={isStaticRender || reducedMotion ? false : { opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={
+                    isStaticRender || reducedMotion
+                        ? false
+                        : surfaceEnterExit(transitionVariant, 1).enter
+                }
+                animate={SURFACE_ANIMATE_RESET}
                 transition={{
                     duration: isStaticRender || reducedMotion ? 0 : 0.18,
                     delay: isStaticRender || reducedMotion ? 0 : 0.35 + entries.length * 0.04,
@@ -15263,6 +15383,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         borderColor={borderColor}
                         borderRadius={borderRadius}
                         reducedMotion={!!reducedMotion}
+                        transitionVariant={transitionVariant}
                     />
                 ) : null}
                 <button
@@ -15307,6 +15428,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
     retryHover?: ButtonInteractionState
     retryPressed?: ButtonInteractionState
     retryAnimate: boolean
+    /** BE-125: author-selected Transition Type for card/action enters. */
+    transitionVariant: TransitionVariantId
 }) {
     const {
         message,
@@ -15327,6 +15450,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
         retryHover,
         retryPressed,
         retryAnimate,
+        transitionVariant,
     } = props
 
     const headingRef = React.useRef<HTMLHeadingElement | null>(null)
@@ -15430,8 +15554,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                     </div>
                 </div>
                 <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={surfaceEnterExit(transitionVariant, 1).enter}
+                    animate={SURFACE_ANIMATE_RESET}
                     transition={{ duration: 0.18, ease: "easeOut" }}
                     style={{
                         padding: "14px 18px",
@@ -15450,8 +15574,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                     {message}
                 </motion.div>
                 <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={surfaceEnterExit(transitionVariant, 1).enter}
+                    animate={SURFACE_ANIMATE_RESET}
                     transition={{ duration: 0.18, delay: 0.08, ease: "easeOut" }}
                     style={{
                         display: "flex",

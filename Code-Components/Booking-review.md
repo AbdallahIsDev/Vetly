@@ -558,6 +558,23 @@
 
 ---
 
+### BE-125 — Every surface appearance follows the Transition Type family
+
+- **Status:** Done (2026-09-11)
+- **Description:** The author picked Blur in Transition Type but dropdown menus and other appearing surfaces still faded — every surface appearance must speak the selected family's language (blur stays blur, slide stays slide), while keeping each surface's own quick timing.
+- **Current Behavior:** (pre-fix) menus, terminal crossfade, grid/list/info/progress/banner/error/success/chip enters all used hard-coded fade-rise regardless of Transition Type.
+- **Expected Behavior:** `surfaceEnterExit(variant, direction)` resolves the variant def's inactive shape for a direction; all four menus (enter+exit), the terminal crossfade pair (forward/backward mirrored), calendar grid, time list, event info, progress block, slots banner, field errors, success rows/action, chips, and the error card/action use it. Micro property-flips (colors, rings, thumb/progress springs, spinner, skeleton pulse, focus rings) and tiny text/icon swaps keep their own fades — they are not surfaces.
+- **Acceptance Criteria:**
+  - [x] Switching Transition Type visibly changes menu/screen/list appearances (Blur blurs, Slide slides, Zoom scales).
+  - [x] Surfaces keep fixed quick timings (menus 0.14s); step transitions untouched (variant defs + duration override).
+  - [x] `transitionVariant` threaded StepBody → FieldRenderer/DateAndTimeInline → all menus, grid, list; SuccessScreen → export menu; ErrorScreen from main.
+- **Constraints / Must Not Do:** Do not route surface timing through the variant def springs; do not touch rect/focus/portal mechanics; step-container rules unchanged.
+- **Related AGENTS.md Rule(s):** Rules 22, 24, 198 (amended — surface-shape system).
+- **Additional Context:** Ordered 2026-09-11 (Arabic) with a Transition Type dropdown screenshot (Blur Scale selected).
+- **Implementation record (2026-09-11):** `surfaceEnterExit` + `SURFACE_ANIMATE_RESET` helpers; `enter` typed as a scalar `SurfaceEnterShape` because this framer-motion version rejects `TargetAndTransition` in `initial`. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
 ### BE-120 — Phone national input keeps shared padding everywhere except the left
 
 - **Status:** Done (2026-09-11)
