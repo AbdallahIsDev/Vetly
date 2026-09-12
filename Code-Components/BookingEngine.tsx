@@ -1155,6 +1155,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
+                            transition: prefersReducedMotion ? "none" : "color 0.15s ease",
                         }}
                     >
                         {opt.label}
@@ -1647,7 +1648,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                     overflow: "hidden",
                     transition: reducedMotion
                         ? "none"
-                        : "border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease",
+                        : "border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease",
                     ...extraStyle,
                     ...(isSelected ? selectedStyleOverride : {}),
                 }}
@@ -1668,16 +1669,20 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                             justifyContent: "center",
                         }}
                     >
-                        {isSelected ? (
-                            <span
-                                style={{
-                                    width: 8,
-                                    height: 8,
-                                    borderRadius: "50%",
-                                    background: selectedTextColor,
-                                }}
-                            />
-                        ) : null}
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                background: selectedTextColor,
+                                transform: isSelected ? "scale(1)" : "scale(0)",
+                                opacity: isSelected ? 1 : 0,
+                                transition: reducedMotion
+                                    ? "none"
+                                    : "transform 0.15s ease, opacity 0.15s ease",
+                            }}
+                        />
                     </span>
                 ) : null}
                 {showMedia && option.image && optionImageSrc(option.image) ? (
@@ -2121,22 +2126,27 @@ const CalendarCell = React.memo(function CalendarCell({
                     }}
                 >
                     {Number(getDateKeyInTimeZone(date, timeZone || "").slice(-2))}
-                    {isToday && !isSelected ? (
-                        <span
-                            aria-hidden="true"
-                            style={{
-                                position: "absolute",
-                                bottom: 3,
-                                left: "50%",
-                                transform: "translateX(-50%)",
-                                width: 5,
-                                height: 5,
-                                borderRadius: "50%",
-                                background: "currentColor",
-                                pointerEvents: "none",
-                            }}
-                        />
-                    ) : null}
+                    <span
+                        aria-hidden="true"
+                        style={{
+                            position: "absolute",
+                            bottom: 3,
+                            left: "50%",
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: "currentColor",
+                            pointerEvents: "none",
+                            transform:
+                                isToday && !isSelected
+                                    ? "translateX(-50%) scale(1)"
+                                    : "translateX(-50%) scale(0)",
+                            opacity: isToday && !isSelected ? 1 : 0,
+                            transition: reducedMotion
+                                ? "none"
+                                : "transform 0.16s ease, opacity 0.16s ease",
+                        }}
+                    />
                 </span>
             </button>
         </div>
@@ -2230,6 +2240,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
         ? `${instanceId}-be-calendar-grid-label`
         : "be-calendar-grid-label"
     const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null)
+    const gridReducedMotion = useReducedMotion() ?? false
     const rows: React.ReactNode[] = []
     const weeksToRender = weeksInMonthView(
         visibleMonth.getFullYear(),
@@ -2418,6 +2429,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
                             justifyContent: "center",
                             cursor: canGoPrev ? "pointer" : "not-allowed",
                             opacity: canGoPrev ? 0.8 : 0.4,
+                            transition: gridReducedMotion
+                                ? "none"
+                                : "background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease",
                         }}
                     >
                         <svg
@@ -2458,6 +2472,9 @@ const CalendarGrid = React.memo(function CalendarGrid({
                             justifyContent: "center",
                             cursor: canGoNext ? "pointer" : "not-allowed",
                             opacity: canGoNext ? 0.8 : 0.4,
+                            transition: gridReducedMotion
+                                ? "none"
+                                : "background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease",
                         }}
                     >
                         <svg
@@ -2718,7 +2735,7 @@ const TimeSlotButton = React.memo(function TimeSlotButton(props: {
                 justifyContent: "center",
                 transition: reducedMotion
                     ? "none"
-                    : "border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease",
+                    : "border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease",
                 boxShadow: selected ? `inset 0 0 0 1px ${selectedSurface}` : "none",
             }}
         >
@@ -9616,7 +9633,12 @@ export default function BookingEngine(props: BookingEngineProps) {
                 }}
             >
                 {isSubmitting ? (
-                    <>
+                    <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.15 }}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                    >
                         <span
                             aria-hidden="true"
                             style={{
@@ -9632,7 +9654,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                             }}
                         />
                         {DEFAULT_COPY_BOOKING_LABEL}
-                    </>
+                    </motion.span>
                 ) : (
                     <span style={{ display: "grid" }}>
                         <AnimatePresence initial={false}>
@@ -10055,7 +10077,7 @@ export default function BookingEngine(props: BookingEngineProps) {
             </div>
 
             <style suppressHydrationWarning>{`
-.be-input { outline: none; }
+.be-input { outline: none; transition: box-shadow 0.15s ease; }
 
 .be-input:focus-visible {
     box-shadow: inset 0 0 0 2px var(--be-focus-color, ${theme.accentColor});
@@ -10209,6 +10231,7 @@ const RootShell = React.memo(function RootShell(props: {
  * the inline --be-group-ring var (error-aware). Same pointer-active
  * convention as .be-input: mouse focus stays ring-free. */
 .be-phone-group:focus-within { box-shadow: inset 0 0 0 2px var(--be-group-ring); }
+.be-phone-group { transition: box-shadow 0.15s ease; }
 .be-motion-root.be-pointer-active .be-phone-group:focus-within { box-shadow: none; }
 /* FIELD-GRID (BE-102): the step field grid is container-responsive — the form
  * is the query container, so columns follow the embed width with no JS
@@ -10412,7 +10435,10 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
         const calendarBlock = (
             <div style={{ gridColumn: "1 / -1" }}>
                 {hasCalConfig && slotsError ? (
-                    <div
+                    <motion.div
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.16, ease: "easeOut" }}
                         style={{
                             display: "flex",
                             alignItems: "center",
@@ -10450,7 +10476,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         >
                             {retryLabel}
                         </button>
-                    </div>
+                    </motion.div>
                 ) : null}
                 {hasCalConfig &&
                 !slotsLoading &&
@@ -11227,16 +11253,19 @@ function FieldErrorMessage({
         announcedRef.current = true
     }, [])
     return (
-        <div
+        <motion.div
             id={domId}
             style={{
                 color,
                 fontSize: 12,
             }}
             role={firstAppearance ? "alert" : "status"}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
         >
             {message}
-        </div>
+        </motion.div>
     )
 }
 
@@ -11590,6 +11619,7 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                         alignItems: "center",
                         justifyContent: "center",
                         color: isSelected ? selectedRowSurface : "transparent",
+                        transition: reducedMotion ? "none" : "color 0.12s ease",
                     }}
                 >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -11685,8 +11715,11 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     pickedOptions.map((o) => {
                         const v = optionValue(o)
                         return (
-                            <span
+                            <motion.span
                                 key={v}
+                                initial={{ opacity: 0, scale: 0.85 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ duration: 0.14, ease: "easeOut" }}
                                 style={{
                                     display: "inline-flex",
                                     alignItems: "center",
@@ -11753,7 +11786,7 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                         <path d="m6 6 12 12" />
                                     </svg>
                                 </button>
-                            </span>
+                            </motion.span>
                         )
                     })
                 )}
@@ -11781,24 +11814,38 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     />
                 </svg>
             </div>
-            {open && menuRect && typeof document !== "undefined"
-                ? // Dual @types/react copies in the editor disagree on the
-                  (ReactDOM.createPortal(
-                      <ul
-                          ref={menuRef}
-                          id={listboxDomId}
-                          role="listbox"
-                          aria-multiselectable="true"
-                          aria-label={field.label}
-                          className="be-select-scroll"
-                          tabIndex={-1}
-                          style={menuSurfaceStyle}
-                      >
-                          {opts.map(renderRow)}
-                      </ul>,
-                      document.body
-                  ) as unknown as React.ReactNode)
-                : null}
+            {/* BE-123: menus enter/exit with a quick fade-rise (all four
+                dropdown surfaces share this pattern). Exit sets
+                pointerEvents none instantly so rows die with the close
+                while the fade plays; reduced motion stays instant. */}
+            <AnimatePresence>
+                {open && menuRect && typeof document !== "undefined"
+                    ? // Dual @types/react copies in the editor disagree on the
+                      (ReactDOM.createPortal(
+                          <motion.ul
+                              ref={menuRef}
+                              id={listboxDomId}
+                              role="listbox"
+                              aria-multiselectable="true"
+                              aria-label={field.label}
+                              className="be-select-scroll"
+                              tabIndex={-1}
+                              style={menuSurfaceStyle}
+                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{
+                                  opacity: 0,
+                                  y: reducedMotion ? 0 : -4,
+                                  pointerEvents: "none" as const,
+                              }}
+                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
+                          >
+                              {opts.map(renderRow)}
+                          </motion.ul>,
+                          document.body
+                      ) as unknown as React.ReactNode)
+                    : null}
+            </AnimatePresence>
         </div>
     )
 })
@@ -12099,16 +12146,15 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     margin: 0,
                     listStyle: "none",
                     cursor: option.disabled ? "not-allowed" : "pointer",
+                    // BE-122: selected is a check glyph only (multiselect
+                    // parity) — rows never take the accent surface.
                     color: option.disabled
                         ? theme.textSecondaryColor
-                        : isSelected
-                          ? selectedRowText
-                          : optionTextColor,
-                    background: isSelected
-                        ? selectedRowSurface
-                        : isActiveRow
-                          ? hoverRowWash
-                          : "transparent",
+                        : optionTextColor,
+                    background:
+                        !option.disabled && isActiveRow
+                            ? hoverRowWash
+                            : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -12116,8 +12162,34 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
                 }}
             >
+                <span
+                    aria-hidden="true"
+                    style={{
+                        width: 16,
+                        height: 16,
+                        flexShrink: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: isSelected ? selectedRowSurface : "transparent",
+                        transition: reducedMotion ? "none" : "color 0.12s ease",
+                    }}
+                >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path
+                            d="M3 8.5l3.5 3.5L13 4.5"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                    </svg>
+                </span>
                 {option.label}
             </li>
         )
@@ -12208,23 +12280,34 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     />
                 </svg>
             </div>
-            {open && menuRect && typeof document !== "undefined"
-                ? // Dual @types/react copies in the editor disagree on the
-                  (ReactDOM.createPortal(
-                      <ul
-                          ref={menuRef}
-                          id={listboxDomId}
-                          role="listbox"
-                          aria-label={field.label}
-                          className="be-select-scroll"
-                          tabIndex={-1}
-                          style={menuSurfaceStyle}
-                      >
-                          {opts.map(renderRow)}
-                      </ul>,
-                      document.body
-                  ) as unknown as React.ReactNode)
-                : null}
+            {/* BE-123: same enter/exit pattern as the multiselect menu. */}
+            <AnimatePresence>
+                {open && menuRect && typeof document !== "undefined"
+                    ? // Dual @types/react copies in the editor disagree on the
+                      (ReactDOM.createPortal(
+                          <motion.ul
+                              ref={menuRef}
+                              id={listboxDomId}
+                              role="listbox"
+                              aria-label={field.label}
+                              className="be-select-scroll"
+                              tabIndex={-1}
+                              style={menuSurfaceStyle}
+                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{
+                                  opacity: 0,
+                                  y: reducedMotion ? 0 : -4,
+                                  pointerEvents: "none" as const,
+                              }}
+                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
+                          >
+                              {opts.map(renderRow)}
+                          </motion.ul>,
+                          document.body
+                      ) as unknown as React.ReactNode)
+                    : null}
+            </AnimatePresence>
         </div>
     )
 })
@@ -12648,8 +12731,11 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     {dialEdit !== null ? (
                         // BE-113: same fixed 22×16 slot as the flag — a 16px
                         // globe swapping in used to shrink the trigger.
-                        <span
+                        <motion.span
                             aria-hidden="true"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.14, ease: "easeOut" }}
                             style={{
                                 width: 22,
                                 height: 16,
@@ -12675,9 +12761,25 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                 <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
                                 <path d="M2 12h20" />
                             </svg>
-                        </span>
+                        </motion.span>
                     ) : (
-                        <PhoneFlag key={country[0]} iso={country[0]} />
+                        <motion.span
+                            key={country[0]}
+                            aria-hidden="true"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.14, ease: "easeOut" }}
+                            style={{
+                                width: 22,
+                                height: 16,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <PhoneFlag iso={country[0]} />
+                        </motion.span>
                     )}
                     {/* BE-089: unfold-more affordance (author-supplied paths,
                         both chevrons filled solid — the source file's upper
@@ -12733,12 +12835,15 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     }}
                 >
                 {dialEdit !== null ? (
-                    <input
+                    <motion.input
                         ref={dialEditRef}
                         aria-label="Country calling code"
                         type="text"
                         inputMode="tel"
                         value={dialEdit}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.14 }}
                         onChange={(e) => onDialEditChange(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === "Escape") {
@@ -12765,8 +12870,12 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         }}
                     />
                 ) : (
-                    <span
+                    <motion.span
+                        key={country[2]}
                         aria-hidden="true"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.14 }}
                         style={{
                             alignSelf: "stretch",
                             display: "inline-flex",
@@ -12783,7 +12892,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         }}
                     >
                         +{country[2]}
-                    </span>
+                    </motion.span>
                 )}
                 <input
                     ref={nationalRef}
@@ -12826,20 +12935,30 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                 </div>
                 <input type="hidden" name={field.calFieldId || field.id} value={full} />
             </div>
-            {open && typeof document !== "undefined"
-                ? (ReactDOM.createPortal(
-                      <div
-                          ref={menuRef}
-                          role="dialog"
-                          aria-label={`${field.label} country code`}
-                          style={{
-                              ...menuSurfaceStyle,
-                              padding: 4,
-                              display: "flex",
-                              flexDirection: "column",
-                              overflow: "hidden",
-                          }}
-                      >
+            {/* BE-123: same enter/exit pattern as the select menus. */}
+            <AnimatePresence>
+                {open && typeof document !== "undefined"
+                    ? (ReactDOM.createPortal(
+                          <motion.div
+                              ref={menuRef}
+                              role="dialog"
+                              aria-label={`${field.label} country code`}
+                              style={{
+                                  ...menuSurfaceStyle,
+                                  padding: 4,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  overflow: "hidden",
+                              }}
+                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{
+                                  opacity: 0,
+                                  y: reducedMotion ? 0 : -4,
+                                  pointerEvents: "none" as const,
+                              }}
+                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
+                          >
                           {/* BE-088: plain search row — icon + borderless input, no
                               box-in-box. Autofocus stays (typing works on
                               open); no visible ring (no be-input class). */}
@@ -12967,7 +13086,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                                         : "transparent",
                                                   transition: reducedMotion
                                                       ? "none"
-                                                      : "background-color 0.15s ease",
+                                                      : "background-color 0.15s ease, color 0.15s ease",
                                               }}
                                           >
                                               <PhoneFlag key={c[0]} iso={c[0]} />
@@ -12986,10 +13105,11 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                   })}
                               </ul>
                           )}
-                      </div>,
+                      </motion.div>,
                       document.body
                   ) as unknown as React.ReactNode)
                 : null}
+            </AnimatePresence>
         </div>
     )
 })
@@ -14147,6 +14267,7 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
     const [menuRect, setMenuRect] = React.useState<{
         left: number
         top: number
+        openBelow: boolean
     } | null>(null)
     const ix = useButtonInteraction()
 
@@ -14162,14 +14283,19 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
         const spaceBelow = viewportH - r.bottom - 8
         const openBelow = spaceBelow >= est || spaceBelow >= r.top - 8
         const top = openBelow ? r.bottom + 4 : Math.max(8, r.top - est - 4)
-        return { left, top }
+        return { left, top, openBelow }
     }, [options.length])
 
     const updatePlacement = React.useCallback(() => {
         const next = computePlacement()
         if (!next) return
         setMenuRect((prev) =>
-            prev && prev.left === next.left && prev.top === next.top ? prev : next
+            prev &&
+            prev.left === next.left &&
+            prev.top === next.top &&
+            prev.openBelow === next.openBelow
+                ? prev
+                : next
         )
     }, [computePlacement])
 
@@ -14347,14 +14473,29 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                     />
                 </svg>
             </button>
-            {open && menuRect && typeof document !== "undefined"
-                ? (ReactDOM.createPortal(
-                      <div
-                          ref={menuRef}
-                          role="menu"
-                          aria-label={triggerLabel}
-                          style={menuSurfaceStyle}
-                          onKeyDown={(event) => {
+            {/* BE-123: same enter/exit pattern; rise direction follows
+                the open side (menuRect.openBelow from computePlacement). */}
+            <AnimatePresence>
+                {open && menuRect && typeof document !== "undefined"
+                    ? (ReactDOM.createPortal(
+                          <motion.div
+                              ref={menuRef}
+                              role="menu"
+                              aria-label={triggerLabel}
+                              style={menuSurfaceStyle}
+                              initial={
+                                  reducedMotion
+                                      ? false
+                                      : { opacity: 0, y: menuRect.openBelow ? -4 : 4 }
+                              }
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{
+                                  opacity: 0,
+                                  y: reducedMotion ? 0 : menuRect.openBelow ? -4 : 4,
+                                  pointerEvents: "none" as const,
+                              }}
+                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
+                              onKeyDown={(event) => {
                               if (event.key === "Escape") {
                                   event.preventDefault()
                                   closeMenu(true)
@@ -14407,7 +14548,7 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                           background: isActiveRow ? hoverRowWash : "transparent",
                                           transition: reducedMotion
                                               ? "none"
-                                              : "background-color 0.12s ease",
+                                              : "background-color 0.12s ease, color 0.12s ease",
                                           touchAction: "manipulation",
                                           userSelect: "none",
                                           WebkitUserSelect: "none",
@@ -14426,10 +14567,11 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                   </a>
                               )
                           })}
-                      </div>,
+                      </motion.div>,
                       document.body
                   ) as unknown as React.ReactNode)
                 : null}
+            </AnimatePresence>
         </div>
     )
 })
@@ -14816,8 +14958,17 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                 }}
             >
                 {entries.map((entry, idx) => (
-                    <div
+                    <motion.div
                         key={entry.id || entry.label + idx}
+                        initial={
+                            isStaticRender || reducedMotion ? false : { opacity: 0, y: 8 }
+                        }
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                            duration: isStaticRender || reducedMotion ? 0 : 0.18,
+                            delay: isStaticRender || reducedMotion ? 0 : 0.35 + idx * 0.04,
+                            ease: "easeOut",
+                        }}
                         style={{
                             display: "flex",
                             justifyContent: "space-between",
@@ -14846,11 +14997,18 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         >
                             {entry.value}
                         </span>
-                    </div>
+                    </motion.div>
                 ))}
             </div>
 
-            <div
+            <motion.div
+                initial={isStaticRender || reducedMotion ? false : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                    duration: isStaticRender || reducedMotion ? 0 : 0.18,
+                    delay: isStaticRender || reducedMotion ? 0 : 0.35 + entries.length * 0.04,
+                    ease: "easeOut",
+                }}
                 style={{
                     display: "flex",
                     gap: 8,
@@ -14941,7 +15099,7 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                 >
                     {bookAnotherLabel}
                 </button>
-            </div>
+            </motion.div>
         </div>
     )
 })

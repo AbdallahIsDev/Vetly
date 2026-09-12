@@ -506,6 +506,56 @@
 
 ---
 
+### BE-122 — Single-select selected row is a check glyph, not an accent surface
+
+- **Status:** Done (2026-09-11)
+- **Description:** The single-select dropdown painted the selected option with the full primary/accent surface. The author wants no selected background — just a check glyph beside the selected option, exactly like the multiselect.
+- **Current Behavior:** (pre-fix) selected single-select row renders `selectedRowSurface` background + `selectedRowText` color.
+- **Expected Behavior:** Selected single-select rows render plain option text with the same 16px accent check span multiselect uses (accent when selected, transparent otherwise, with the same 0.12s color fade); hover wash only follows the active row.
+- **Acceptance Criteria:**
+  - [x] No accent background/text on any selected dropdown row (single + multi alike).
+  - [x] Selected single option shows the check; unselected shows none; keyboard/pointer/aria-selected semantics unchanged.
+  - [x] Multiselect check span gains the same color fade.
+- **Constraints / Must Not Do:** Do not change the check glyph paths; do not touch closed-box selected-slot styling (rule 147) or payload/validation.
+- **Related AGENTS.md Rule(s):** Rule 142 (shared sets), new menu-animation rule (BE-123 batch).
+- **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order.
+- **Implementation record (2026-09-11):** Single-select `renderRow` rebuilt as flex + check span mirroring multiselect; both check spans carry `color 0.12s ease`. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-123 — All dropdown menus animate open and close
+
+- **Status:** Done (2026-09-11)
+- **Description:** Every dropdown surface (single-select listbox, multiselect listbox, phone country dialog, calendar export menu) mounted/unmounted instantly with no enter/exit animation.
+- **Current Behavior:** (pre-fix) `{open && menuRect && createPortal(...)}` with zero opacity/position transition on all four surfaces.
+- **Expected Behavior:** All four surfaces enter with a quick fade-rise (opacity 0 to 1, 4px y, 0.14s easeOut) and fade out on close; the export menu rises from its open side; reduced motion and static renders stay instant; first render stays closed (byte-identical hydration).
+- **Acceptance Criteria:**
+  - [x] Open + close animate on all four menus; chevron rotations and row hover transitions untouched.
+  - [x] Exiting rows cannot commit/toggle (exit sets `pointerEvents: none` instantly).
+  - [x] Focus contracts unchanged (select/multiselect/phone keep trigger focus; export keeps its menuitem focus model; Escape/outside/blur close synchronously).
+- **Constraints / Must Not Do:** Do not touch rect measurement, reposition logic, portal targets, or focus management; no AnimatePresence around step containers (rule 21 governs steps only — menus are separate).
+- **Related AGENTS.md Rule(s):** Rules 21/22 (amended — menu AnimatePresence sanctioned), 134, 162.
+- **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order ("any dropdown menu must animate open and close").
+- **Implementation record (2026-09-11):** Each portal site wrapped in `AnimatePresence`; surfaces became `motion.ul`/`motion.div` with initial/animate/exit + 0.14s transition, `reducedMotion` gates, exit `pointerEvents: none`. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-124 — Component-wide instant-transition audit: smooth-animation batch 1 done, architectural batch open
+
+- **Status:** Open
+- **Description:** The author reports many component surfaces appear/disappear instantly (not only menus) and ordered 2-3 subagents to audit the whole component for instant transitions, then smooth them. Three parallel audits (menus/overlays, steps/screens, fields/buttons) returned ~35 findings.
+- **Current Behavior:** Batch 1 (this session) animates: all four menu enter/exits, select checkmark rows, choice selected-ring shadow, segmented label color, radio-dot pop, today-dot pop, month-nav buttons, slot elapsed opacity, phone/export row color, focus-ring fades (input + phone group), Booking spinner fade, multiselect chip enter pop, phone globe/flag + dial fades, field-error enter, slots-error banner enter, success detail stagger + action-row fade.
+- **Expected Behavior:** Batch 2 (open): flowStatus success/error tree crossfade; skeleton-to-content crossfades (calendar grid, time list, event info); directional month-grid slide reusing the transition variants; date-change slot-list crossfade; 12h/24h label crossfade; non-directional step variants honoring Back/Forward; progress counter/pct crossfade; progress-block mount height; closed-box value text crossfade; multiselect chip exit/layout; error-screen enter + Retry state transitions; submitting opacity transitions. Each must keep hydration parity, single-announcer contracts, focus behavior, and reduced-motion instant paths.
+- **Acceptance Criteria:**
+  - [x] Three audit reports filed (menus/overlays, steps/screens, fields/buttons) with file:line per finding.
+  - [x] Batch 1 implemented with reduced-motion gates throughout and no unmount-timing changes.
+  - [ ] Batch 2 implemented under a new explicit order (architectural: unmount timing, focus, and live-region contracts at stake).
+- **Constraints / Must Not Do:** Do not animate cards-grid reflow or calendar grid geometry (pure-CSS no-measurement architecture, rules 180/192a); do not add mask fades (rule 152); do not gate submit disabled/aria on animation; no Cancel affordance ever (rule 181); step-container AnimatePresence stays banned (rule 21).
+- **Related AGENTS.md Rule(s):** Rules 21/22, 53, 64, 103, 109, 124, 135, 152, 180/192a, 181.
+- **Additional Context:** Ordered 2026-09-11 (Arabic) with explicit subagent audit (3 agents launched, all returned finding lists). Full per-finding inventory (file:line + suggested approach + constraints) lives in the session record; implementer of batch 2 should re-derive line numbers from the current file (they shift as edits land).
+
+---
+
 ### BE-120 — Phone national input keeps shared padding everywhere except the left
 
 - **Status:** Done (2026-09-11)
