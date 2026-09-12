@@ -540,19 +540,20 @@
 
 ---
 
-### BE-124 — Component-wide instant-transition audit: smooth-animation batch 1 done, architectural batch open
+### BE-124 — Component-wide instant-transition audit: batches 1 + 2 done
 
-- **Status:** Open
+- **Status:** Done (2026-09-11)
 - **Description:** The author reports many component surfaces appear/disappear instantly (not only menus) and ordered 2-3 subagents to audit the whole component for instant transitions, then smooth them. Three parallel audits (menus/overlays, steps/screens, fields/buttons) returned ~35 findings.
 - **Current Behavior:** Batch 1 (this session) animates: all four menu enter/exits, select checkmark rows, choice selected-ring shadow, segmented label color, radio-dot pop, today-dot pop, month-nav buttons, slot elapsed opacity, phone/export row color, focus-ring fades (input + phone group), Booking spinner fade, multiselect chip enter pop, phone globe/flag + dial fades, field-error enter, slots-error banner enter, success detail stagger + action-row fade.
 - **Expected Behavior:** Batch 2 (open): flowStatus success/error tree crossfade; skeleton-to-content crossfades (calendar grid, time list, event info); directional month-grid slide reusing the transition variants; date-change slot-list crossfade; 12h/24h label crossfade; non-directional step variants honoring Back/Forward; progress counter/pct crossfade; progress-block mount height; closed-box value text crossfade; multiselect chip exit/layout; error-screen enter + Retry state transitions; submitting opacity transitions. Each must keep hydration parity, single-announcer contracts, focus behavior, and reduced-motion instant paths.
 - **Acceptance Criteria:**
   - [x] Three audit reports filed (menus/overlays, steps/screens, fields/buttons) with file:line per finding.
   - [x] Batch 1 implemented with reduced-motion gates throughout and no unmount-timing changes.
-  - [ ] Batch 2 implemented under a new explicit order (architectural: unmount timing, focus, and live-region contracts at stake).
+  - [x] Batch 2 implemented under explicit order (2026-09-11): terminal crossfade (single-return restructure, mode="wait", opacity only), skeleton enter-fades (calendar grid directional slide + header text fade, time-list swap fade, event-info status fade), all six step variants direction-aware, progress block mount + counter/pct fades, select closed-box value fade, error-screen enter (mark scale + card/action fades).
 - **Constraints / Must Not Do:** Do not animate cards-grid reflow or calendar grid geometry (pure-CSS no-measurement architecture, rules 180/192a); do not add mask fades (rule 152); do not gate submit disabled/aria on animation; no Cancel affordance ever (rule 181); step-container AnimatePresence stays banned (rule 21).
 - **Related AGENTS.md Rule(s):** Rules 21/22, 53, 64, 103, 109, 124, 135, 152, 180/192a, 181.
 - **Additional Context:** Ordered 2026-09-11 (Arabic) with explicit subagent audit (3 agents launched, all returned finding lists). Full per-finding inventory (file:line + suggested approach + constraints) lives in the session record; implementer of batch 2 should re-derive line numbers from the current file (they shift as edits land).
+- **Implementation record — batch 2 (2026-09-11):** `useMountedOnce` hook gates every enter-only `initial` (first paint byte-identical; reduced motion via tree-wide `MotionConfig`). Terminal crossfade: success/error early returns became `successEl`/`errorEl` elements under one persistent `AnimatePresence mode="wait"` (verified zero hooks below the old returns first). Calendar grid: keyed container remount (`branch:YYYY-MM` key, render-phase direction state) with slide/fade on ready branch, skeleton instant, header text keyed fade. Time list: radiogroup keyed by date+format. Event info: status-keyed wrapper. Progress: mount height/opacity + keyed counter/pct text. Select closed-box value keyed fade. All six step variants direction-aware (`inactive` as `custom` functions). Deliberate deviations from the audit: skeleton swaps are enter-only (mode="wait" would delay content for animation); chip exit/layout dropped (exit window risks focus-on-remove + wrap measurement — enter pop stays); closed-box value animates after all (sync enter-only, zero typing delay — rule 198 amended). Full-file tsc clean; biome at the pre-existing baseline.
 
 ---
 

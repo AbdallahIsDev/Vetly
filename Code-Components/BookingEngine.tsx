@@ -922,6 +922,19 @@ function Skeleton({
     )
 }
 
+// BE-124 batch 2: enter-only animations must never play on the first
+// paint (server/prerender/first-client must stay byte-identical), so keyed
+// motion elements gate `initial` on this mount flag. Effect-based, hence
+// StrictMode-safe; reduced motion itself is covered tree-wide by
+// MotionConfig reducedMotion="user" at RootShell.
+function useMountedOnce(): boolean {
+    const [mounted, setMounted] = React.useState(false)
+    React.useEffect(() => {
+        setMounted(true)
+    }, [])
+    return mounted
+}
+
 // SEGMENTED-MOTION (BE-090): tree-wide thumb motion prefs for the shared
 // SegmentedControl (12h/24h toggle + segmented choice variant). Context — not
 // props — so both consumers stay in sync without drilling through calendar and
@@ -2241,6 +2254,32 @@ const CalendarGrid = React.memo(function CalendarGrid({
         : "be-calendar-grid-label"
     const [hoveredNav, setHoveredNav] = React.useState<"prev" | "next" | null>(null)
     const gridReducedMotion = useReducedMotion() ?? false
+    // BE-124 batch 2: directional month slide with zero remount risk beyond
+    // what month changes already do (cells remount by dateKey today). The
+    // render-phase adjust pattern is StrictMode-safe; first paint never
+    // animates; skeleton branch always appears instantly.
+    const gridLoading = !clockReady || slotsLoading
+    const gridMonthKey = `${gridLoading ? "loading" : "ready"}:${visibleMonth.getFullYear()}-${String(
+        visibleMonth.getMonth()
+    ).padStart(2, "0")}`
+    const [gridAnimMeta, setGridAnimMeta] = React.useState({
+        key: gridMonthKey,
+        dir: 0,
+        first: true,
+    })
+    if (gridAnimMeta.key !== gridMonthKey) {
+        const prevMonth = gridAnimMeta.key.slice(gridAnimMeta.key.indexOf(":") + 1)
+        const nextMonth = gridMonthKey.slice(gridMonthKey.indexOf(":") + 1)
+        setGridAnimMeta({
+            key: gridMonthKey,
+            dir: nextMonth === prevMonth ? 0 : nextMonth > prevMonth ? 1 : -1,
+            first: false,
+        })
+    }
+    const gridEnter =
+        !gridAnimMeta.first && !gridLoading && !gridReducedMotion
+            ? { opacity: 0, x: gridAnimMeta.dir * 20 }
+            : false
     const rows: React.ReactNode[] = []
     const weeksToRender = weeksInMonthView(
         visibleMonth.getFullYear(),
@@ -2358,6 +2397,16 @@ const CalendarGrid = React.memo(function CalendarGrid({
                         }}
                     >
                         <output aria-live="polite" aria-atomic="true">
+                            <motion.span
+                                key={clockReady ? `${monthName}-${yearLabel}` : "loading"}
+                                initial={
+                                    !gridAnimMeta.first && clockReady && !gridReducedMotion
+                                        ? { opacity: 0 }
+                                        : false
+                                }
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.16 }}
+                            >
                             {clockReady ? (
                                 monthName
                             ) : (
@@ -2397,6 +2446,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
                                     />
                                 )}
                             </span>
+                            </motion.span>
                         </output>
                     </h3>
                 </div>
@@ -2499,9 +2549,13 @@ const CalendarGrid = React.memo(function CalendarGrid({
             {/* biome-ignore lint/a11y/useSemanticElements: CSS-grid calendar with the
                W3C grid role pattern — native <table> markup cannot host the
                display:grid / display:contents layout this component uses. */}
-            <div
+            <motion.div
+                key={gridAnimMeta.key}
                 role="grid"
                 aria-labelledby={gridLabelId}
+                initial={gridEnter}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
@@ -2535,7 +2589,7 @@ const CalendarGrid = React.memo(function CalendarGrid({
                     ))}
                 </div>
                 {rows}
-            </div>
+            </motion.div>
         </>
     )
 })
@@ -2787,6 +2841,9 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
         slotError,
         slotErrorId,
     } = props
+    // BE-124 batch 2: day/format swaps replay a soft fade; first paint and
+    // loading skeletons stay instant.
+    const slotMounted = useMountedOnce()
     const firstNonElapsedIndex = React.useMemo(
         () => timeOptions.findIndex((time) => !isTimeElapsed(time)),
         [timeOptions, isTimeElapsed]
@@ -3061,8 +3118,12 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                     ) : timeOptions.length === 0 ? (
                         <div style={{ padding: "8px 0" }} />
                     ) : (
-                        <div
+                        <motion.div
+                            key={`${selectedDate ? selectedDate.getTime() : "none"}-${activeTimeFormat}`}
                             ref={slotGridRef}
+                            initial={slotMounted ? { opacity: 0, y: 8 } : false}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
                             style={{
                                 display: "grid",
                                 gridTemplateColumns: "minmax(0, 1fr)",
@@ -3159,7 +3220,7 @@ const TimeSlotList = React.memo(function TimeSlotList(props: TimeSlotListProps) 
                                     />
                                 )
                             })}
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             </div>
@@ -3916,6 +3977,8 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
 
     const [clockReady, setClockReady] = React.useState(false)
     const [today, setToday] = React.useState<Date>(() => HYDRATION_PLACEHOLDER_TODAY)
+    // BE-124 batch 2: mount gate for the event-info enter fade.
+    const metaMounted = useMountedOnce()
     const beInteractive = useBeInteractive()
     useIsomorphicLayoutEffect(() => {
         if (!beInteractive) return
@@ -4393,6 +4456,12 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                         }}
                     >
                         {eventMetaStatus === "ready" && eventMeta ? (
+                            <motion.div
+                                key="ready"
+                                initial={metaMounted ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.18, ease: "easeOut" }}
+                            >
                             <CalEventInfoPanel
                                 meta={eventMeta}
                                 fallbackDurationMinutes={eventMetaFallbackDurationMinutes}
@@ -4404,7 +4473,14 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                                 hourSuffix={hourSuffix}
                                 minuteSuffix={minuteSuffix}
                             />
+                            </motion.div>
                         ) : eventMetaStatus === "failed" ? (
+                            <motion.div
+                                key="failed"
+                                initial={metaMounted ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.18, ease: "easeOut" }}
+                            >
                             <div
                                 style={{
                                     fontSize: 13,
@@ -4414,6 +4490,7 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                             >
                                 {calEventMetaUnavailableCopy}
                             </div>
+                            </motion.div>
                         ) : (
                             <div
                                 aria-hidden="true"
@@ -7055,16 +7132,26 @@ const TRANSITION_VARIANT_DEFS: Record<
     fadeRise: {
         variants: {
             active: { opacity: 1, y: 0 },
-            inactive: { opacity: 0, y: 8 },
+            inactive: (custom: number) => ({
+                opacity: 0,
+                y: custom > 0 ? -8 : 8,
+            }),
         },
         transition: { duration: 0.32, ease: [0.25, 0.1, 0.25, 1] } as Transition,
+        useDirection: true,
     },
     blurScale: {
         variants: {
             active: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" },
-            inactive: { opacity: 0, scale: 0.95, y: 0, filter: "blur(4px)" },
+            inactive: (custom: number) => ({
+                opacity: 0,
+                scale: 0.95,
+                y: custom > 0 ? -6 : 6,
+                filter: "blur(4px)",
+            }),
         },
         transition: { type: "spring", stiffness: 320, damping: 28, mass: 0.9 } as Transition,
+        useDirection: true,
     },
     slide: {
         variants: {
@@ -7081,9 +7168,13 @@ const TRANSITION_VARIANT_DEFS: Record<
     zoom: {
         variants: {
             active: { opacity: 1, scale: 1 },
-            inactive: { opacity: 0, scale: 0.92 },
+            inactive: (custom: number) => ({
+                opacity: 0,
+                scale: custom > 0 ? 0.94 : 0.9,
+            }),
         },
         transition: { type: "spring", stiffness: 360, damping: 26 } as Transition,
+        useDirection: true,
     },
     verticalSlide: {
         variants: {
@@ -9217,6 +9308,9 @@ export default function BookingEngine(props: BookingEngineProps) {
     // the active step's measured height (null = natural height, the pre-mount and
     // prerender state, so hydration stays byte-identical).
     const [formHeight, setFormHeight] = React.useState<number | null>(null)
+    // BE-124 batch 2: mount gate for enter-only animations (flow crossfade,
+    // progress block) — first paint stays identical everywhere.
+    const mountedOnce = useMountedOnce()
     const {
         activeSteps,
         availableDates,
@@ -9496,9 +9590,12 @@ export default function BookingEngine(props: BookingEngineProps) {
         )
     }
 
-    if (flowStatus === "success") {
-        return (
-            <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
+    // BE-124 batch 2: terminal screens are elements, not early returns —
+    // one persistent AnimatePresence at the final return crossfades
+    // form ⇄ success/error (mode="wait", opacity only; height still snaps).
+    const successEl: React.ReactNode =
+        flowStatus === "success" ? (
+            (
                 <SuccessScreen
                     steps={activeSteps}
                     values={values}
@@ -9537,12 +9634,11 @@ export default function BookingEngine(props: BookingEngineProps) {
                     transitionVariant={resolvedTransitionVariant}
                     baseTransition={stepTransition}
                 />
-            </RootShell>
-        )
-    }
-    if (flowStatus === "error") {
-        return (
-            <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
+            )
+        ) : null
+    const errorEl: React.ReactNode =
+        flowStatus === "error" ? (
+            (
                 <ErrorScreen
                     message={submitError || copy.errorFallbackMessage}
                     errorColor={theme.errorColor}
@@ -9563,9 +9659,8 @@ export default function BookingEngine(props: BookingEngineProps) {
                     retryAnimate={animateIx}
                     actionJustify={terminalActionJustify}
                 />
-            </RootShell>
-        )
-    }
+            )
+        ) : null
     const backButtonEl = !isFirst ? (
         <button
             type="button"
@@ -9688,6 +9783,35 @@ export default function BookingEngine(props: BookingEngineProps) {
     )
     return (
         <RootShell rootRef={engineRootRef} style={style} fontStack={fontStack}>
+            <AnimatePresence mode="wait" initial={false}>
+                {successEl || errorEl ? (
+                    <motion.div
+                        key={flowStatus}
+                        initial={
+                            !mountedOnce || prefersReducedMotion ? false : { opacity: 0 }
+                        }
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{
+                            duration: prefersReducedMotion ? 0 : 0.16,
+                            ease: "easeOut",
+                        }}
+                    >
+                        {flowStatus === "success" ? successEl : errorEl}
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="flow"
+                        initial={
+                            !mountedOnce || prefersReducedMotion ? false : { opacity: 0 }
+                        }
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{
+                            duration: prefersReducedMotion ? 0 : 0.16,
+                            ease: "easeOut",
+                        }}
+                    >
             {/* SEGMENTED-MOTION (BE-090): tree-wide thumb motion prefs. */}
             <SegmentedMotionContext.Provider value={segmentedMotion}>
             <output
@@ -9778,7 +9902,12 @@ export default function BookingEngine(props: BookingEngineProps) {
                 : null}
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
-                <div style={{ marginBottom: sectionSpacing.progress }}>
+                <motion.div
+                    initial={mountedOnce ? { opacity: 0, height: 0 } : false}
+                    animate={{ opacity: 1, height: "auto" }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    style={{ marginBottom: sectionSpacing.progress, overflow: "hidden" }}
+                >
                     {progressShowTextContent && stepCountPosition === "top" ? (
                         <div
                             style={{
@@ -9795,10 +9924,22 @@ export default function BookingEngine(props: BookingEngineProps) {
                             }}
                             aria-hidden="true"
                         >
-                            <span>{counterText}</span>
-                            <span>
+                            <motion.span
+                                key={counterText}
+                                initial={mountedOnce ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.14 }}
+                            >
+                                {counterText}
+                            </motion.span>
+                            <motion.span
+                                key={completePct}
+                                initial={mountedOnce ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.14 }}
+                            >
                                 {copy.stepProgressLabel.replace("{pct}", String(completePct))}
-                            </span>
+                            </motion.span>
                         </div>
                     ) : null}
                     {progressVisible && progressBarStyle === "dashed" ? (
@@ -9899,13 +10040,25 @@ export default function BookingEngine(props: BookingEngineProps) {
                             }}
                             aria-hidden="true"
                         >
-                            <span>{counterText}</span>
-                            <span>
+                            <motion.span
+                                key={counterText}
+                                initial={mountedOnce ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.14 }}
+                            >
+                                {counterText}
+                            </motion.span>
+                            <motion.span
+                                key={completePct}
+                                initial={mountedOnce ? { opacity: 0 } : false}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.14 }}
+                            >
                                 {copy.stepProgressLabel.replace("{pct}", String(completePct))}
-                            </span>
+                            </motion.span>
                         </div>
                     ) : null}
-                </div>
+                </motion.div>
             ) : null}
 
             <motion.form
@@ -10122,6 +10275,9 @@ export default function BookingEngine(props: BookingEngineProps) {
 }
 `}</style>
             </SegmentedMotionContext.Provider>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </RootShell>
     )
 }
@@ -11907,6 +12063,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
           ? getFirstNonEmptyOption(opts)
           : storedValue
     const selectedOption = opts.find((o) => optionValue(o) === displayValue)
+    // BE-124 batch 2: mount gate for the closed-box value fade.
+    const selectMounted = useMountedOnce()
 
     React.useEffect(() => {
         if (!beInteractive) return
@@ -12251,7 +12409,14 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                 {/* BE-112: nbsp strut when no option exists to display (NOT a
                     placeholder feature — rule 133 stands; an empty closed box
                     has no line box and collapses to the 23px floor). */}
-                {selectedOption?.label ?? " "}
+                <motion.span
+                    key={displayValue ?? "empty"}
+                    initial={selectMounted ? { opacity: 0 } : false}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.12 }}
+                >
+                    {selectedOption?.label ?? " "}
+                </motion.span>
                 <svg
                     width="16"
                     height="16"
@@ -15182,7 +15347,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         maxWidth: 520,
                     }}
                 >
-                    <div
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
                         style={{
                             width: ERROR_ICON_SIZE,
                             height: ERROR_ICON_SIZE,
@@ -15201,7 +15369,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         aria-hidden="true"
                     >
                         !
-                    </div>
+                    </motion.div>
                     <div>
                         <h2
                             ref={headingRef}
@@ -15238,7 +15406,10 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         </div>
                     </div>
                 </div>
-                <div
+                <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
                     style={{
                         padding: "14px 18px",
                         borderRadius: borderRadius,
@@ -15254,8 +15425,11 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                     }}
                 >
                     {message}
-                </div>
-                <div
+                </motion.div>
+                <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18, delay: 0.08, ease: "easeOut" }}
                     style={{
                         display: "flex",
                         gap: 8,
@@ -15281,8 +15455,8 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                         }}
                     >
                         {retryLabel}
-                    </button>
-                </div>
+                        </button>
+                </motion.div>
             </div>
         </div>
     )
