@@ -4664,6 +4664,13 @@ interface StepConfig {
 interface BookingEngineStyleProps {
     style?: React.CSSProperties
     styles: {
+        // BE-118: the three header rows live in the Header subgroup now;
+        // the flat keys stay as readable legacy carriers (rule-116 contract).
+        header?: {
+            contentAlignment?: "left" | "center" | "right"
+            font?: FramerFont
+            headingFont?: FramerFont
+        }
         contentAlignment?: "left" | "center" | "right"
         accentColor: string
         accentForegroundColor: string
@@ -7333,8 +7340,9 @@ function useBookingEngineState(
         [thumbStiffness, thumbDamping]
     )
 
-    const font = styles.font ?? typography?.font ?? props.font
-    const headingFont = styles.headingFont ?? typography?.headingFont ?? props.headingFont
+    const font = styles.header?.font ?? styles.font ?? typography?.font ?? props.font
+    const headingFont =
+        styles.header?.headingFont ?? styles.headingFont ?? typography?.headingFont ?? props.headingFont
 
     const instanceIdProp = advanced?.instanceId ?? props.instanceId ?? ""
 
@@ -9012,7 +9020,10 @@ function useBookingEngineState(
               : "flex-end"
         : undefined
     const contentAlignmentRaw =
-        styles?.contentAlignment ?? header?.contentAlignment ?? header?.terminalAlignment
+        styles?.header?.contentAlignment ??
+        styles?.contentAlignment ??
+        header?.contentAlignment ??
+        header?.terminalAlignment
     const terminalAlignment: "left" | "center" | "right" = isStepAlignment(contentAlignmentRaw)
         ? contentAlignmentRaw
         : "left"
@@ -15828,38 +15839,47 @@ addPropertyControls(BookingEngine, {
         icon: "color",
         buttonTitle: "Styles",
         controls: {
-            contentAlignment: {
-                type: ControlType.Enum,
-                title: "Text Align",
-                options: ["left", "center", "right"],
-                optionTitles: ["Left", "Center", "Right"],
-                defaultValue: "left",
-                displaySegmentedControl: true,
-            },
-            headingFont: {
-                type: ControlType.Font,
-                title: "Head Font",
-                controls: "extended",
-                defaultFontType: "sans-serif",
-                defaultValue: {
-                    fontSize: "22px",
-                    variant: "Bold",
-                    letterSpacing: "0em",
-                    lineHeight: "1.2em",
-                    textAlign: "left",
-                },
-            },
-            font: {
-                type: ControlType.Font,
-                title: "Body Font",
-                controls: "extended",
-                defaultFontType: "sans-serif",
-                defaultValue: {
-                    fontSize: "14px",
-                    variant: "Regular",
-                    letterSpacing: "0em",
-                    lineHeight: "1.5em",
-                    textAlign: "left",
+            // BE-118: Text Align + Head Font + Body Font are one
+            // Header item opening a submenu (same rows/values, new nesting).
+            header: {
+                type: ControlType.Object,
+                title: "Header",
+                buttonTitle: "Header",
+                controls: {
+                    contentAlignment: {
+                        type: ControlType.Enum,
+                        title: "Text Align",
+                        options: ["left", "center", "right"],
+                        optionTitles: ["Left", "Center", "Right"],
+                        defaultValue: "left",
+                        displaySegmentedControl: true,
+                    },
+                    headingFont: {
+                        type: ControlType.Font,
+                        title: "Head Font",
+                        controls: "extended",
+                        defaultFontType: "sans-serif",
+                        defaultValue: {
+                            fontSize: "22px",
+                            variant: "Bold",
+                            letterSpacing: "0em",
+                            lineHeight: "1.2em",
+                            textAlign: "left",
+                        },
+                    },
+                    font: {
+                        type: ControlType.Font,
+                        title: "Body Font",
+                        controls: "extended",
+                        defaultFontType: "sans-serif",
+                        defaultValue: {
+                            fontSize: "14px",
+                            variant: "Regular",
+                            letterSpacing: "0em",
+                            lineHeight: "1.5em",
+                            textAlign: "left",
+                        },
+                    },
                 },
             },
             fieldStyles: {

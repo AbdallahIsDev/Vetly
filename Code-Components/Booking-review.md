@@ -471,3 +471,36 @@
 - **Additional Context:** Reported 2026-09-11 (Arabic) as a varying 2-7px gap; proven by measurement, not theory.
 - **Implementation record (2026-09-11):** Two one-line additions (multiselect + single-select trigger roots). Biome at the pre-existing baseline.
 
+---
+
+### BE-118 — Header rows grouped into one Header submenu
+
+- **Status:** Done (2026-09-11)
+- **Description:** The three header-related Styles rows (Text Align, Head Font, Body Font) sat as three separate top-level items. The author ordered them grouped into one item that opens a submenu holding all three, named Header.
+- **Current Behavior:** (pre-fix) contentAlignment (Text Align), headingFont (Head Font), font (Body Font) are three sibling rows under Styles.
+- **Expected Behavior:** One Styles Header item opens a submenu with the same three rows (same titles, types, options, defaults). Stored flat values keep rendering via legacy fallback; new picks store under the header subgroup.
+- **Acceptance Criteria:**
+  - [x] Panel shows one Header item; opening it reveals Text Align + Head Font + Body Font with unchanged defaults.
+  - [x] Pre-grouping canvases render byte-identically (legacy fallback chains).
+  - [x] No other control moved, renamed, or re-defaulted.
+- **Constraints / Must Not Do:** Do not change types/titles/defaults/options (nesting only, rule-116 contract); do not drop the flat legacy reads; Body Font scope is unchanged (it still drives all body copy, not only headers).
+- **Related AGENTS.md Rule(s):** Rules 116, 125, 130, 172 (amended — Header nesting).
+- **Additional Context:** Ordered 2026-09-11 (Arabic) with a Styles-panel screenshot showing the three rows.
+- **Implementation record (2026-09-11):** styles.header subgroup added (interface + controls); resolutions prepend the header path before the flat/typography/prop chains. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-119 — Select/multiselect height gap returns on Field Styles activation (re-test after BE-117 sync)
+
+- **Status:** Open
+- **Description:** With default styles the select/multiselect height matches text inputs, but merely activating (opening) the shared Field Styles submenu — changing nothing — brings the height gap back.
+- **Current Behavior:** Gap is absent on defaults and appears right after Field Styles activation, with no value edited.
+- **Expected Behavior:** Activating Field Styles without editing values renders byte-identically (effective-default initialization); select/multiselect closed boxes match text-input height in every font state.
+- **Acceptance Criteria:**
+  - [ ] Fresh text + select + multiselect fields match heights before AND after Field Styles activation (no edits).
+  - [ ] Re-test only after the canvas runs code at or after BE-117; attach a new screenshot if the gap persists.
+  - [ ] If it persists post-sync on fresh fields, record the canvas Body Font value and whether the diverging field is old (stored legacy carriers) or fresh.
+- **Constraints / Must Not Do:** Do not hardcode heights or line-heights; do not strip stored per-field legacy carriers (rule 154 contract); do not add activation-driven reset effects.
+- **Related AGENTS.md Rule(s):** Rules 87, 90, 93, 96, 98, 154, BE-117 entry, Rule 130.
+- **Additional Context:** Reported 2026-09-11 (Arabic). Root-cause analysis: pre-BE-117 trigger roots inherited the root computed px line-height while inputs computed their own normal; defaults coincided, but activation materializes the Field Font row (Framer fills a concrete lineHeight), so inputs recompute from their own font while triggers kept inheriting the root value — the gap. BE-117 pins both sides to the identical rule, which in-browser measurement proved equal (38px = 38px), and every Field Styles row already carries its effective default — so on current code activation cannot diverge shared-key geometry. The report was filed while BE-092..BE-117 were still uncommitted working-tree edits, so the canvas under test predates the fix. If a single OLD field still diverges post-sync, its hidden stored legacy carriers differ from its siblings (per-field Styles controls are removed, so delete + re-add that field to clear them).
+
