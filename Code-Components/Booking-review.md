@@ -537,6 +537,7 @@
 - **Related AGENTS.md Rule(s):** Rules 21/22 (amended — menu AnimatePresence sanctioned), 134, 162.
 - **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order ("any dropdown menu must animate open and close").
 - **Implementation record (2026-09-11):** Each portal site wrapped in `AnimatePresence`; surfaces became `motion.ul`/`motion.div` with initial/animate/exit + 0.14s transition, `reducedMotion` gates, exit `pointerEvents: none`. Full-file tsc clean; biome at the pre-existing baseline.
+- **Follow-up fix (2026-09-11, same day):** all four menus stopped opening entirely after the first shape. Root cause: the portal itself was the direct child of `AnimatePresence` (presence tracking over portal objects proved unreliable in the Framer runtime). Restructured to the textbook pattern — persistent portal, `AnimatePresence` *inside*, keyed `motion` surface — with zero logic/focus/rect changes. If menus ever regress again, the documented fallback is enter-only motion (drop the menu `AnimatePresence`, close becomes instant).
 
 ---
 

@@ -11971,37 +11971,43 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                 </svg>
             </div>
             {/* BE-123: menus enter/exit with a quick fade-rise (all four
-                dropdown surfaces share this pattern). Exit sets
+                dropdown surfaces share this pattern: persistent portal,
+                AnimatePresence inside, keyed motion surface). Exit sets
                 pointerEvents none instantly so rows die with the close
                 while the fade plays; reduced motion stays instant. */}
-            <AnimatePresence>
-                {open && menuRect && typeof document !== "undefined"
-                    ? // Dual @types/react copies in the editor disagree on the
-                      (ReactDOM.createPortal(
-                          <motion.ul
-                              ref={menuRef}
-                              id={listboxDomId}
-                              role="listbox"
-                              aria-multiselectable="true"
-                              aria-label={field.label}
-                              className="be-select-scroll"
-                              tabIndex={-1}
-                              style={menuSurfaceStyle}
-                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{
-                                  opacity: 0,
-                                  y: reducedMotion ? 0 : -4,
-                                  pointerEvents: "none" as const,
-                              }}
-                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
-                          >
-                              {opts.map(renderRow)}
-                          </motion.ul>,
-                          document.body
-                      ) as unknown as React.ReactNode)
-                    : null}
-            </AnimatePresence>
+            {typeof document !== "undefined"
+                ? ReactDOM.createPortal(
+                      <AnimatePresence>
+                          {open && menuRect ? (
+                              <motion.ul
+                                  key="menu"
+                                  ref={menuRef}
+                                  id={listboxDomId}
+                                  role="listbox"
+                                  aria-multiselectable="true"
+                                  aria-label={field.label}
+                                  className="be-select-scroll"
+                                  tabIndex={-1}
+                                  style={menuSurfaceStyle}
+                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{
+                                      opacity: 0,
+                                      y: reducedMotion ? 0 : -4,
+                                      pointerEvents: "none" as const,
+                                  }}
+                                  transition={{
+                                      duration: reducedMotion ? 0 : 0.14,
+                                      ease: "easeOut",
+                                  }}
+                              >
+                                  {opts.map(renderRow)}
+                              </motion.ul>
+                          ) : null}
+                      </AnimatePresence>,
+                      document.body
+                  )
+                : null}
         </div>
     )
 })
@@ -12442,33 +12448,38 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                 </svg>
             </div>
             {/* BE-123: same enter/exit pattern as the multiselect menu. */}
-            <AnimatePresence>
-                {open && menuRect && typeof document !== "undefined"
-                    ? // Dual @types/react copies in the editor disagree on the
-                      (ReactDOM.createPortal(
-                          <motion.ul
-                              ref={menuRef}
-                              id={listboxDomId}
-                              role="listbox"
-                              aria-label={field.label}
-                              className="be-select-scroll"
-                              tabIndex={-1}
-                              style={menuSurfaceStyle}
-                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{
-                                  opacity: 0,
-                                  y: reducedMotion ? 0 : -4,
-                                  pointerEvents: "none" as const,
-                              }}
-                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
-                          >
-                              {opts.map(renderRow)}
-                          </motion.ul>,
-                          document.body
-                      ) as unknown as React.ReactNode)
-                    : null}
-            </AnimatePresence>
+            {typeof document !== "undefined"
+                ? ReactDOM.createPortal(
+                      <AnimatePresence>
+                          {open && menuRect ? (
+                              <motion.ul
+                                  key="menu"
+                                  ref={menuRef}
+                                  id={listboxDomId}
+                                  role="listbox"
+                                  aria-label={field.label}
+                                  className="be-select-scroll"
+                                  tabIndex={-1}
+                                  style={menuSurfaceStyle}
+                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{
+                                      opacity: 0,
+                                      y: reducedMotion ? 0 : -4,
+                                      pointerEvents: "none" as const,
+                                  }}
+                                  transition={{
+                                      duration: reducedMotion ? 0 : 0.14,
+                                      ease: "easeOut",
+                                  }}
+                              >
+                                  {opts.map(renderRow)}
+                              </motion.ul>
+                          ) : null}
+                      </AnimatePresence>,
+                      document.body
+                  )
+                : null}
         </div>
     )
 })
@@ -13097,29 +13108,34 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                 <input type="hidden" name={field.calFieldId || field.id} value={full} />
             </div>
             {/* BE-123: same enter/exit pattern as the select menus. */}
-            <AnimatePresence>
-                {open && typeof document !== "undefined"
-                    ? (ReactDOM.createPortal(
-                          <motion.div
-                              ref={menuRef}
-                              role="dialog"
-                              aria-label={`${field.label} country code`}
-                              style={{
-                                  ...menuSurfaceStyle,
-                                  padding: 4,
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  overflow: "hidden",
-                              }}
-                              initial={reducedMotion ? false : { opacity: 0, y: -4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{
-                                  opacity: 0,
-                                  y: reducedMotion ? 0 : -4,
-                                  pointerEvents: "none" as const,
-                              }}
-                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
-                          >
+            {typeof document !== "undefined"
+                ? ReactDOM.createPortal(
+                      <AnimatePresence>
+                          {open ? (
+                              <motion.div
+                                  key="menu"
+                                  ref={menuRef}
+                                  role="dialog"
+                                  aria-label={`${field.label} country code`}
+                                  style={{
+                                      ...menuSurfaceStyle,
+                                      padding: 4,
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      overflow: "hidden",
+                                  }}
+                                  initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{
+                                      opacity: 0,
+                                      y: reducedMotion ? 0 : -4,
+                                      pointerEvents: "none" as const,
+                                  }}
+                                  transition={{
+                                      duration: reducedMotion ? 0 : 0.14,
+                                      ease: "easeOut",
+                                  }}
+                              >
                           {/* BE-088: plain search row — icon + borderless input, no
                               box-in-box. Autofocus stays (typing works on
                               open); no visible ring (no be-input class). */}
@@ -13266,11 +13282,12 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                   })}
                               </ul>
                           )}
-                      </motion.div>,
+                      </motion.div>
+                          ) : null}
+                      </AnimatePresence>,
                       document.body
-                  ) as unknown as React.ReactNode)
+                  )
                 : null}
-            </AnimatePresence>
         </div>
     )
 })
@@ -14636,27 +14653,32 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
             </button>
             {/* BE-123: same enter/exit pattern; rise direction follows
                 the open side (menuRect.openBelow from computePlacement). */}
-            <AnimatePresence>
-                {open && menuRect && typeof document !== "undefined"
-                    ? (ReactDOM.createPortal(
-                          <motion.div
-                              ref={menuRef}
-                              role="menu"
-                              aria-label={triggerLabel}
-                              style={menuSurfaceStyle}
-                              initial={
-                                  reducedMotion
-                                      ? false
-                                      : { opacity: 0, y: menuRect.openBelow ? -4 : 4 }
-                              }
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{
-                                  opacity: 0,
-                                  y: reducedMotion ? 0 : menuRect.openBelow ? -4 : 4,
-                                  pointerEvents: "none" as const,
-                              }}
-                              transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
-                              onKeyDown={(event) => {
+            {typeof document !== "undefined"
+                ? ReactDOM.createPortal(
+                      <AnimatePresence>
+                          {open && menuRect ? (
+                              <motion.div
+                                  key="menu"
+                                  ref={menuRef}
+                                  role="menu"
+                                  aria-label={triggerLabel}
+                                  style={menuSurfaceStyle}
+                                  initial={
+                                      reducedMotion
+                                          ? false
+                                          : { opacity: 0, y: menuRect.openBelow ? -4 : 4 }
+                                  }
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{
+                                      opacity: 0,
+                                      y: reducedMotion ? 0 : menuRect.openBelow ? -4 : 4,
+                                      pointerEvents: "none" as const,
+                                  }}
+                                  transition={{
+                                      duration: reducedMotion ? 0 : 0.14,
+                                      ease: "easeOut",
+                                  }}
+                                  onKeyDown={(event) => {
                               if (event.key === "Escape") {
                                   event.preventDefault()
                                   closeMenu(true)
@@ -14728,11 +14750,12 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                   </a>
                               )
                           })}
-                      </motion.div>,
+                      </motion.div>
+                          ) : null}
+                      </AnimatePresence>,
                       document.body
-                  ) as unknown as React.ReactNode)
+                  )
                 : null}
-            </AnimatePresence>
         </div>
     )
 })
