@@ -255,5 +255,219 @@
 - **Additional Context:** Reported 2026-09-11 (English) with an error-state screenshot.
 - **Implementation record (2026-09-11):** `marginLeft: -1` on the national input with rationale comment; focus `boxShadow` branches on `hasError`. Biome at the pre-existing baseline.
 - **Implementation record 2 (2026-09-11, seam revert):** The overlap hid the divider instead of protecting it — the trigger is `position: relative` and paints above the pulled-under input border, so the normal-state divider vanished (the error divider the reporter saw was the focused inset ring stacked beside the input border — identical to every other focused-invalid field, not a seam bug). Overlap removed; seam is trigger-right(0) + input-left(1px) adjacent again: exactly one divider in every state. The error-aware focus ring stays.
-- **Implementation record 3 (2026-09-11, joint-aware rings):** The error-state thickness came from the focused half's own full ring (2px) stacking against the 1px divider. Both halves now paint three-sided rings omitting the seam edge (`inset 2px 0 0 0` trigger / `inset -2px 0 0 0` input, error-aware color) — one continuous ring around the joined control, single divider preserved in every focus state.
+- **Implementation record 3 (2026-09-11, joint-aware rings):** SUPERSEDED same day (see record 4) — kept here so the dead end stays documented, not repeated.
+- **Implementation record 4 (2026-09-11, real root cause + focus cleanup):** The reporter nailed it: the trigger gained its right border exactly on the error transition because the shared `border` shorthand changed color — the browser reset the sibling `borderRightWidth` and React never re-applied the unchanged `0`. Fix: the trigger carries border longhands only (`border: undefined` + width/style/color, `borderRightWidth: 0`), so color changes touch only `borderColor`. Proven in-browser (old vs fixed side by side). All custom focus machinery deleted per author order (`triggerFocused`/`inputFocused`, gated rings, z-index): the trigger takes the global button outline, the input its `be-input` ring — zero JS, same as every other control. NOTE: a later parallel edit deleted this block from the working tree and the 2px instantly returned — restored via checkout; if the seam ever doubles again, first grep that `inputRing`/`inputFocused` are still present before theorizing.
+- **Implementation record 5 (2026-09-11, final seam architecture):** The trigger keeps the FULL shared border with zero side overrides (exactly like the select trigger) and the input tucks 1px beneath it — the divider is the trigger's own opaque right edge, so it always exists and can never double in any state. This retires the longhands workaround (no overrides left to trap) while its lesson stays recorded. Proven in-browser (error + normal screenshots, single divider both).
+
+---
+
+### BE-105 — Phone becomes 3 parts with +-first dial editing (Cal.com parity)
+
+- **Status:** Done (2026-09-11)
+- **Description:** Cal.com's phone input is three parts (flag button | muted dial text | number box), not two — the middle dial is plain muted text, never a placeholder. Typing `+` first moves entry into the middle slot; typing the code jumps back to the number box with the flag updated. Ours is rebuilt to the same sequence.
+- **Current Behavior:** (pre-fix) two parts (button + input); `+` anywhere stripped; derived dial shown as the input's placeholder.
+- **Expected Behavior:** Row renders button + muted `+{dial}` text + number input, all flush. Typing `+` into an empty number box opens dial-edit mode (mini input in the middle slot, autofocus); an exact dial match selects the country, exits the mode, and focuses the number box; Escape/clearing/blurring exits without changing anything; opening the dropdown abandons the mode. The number box placeholder is now the author's or empty (the static dial text replaces the derived placeholder).
+- **Acceptance Criteria:**
+  - [x] Middle slot always shows the current dial as muted text; typing `+` first moves typing there.
+  - [x] Typing a full code (`20`) selects the country, updates the flag, returns focus right.
+  - [x] Partial/no-match codes wait; Escape/blur/dropdown abandon cleanly; stored values/validation untouched.
+- **Constraints / Must Not Do:** No libphonenumber-style auto-formatting (dependency-free platform constraint — digits stay raw); no globe empty-state (a detected country always exists here); pasted `+` numbers keep today's fill-national behavior; no new controls.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — 3-part structure + dial-edit contract).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with three Cal.com screenshots after the reporter inspected their component; reui reference behavior folded in.
+- **Implementation record (2026-09-11):** `dialEdit` state + `nationalRef`/`dialEditRef`; `emitNational` branches to mode entry on fresh `+`; `onDialEditChange` (digits-only, max 4, canonical-first exact match → select + jump-back); autofocus-via-effect (noAutofocus-lint-safe, same pattern as menu search); middle span aria-hidden + mini input labelled; placeholder falls back to author-or-empty. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-106 — Trigger border identical to select; dial slot fixed width
+
+- **Status:** Done (2026-09-11)
+- **Description:** Two reports in one: (1) the country trigger showed no border in the normal state while the select trigger did — the trigger now carries the shared border verbatim with zero overrides, exactly like select; (2) the middle dial slot changed width per country (`+1` vs `+224`), shifting the layout on every pick.
+- **Current Behavior:** (pre-fix) trigger border resolved per-side (fragile across error transitions); dial span/input sized to content.
+- **Expected Behavior:** Trigger border byte-identical to the select/input treatment (full shared `border`, joined radii only); dial span and dial-edit box share one fixed `3em` border-box slot (fits the longest `+2244`-style code at any font size), so switching countries never moves anything.
+- **Acceptance Criteria:**
+  - [x] Trigger shows the same border as select in normal state, red in error, same width.
+  - [x] Dial slot constant width for every country and in both display/edit modes.
+- **Constraints / Must Not Do:** No side-specific border overrides on the trigger (the shorthand/longhand trap); no content-sized widths in the dial slot.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — select-identical border + fixed slot).
+- **Additional Context:** Reported 2026-09-11 (English) with a borderless-trigger screenshot; author fixed the trigger side in parallel.
+- **Implementation record (2026-09-11):** Verified the parallel trigger fix in-tree; fixed `3em` + `border-box` on span and mini (replacing the growing `ch` width). Biome at the pre-existing baseline.
+
+---
+
+### BE-107 — No generic placeholder fallbacks; empty panel means empty preview
+
+- **Status:** Done (2026-09-11)
+- **Description:** Number fields previewed `0` and text fields `Your answer` with empty panel rows. Per author order, the visitor-facing rule is now absolute author control: typed shows, empty shows nothing — on every field type.
+- **Current Behavior:** (pre-fix) `DEFAULT_PLACEHOLDER_BY_TYPE` map rendered generics for empty rows (BE-096/BE-101).
+- **Expected Behavior:** Textarea/default inputs render `field.placeholder || ""`; the map and helper are deleted (no dead code). Phone untouched (author-or-empty since BE-105).
+- **Acceptance Criteria:**
+  - [x] Empty Placeholder row previews nothing on every type; typed previews verbatim.
+  - [x] Zero references to the deleted map/helper remain.
+- **Constraints / Must Not Do:** Do not reintroduce type-default fallbacks without a new explicit order (BE-096/BE-099/BE-101 superseded openly).
+- **Related AGENTS.md Rule(s):** None new (removal only; rule 196's phone sentence already states author-or-empty).
+- **Additional Context:** Reported 2026-09-11 (Arabic): author is the sole owner of placeholder copy.
+- **Implementation record (2026-09-11):** Two render sites back to `|| ""`; map + helper + comment deleted. Biome at the pre-existing baseline.
+
+---
+
+### BE-108 — Span + input grouped in one bordered box; slot centered and full-height
+
+- **Status:** Done (2026-09-11)
+- **Description:** The middle dial span carried side padding instead of centering, never stretched to the row height, and the border lived on the input itself — three separate parts sharing edges. Per author direction the span and input are grouped in one bordered container that owns the border.
+- **Current Behavior:** (pre-fix) span `paddingRight: 4`, content-height only; input owns the full border.
+- **Expected Behavior:** One `be-phone-group` box holds span + input and owns the border (longhands only, no left edge, error-aware color, right radii, author shadow); the input inside is borderless/transparent/shadowless; the span and dial-edit box are centered in a fixed `3em` slot stretching the full row height. Group focus ring via `:focus-within` + inline `--be-group-ring` var (zero JS focus state; same pointer-active convention as inputs).
+- **Acceptance Criteria:**
+  - [x] No `paddingRight` anywhere in the middle slot; dial centered in both modes.
+  - [x] Span stretches full row height; single divider in normal and error (proven in-browser).
+  - [x] Keyboard focus shows one ring around the whole group box.
+- **Constraints / Must Not Do:** No focus JS on this control (var + stylesheet only); no border shorthand on the group (the reset trap); do not reintroduce per-element rings.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — group architecture).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with the directed fix (group owns the border).
+- **Implementation record (2026-09-11):** Group div (flex, stretch, surface bg, border longhands, radii, shadow, var); input borderless + transparent + shadowless (keeps `be-input` class for placeholder var); span/mini centered + stretch + fixed slot; constant-CSS `:focus-within` ring + pointer-active suppression. Proven in-browser (error + normal screenshots).
+
+---
+
+### BE-109 — Phone input border resurrected on error; neutralized via shorthand removal
+
+- **Status:** Done (2026-09-11)
+- **Description:** In the error state the national input painted its own 1px red border inside the group's border (double frame with square corners). Same shorthand-reset trap as the trigger: the shared `border` shorthand changed color, resetting the sibling `borderWidth: 0`, which React never re-applied.
+- **Current Behavior:** (pre-fix) input combined the changing shorthand with a constant `borderWidth: 0`.
+- **Expected Behavior:** The input carries `border: undefined` (shorthand neutralized — React never applies or changes it) plus the lone constant `borderWidth: 0`, which can never be reset by anything. Phone-only exception; every other field type keeps its own input border + radius untouched.
+- **Acceptance Criteria:**
+  - [x] No input-owned border in any state (normal, error, focused); group border is the single frame.
+  - [x] Proven in-browser: old pattern resurrects 0px→1px on color flip, fixed pattern stays 0px.
+- **Constraints / Must Not Do:** Do not put any changing shorthand above a preserved longhand on one element (the standing trap rule); phone-only.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — input neutralization).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with normal/error screenshots; reporter directed phone-only scope.
+- **Implementation record (2026-09-11):** Two-line change (`border: undefined` + existing width). Biome at the pre-existing baseline.
+
+---
+
+### BE-110 — Per-country national length cap from libphonenumber metadata
+
+- **Status:** Done (2026-09-11)
+- **Description:** The E.164-only cap (15 minus dial) allowed 13 Egyptian national digits while real Egyptian numbers max out at 10. The reporter demanded a global, non-guessed solution and pointed at Cal.com's own stack for the method.
+- **Current Behavior:** (pre-fix) national budget was `15 - dial.length` for every country.
+- **Expected Behavior:** The budget is `min(metadataMax, 15 - dialLength)` where `metadataMax` is each country's max national-significant length extracted from libphonenumber metadata (the same dataset Cal.com's phone stack is built on). Missing entries fall back to the E.164 ceiling. Egypt caps at 10; the US at 10; Germany at 13.
+- **Acceptance Criteria:**
+  - [x] Egypt national box stops at 10 digits; previously-valid entries everywhere still fit.
+  - [x] Table sourced from data, never hand-written (extraction audited: no lengths live outside int arrays; over-estimates only, never under).
+  - [x] 15 budget unit tests pass on the real extracted table + helper (including the RU/KZ 14 the reporter-class verification confirmed against source metadata).
+- **Constraints / Must Not Do:** Do not hand-tune table values; do not add a control (fixed product data); do not weaken to messages.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — per-country cap clause).
+- **Additional Context:** Reported 2026-09-11 (Arabic): country code must not eat into a global limit blindly; solution must hold for every country.
+- **Implementation record (2026-09-11):** Installed libphonenumber-js locally (temp only, never a repo dependency), brute-forced then directly extracted max possible-NSN per table ISO; `PHONE_MAX_NATIONAL` record + `phoneNationalBudget()`; `emitNational` consumes it; caught and removed one transcribed-but-absent entry (GS) during verification. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-111 — Select-all + plus enters dial-edit at once; globe while codeless
+
+- **Status:** Done (2026-09-11)
+- **Description:** Two Cal.com parities: (1) select-all + `+` must clear the number AND open dial-edit mode in one press (ours needed two — the entry guard read stale pre-event state, so the first press only cleared); (2) while a bare `+` with no recognized code sits in the middle slot, the trigger must show the globe icon instead of the stale country flag.
+- **Current Behavior:** (pre-fix) `_` + `+` → cleared number, same flag, cursor in number box; bare `+` kept the previous flag.
+- **Expected Behavior:** A bare `+` alone (empty box or select-all replacement) always opens dial-edit mode with cleared number; pasted `+...` keeps filling digits directly. Globe (author-supplied lucide paths, verbatim) replaces the flag exactly while `dialEdit !== null`.
+- **Acceptance Criteria:**
+  - [x] One press: select-all, `+` → empty number, `+` in middle, cursor blinking there.
+  - [x] Globe visible only during codeless editing; flag returns on match/abandon.
+  - [x] Paste behavior unchanged; `national` dep dropped from `emitNational`.
+- **Constraints / Must Not Do:** No icon packages (inline SVG only); do not touch match/abandon logic.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — single-press entry + globe).
+- **Additional Context:** Reported 2026-09-11 (Arabic) after probing Cal.com, with the globe SVG.
+- **Implementation record (2026-09-11):** Entry condition simplified to raw `=== "+"` (fixes its own predecessor's stale-state hole and restores paste-fill as a side effect); conditional globe/flag swap in the trigger. tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-112 — Empty select/multiselect triggers keep input height via nbsp strut
+
+- **Status:** Done (2026-09-11)
+- **Description:** An empty multiselect (or an option-less select) rendered ~19px shorter than text inputs despite sharing min-height 23px and padding. Root cause, proven in-browser across five variants: a content-less element has no line box at all, so border-box min-height floors the bare box at 23px — while any text (even nbsp) restores the full input-height line box.
+- **Current Behavior:** (pre-fix) empty triggers render zero content; `min-height: 23px` floors them at 23px total vs ~42px inputs.
+- **Expected Behavior:** Empty states render a non-breaking space (`\u00A0`, never a collapsible plain space) so the line box — and therefore the height — always matches populated fields. Multiselect keeps showing its real placeholder when set; single-select gains no placeholder feature (rule 133 stands — the nbsp is a height strut, invisible and screen-reader-neutral beside the labelled combobox).
+- **Acceptance Criteria:**
+  - [x] Empty multiselect/select match input height at every font/padding (content-driven, no hardcoded heights).
+  - [x] Populated states byte-identical; chevrons (absolute) never shift.
+- **Constraints / Must Not Do:** Do not raise trigger min-height to input height (breaks custom fonts — the reason rule 98 removed fixed heights); do not add a select placeholder control; use nbsp only, never a plain space.
+- **Related AGENTS.md Rule(s):** Rule 98 (amended — empty-trigger strut clause).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a number-vs-select screenshot; reporter correctly diagnosed the empty-div mechanism.
+- **Implementation record (2026-09-11):** Two one-line changes (multiselect empty span, select closed-box fallback) + byte-verified the character is U+00A0. Biome at the pre-existing baseline.
+
+---
+
+### BE-113 — Globe icon shares the flag's fixed slot (no layout shift)
+
+- **Status:** Done (2026-09-11)
+- **Description:** Entering dial-edit mode swapped the 22px-wide flag for the 16px globe, shrinking the trigger and shifting the row.
+- **Current Behavior:** (pre-fix) bare 16px globe svg in the trigger.
+- **Expected Behavior:** The globe renders centered inside the same fixed 22×16 slot as the flag — swapping changes pixels, never geometry.
+- **Acceptance Criteria:**
+  - [x] Flag↔globe swap moves nothing around it.
+- **Constraints / Must Not Do:** Do not resize the flag slot; do not touch match/abandon logic.
+- **Related AGENTS.md Rule(s):** Rule 196 (slot-parity clause).
+- **Additional Context:** Reported 2026-09-11 (Arabic).
+- **Implementation record (2026-09-11):** Wrapper span mirroring `PhoneFlag` geometry. Biome at the pre-existing baseline.
+
+---
+
+### BE-114 — Multiselect rows: check-only selected mark; SVG chip remove
+
+- **Status:** Done (2026-09-11)
+- **Description:** Selected multiselect dropdown rows painted the full accent surface with light text (ugly at the author's near-black accent). Per order, the sole selected indicator is now the accent-colored check over the same hover wash unselected rows get; plus the chip remove `×` text glyph becomes the author-supplied lucide X SVG (behavior unchanged — it already removed on press).
+- **Current Behavior:** (pre-fix) selected rows: accent bg + accent-foreground text + light check; chip × was a text character.
+- **Expected Behavior:** Selected rows: normal text, no background change — the accent check alone marks selection (hover wash is hover-only); unselected hovered rows show the wash transiently. Chips carry the 12px X SVG (inherits chip text color, existing press/Escape/outside behavior untouched).
+- **Acceptance Criteria:**
+  - [x] No full-accent row anywhere in the multiselect menu; selected rows carry no background at all (wash is hover-only); single-select listbox and choice options untouched (rule 158 stands there).
+  - [x] Check visible only on selected rows, in the accent surface color.
+  - [x] Chip X renders the supplied paths and still removes on press.
+- **Constraints / Must Not Do:** Do not touch single-select row styling or the shared Selected Styles vocabulary; no new controls.
+- **Related AGENTS.md Rule(s):** Rule 182 (amended — check-only indicator + SVG glyph).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a dropdown screenshot + the lucide X SVG.
+- **Implementation record (2026-09-11):** Row color/background branches rewritten (selected joins the hover-wash branch — later refined to check-only in the same entry's follow-up); check span reads the selected-surface token; chip glyph swapped (handlers byte-identical); `selectedRowText` restored after the compiler proved the chips still need it. Biome at the pre-existing baseline.
+
+---
+
+### BE-115 — Multiselect empty text uses the real placeholder color, not opacity
+
+- **Status:** Done (2026-09-11)
+- **Description:** The empty-state span faded the inherited text color to 70% opacity instead of using the placeholder color system, rendering wrong next to real input placeholders.
+- **Current Behavior:** (pre-fix) `<span style={{ opacity: 0.7 }}>`.
+- **Expected Behavior:** `color: fs.placeholderColor ?? withAlpha(textPrimary, 0.6, surface)` — the exact expression real input placeholders resolve to — at full opacity. nbsp strut untouched.
+- **Acceptance Criteria:**
+  - [x] Empty text visually matches input placeholders in every theme/style config.
+- **Constraints / Must Not Do:** Do not touch the nbsp strut or the populated states.
+- **Related AGENTS.md Rule(s):** None new (bugfix aligning to the existing system).
+- **Additional Context:** Reported 2026-09-11 (English, one line).
+- **Implementation record (2026-09-11):** One style swap; nbsp byte re-verified U+00A0 after the edit. Biome at the pre-existing baseline.
+
+---
+
+### BE-116 — Field-type change drops the orphaned value (treated as brand-new)
+
+- **Status:** Done (2026-09-11)
+- **Description:** Field ids are positional (`step-0-field-1`), so changing a field's Type orphans its stored value: a select auto-seeded with "Option 1" keeps showing "Option 1" after switching the field to text (canvas showed the stale value while preview showed the placeholder). The new type must start disconnected from the old type's data — except config like the placeholder, which always survives.
+- **Current Behavior:** (pre-fix) stored value + error persist across a type change whenever the id stays put.
+- **Expected Behavior:** The first render with a new field type drops exactly that field's value and error; placeholder and all other config untouched; single-select re-seeds naturally on switching back.
+- **Acceptance Criteria:**
+  - [x] Select→text with seeded "Option 1" renders the text placeholder immediately on canvas (no stale text).
+  - [x] Placeholder and unrelated config survive type changes verbatim.
+  - [x] Fresh loads never wipe restored autosave (first-seen ids seed silently); remounts/reorders without type change never clear.
+- **Constraints / Must Not Do:** Do not touch config on type change; do not clear on navigation/remount/restore (rules 7/13/74 stand); no new controls.
+- **Related AGENTS.md Rule(s):** Rule 13 (amended — the one type-change exception).
+- **Additional Context:** Reported 2026-09-11 (Arabic) with a canvas screenshot (stale "Option 1" in a text box beside a filled Placeholder row).
+- **Implementation record (2026-09-11):** `prevFieldTypesRef` + pre-paint layout effect over `effectiveActiveSteps`: unknown ids seed, changed ids with non-empty values delete value + error via functional setters. Full-file tsc clean; biome at the pre-existing baseline.
+
+---
+
+### BE-117 — Select/multiselect triggers pin the input line-height rule
+
+- **Status:** Done (2026-09-11)
+- **Description:** Text inputs and select/multiselect triggers differed by 2-7px (scaling with size) despite identical font/padding/border. Measured in-browser: inputs compute their own `line-height: normal` content (~16px at 14px font) while plain divs inherit the root Body `1.5em` computed to px (21px) — 38px vs 43px boxes.
+- **Current Behavior:** (pre-fix) triggers inherited whatever line-height reached them; inputs used `normal` (or the author Body value via `inputBaseStyle`).
+- **Expected Behavior:** Both trigger roots set `lineHeight: fs?.font?.lineHeight ?? "normal"` — the exact `inputBaseStyle` rule — so content heights agree at every font, with or without an author Body value. No fixed heights anywhere (height stays padding-driven); nbsp strut (BE-112) and placeholders untouched.
+- **Acceptance Criteria:**
+  - [x] Select/multiselect match text-input height with default and custom fonts/sizes.
+  - [x] Author Body line-height still flows to both sides identically.
+- **Constraints / Must Not Do:** Do not hardcode heights or line-heights; do not touch `inputBaseStyle` (inputs are the reference); choice-option variants out of scope.
+- **Related AGENTS.md Rule(s):** Rule 130 (amended — trigger line-height clause, same leak family).
+- **Additional Context:** Reported 2026-09-11 (Arabic) as a varying 2-7px gap; proven by measurement, not theory.
+- **Implementation record (2026-09-11):** Two one-line additions (multiselect + single-select trigger roots). Biome at the pre-existing baseline.
 

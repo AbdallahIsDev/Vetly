@@ -651,23 +651,6 @@ function fontPixelSize(value: string | number | undefined): number | undefined {
     return undefined
 }
 
-// BE-096: per-type default placeholders. The author's configured Placeholder
-// always wins when set; these show for empty ones. Free-text types get the
-// industry-standard generic ("Your answer"); format types get a format hint.
-// BE-099/BE-101: read with || — never-set and cleared both arrive as "" from
-// the panel (Framer materializes "" for untouched rows), so the two states
-// cannot be told apart and empty always shows the default. A single space
-// renders a visually-empty placeholder.
-const DEFAULT_PLACEHOLDER_BY_TYPE: Record<string, string> = {
-    text: "Your answer",
-    textarea: "Your answer",
-    email: "name@example.com",
-    number: "0",
-    url: "example.com",
-}
-function defaultFieldPlaceholder(fieldType: string | undefined): string {
-    return DEFAULT_PLACEHOLDER_BY_TYPE[(fieldType || "").toLowerCase()] ?? ""
-}
 function resolveFieldBorder(
     fs: FieldStyleOverrides | undefined,
     fieldType?: FieldType
@@ -8298,6 +8281,44 @@ function useBookingEngineState(
         }
     }, [activeSteps, safeCurrentIndex, reachedDatetimeStep])
 
+    // BE-116: field ids are positional (step-0-field-1), so a field-type
+    // change orphans the stored value (select seed "Option 1" lingering in a
+    // field that is now text). The first render with a new type treats the
+    // field as brand-new: drop its value + error, keep everything else. The
+    // placeholder lives in config and is never touched — it survives type
+    // changes by design. First-seen ids only seed the map (fresh loads must
+    // never wipe restored autosave — rules 7/13); remounts with equal types
+    // are no-ops (rule 74).
+    const prevFieldTypesRef = React.useRef<Record<string, string>>({})
+    useIsomorphicLayoutEffect(() => {
+        const prev = prevFieldTypesRef.current
+        const next: Record<string, string> = {}
+        const changed: string[] = []
+        for (const step of effectiveActiveSteps) {
+            for (const field of step.fields || []) {
+                next[field.id] = field.fieldType
+                if (prev[field.id] !== undefined && prev[field.id] !== field.fieldType) {
+                    changed.push(field.id)
+                }
+            }
+        }
+        prevFieldTypesRef.current = next
+        if (changed.length === 0) return
+        const current = valuesRef.current || {}
+        const stale = changed.filter((id) => !isEmptyPayloadValue(current[id]))
+        if (stale.length === 0) return
+        setValues((prevValues) => {
+            const nextValues = { ...prevValues }
+            for (const id of stale) delete nextValues[id]
+            return nextValues
+        })
+        setErrors((prevErrors) => {
+            const nextErrors = { ...prevErrors }
+            for (const id of stale) delete nextErrors[id]
+            return nextErrors
+        })
+    }, [effectiveActiveSteps])
+
     useIsomorphicLayoutEffect(() => {
         if (currentIndex >= totalActive && totalActive > 0) {
             setCurrentIndex(Math.max(0, totalActive - 1))
@@ -10173,6 +10194,11 @@ const RootShell = React.memo(function RootShell(props: {
 
 .be-select-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-select-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* PHONE-GROUP (BE-108): focus ring around the whole joined box, colored by
+ * the inline --be-group-ring var (error-aware). Same pointer-active
+ * convention as .be-input: mouse focus stays ring-free. */
+.be-phone-group:focus-within { box-shadow: inset 0 0 0 2px var(--be-group-ring); }
+.be-motion-root.be-pointer-active .be-phone-group:focus-within { box-shadow: none; }
 /* FIELD-GRID (BE-102): the step field grid is container-responsive — the form
  * is the query container, so columns follow the embed width with no JS
  * measurement pass (the old measured-width state painted single-column first
@@ -11082,6 +11108,58 @@ function detectPhoneCountryIso(): string {
     if (localeIso) return localeIso
     return PHONE_COUNTRY_DEFAULT_ISO
 }
+// BE-104: E.164 caps any international number at 15 digits — no real phone
+// number is ever longer, so keystrokes past 15 digits never appear (a hard
+// write-point limit, never a validation message). Formatting the visitor
+// typed is preserved; only the digit budget is enforced.
+// BE-110: max national-significant digits per country, extracted from
+// libphonenumber metadata (max over possibleLengths: general + every type —
+// erring loose, never tight — audited: no lengths live outside int arrays).
+// Missing entries fall back to the E.164 ceiling in the budget helper.
+const PHONE_MAX_NATIONAL: Record<string, number> = {
+    AF: 9, AL: 9, DZ: 9, AS: 10, AD: 9, AO: 9, AI: 10, AG: 10, AR: 11, AM: 8,
+    AW: 7, AU: 12, AT: 13, AZ: 9, BS: 10, BH: 8, BD: 10, BB: 10, BY: 11, BE: 9,
+    BZ: 11, BJ: 10, BM: 10, BT: 8, BO: 9, BA: 9, BW: 10, BR: 11, IO: 7, VG: 10,
+    BN: 7, BG: 12, BF: 8, BI: 8, KH: 10, CM: 9, CA: 10, CV: 7, KY: 10, CF: 8,
+    TD: 8, CL: 11, CN: 12, CX: 12, CC: 12, CO: 11, KM: 7, CG: 9, CD: 10, CK: 5,
+    CR: 10, CI: 10, HR: 9, CU: 10, CW: 8, CY: 8, CZ: 12, DK: 8, DJ: 8, DM: 10,
+    DO: 10, EC: 11, EG: 10, SV: 11, GQ: 9, ER: 7, EE: 10, SZ: 9, ET: 9, FK: 5,
+    FO: 6, FJ: 11, FI: 12, FR: 9, GF: 9, PF: 9, GA: 8, GM: 9, GE: 9, DE: 15,
+    GH: 9, GI: 8, GR: 12, GL: 6, GD: 10, GP: 9, GU: 10, GT: 11, GG: 10, GN: 9,
+    GW: 9, GY: 7, HT: 8, HN: 11, HK: 11, HU: 9, IS: 9, IN: 13, ID: 16, IR: 10,
+    IQ: 10, IE: 10, IM: 10, IL: 12, IT: 12, JM: 10, JP: 16, JE: 10, JO: 9,
+    KZ: 14, KE: 10, KI: 8, XK: 12, KW: 8, KG: 10, LA: 10, LV: 8, LB: 8, LS: 8,
+    LR: 9, LY: 9, LI: 9, LT: 8, LU: 11, MO: 8, MG: 9, MW: 9, MY: 10, MV: 10,
+    ML: 8, MT: 8, MH: 7, MQ: 9, MR: 8, MU: 10, YT: 9, MX: 10, FM: 7, MD: 8,
+    MC: 9, MN: 10, ME: 9, MS: 10, MA: 9, MZ: 9, MM: 10, NA: 9, NR: 7, NP: 11,
+    NL: 11, NC: 6, NZ: 10, NI: 8, NE: 8, NG: 14, NU: 7, NF: 6, KP: 10, MK: 8,
+    MP: 10, NO: 8, OM: 9, PK: 12, PW: 7, PS: 10, PA: 11, PG: 8, PY: 11, PE: 9,
+    PH: 13, PL: 10, PT: 9, PR: 10, QA: 11, RE: 9, RO: 9, RU: 14, RW: 9, BL: 9,
+    SH: 5, KN: 10, LC: 10, MF: 9, PM: 9, VC: 10, WS: 10, SM: 10, ST: 7, SA: 10,
+    SN: 9, RS: 12, SC: 7, SL: 8, SG: 11, SX: 10, SK: 9, SI: 8, SB: 7, SO: 9,
+    ZA: 10, KR: 14, SS: 9, ES: 9, LK: 9, SD: 9, SR: 7, SJ: 8, SE: 12,
+    CH: 12, SY: 9, TW: 11, TJ: 9, TZ: 9, TH: 13, TL: 8, TG: 8, TK: 7, TO: 7,
+    TT: 10, TN: 8, TR: 13, TM: 8, TC: 10, TV: 7, VI: 10, UG: 9, UA: 10, AE: 12,
+    GB: 10, US: 10, UY: 13, UZ: 9, VU: 7, VA: 12, VE: 10, VN: 10, WF: 9, EH: 9,
+    YE: 9, ZM: 9, ZW: 10, AX: 12,
+}
+function phoneNationalBudget(iso: string, dial: string): number {
+    const meta = PHONE_MAX_NATIONAL[(iso || "").toUpperCase()]
+    const e164 = 15 - dial.length
+    return typeof meta === "number" ? Math.min(meta, e164) : e164
+}
+function truncatePhoneNational(clean: string, maxDigits: number): string {
+    let seen = 0
+    let out = ""
+    for (const ch of clean) {
+        if (/\d/.test(ch)) {
+            if (seen >= maxDigits) continue
+            seen++
+        }
+        out += ch
+    }
+    return out
+}
 // BE-063: split a stored full-international value ("+201012345678") into its
 // country + national parts. Legacy national-only values (no "+") keep the
 // fallback country. The current country wins ties on shared dial codes
@@ -11413,6 +11491,12 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
 
     const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4)
     const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0
+    // BE-114: multiselect rows never take the full accent surface — the ONLY
+    // selected indicator is the accent-colored check; the row itself keeps
+    // the hover wash (selected or hovered alike). Single-select rows and
+    // choice options still consume the full Selected Styles (rule 158).
+    // (selectedRowText survives below for the chips only: light text on the
+    // accent chip surface — unchanged by design.)
     const selectedRowText =
         fs?.selected?.textColor ??
         fs?.selectedTextColor ??
@@ -11468,14 +11552,11 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     cursor: option.disabled ? "not-allowed" : "pointer",
                     color: option.disabled
                         ? theme.textSecondaryColor
-                        : isSelected
-                          ? selectedRowText
-                          : optionTextColor,
-                    background: isSelected
-                        ? selectedRowSurface
-                        : isActiveRow
-                          ? hoverRowWash
-                          : "transparent",
+                        : optionTextColor,
+                    background:
+                        !option.disabled && isActiveRow
+                            ? hoverRowWash
+                            : "transparent",
                     opacity: option.disabled ? 0.5 : 1,
                     transition: reducedMotion
                         ? "none"
@@ -11497,7 +11578,7 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                         display: "inline-flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: isSelected ? selectedRowText : "transparent",
+                        color: isSelected ? selectedRowSurface : "transparent",
                     }}
                 >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -11555,6 +11636,10 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     cursor: isSubmitting ? "not-allowed" : "pointer",
                     opacity: isSubmitting ? 0.5 : 1,
                     paddingRight: paddingHorizontalFrom(fsPadding) + 22,
+                    // BE-117: pin the exact inputBaseStyle line-height rule —
+                    // inputs compute their own `normal`, divs inherit the
+                    // root's computed px value (measured 38px vs 43px).
+                    lineHeight: fs?.font?.lineHeight ?? "normal",
                     color:
                         picked.length === 0 && fs?.placeholderColor
                             ? fs.placeholderColor
@@ -11573,7 +11658,18 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                 }}
             >
                 {pickedOptions.length === 0 ? (
-                    <span style={{ opacity: 0.7 }}>{placeholder}</span>
+                    // BE-112/BE-115: nbsp strut + the REAL placeholder color
+                    // (opacity 0.7 on text color washed out wrong) — same
+                    // expression real input placeholders resolve to.
+                    <span
+                        style={{
+                            color:
+                                fs?.placeholderColor ??
+                                withAlpha(theme.textPrimaryColor, 0.6, theme.surfaceColor),
+                        }}
+                    >
+                        {placeholder || " "}
+                    </span>
                 ) : (
                     pickedOptions.map((o) => {
                         const v = optionValue(o)
@@ -11584,7 +11680,7 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 4,
-                                    padding: "2px 4px 2px 8px",
+                                    padding: "4px 4px 4px 8px",
                                     borderRadius: menuRowRadiusValue,
                                     background: selectedRowSurface,
                                     color: selectedRowText,
@@ -11625,12 +11721,26 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                         borderRadius: "50%",
                                         background: "transparent",
                                         color: "inherit",
-                                        fontSize: 13,
-                                        lineHeight: 1,
                                         cursor: isSubmitting ? "not-allowed" : "pointer",
                                     }}
                                 >
-                                    ×
+                                    {/* BE-114: author-supplied lucide X paths,
+                                        verbatim — replaces the text glyph. */}
+                                    <svg
+                                        aria-hidden="true"
+                                        width="12"
+                                        height="12"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        style={{ display: "block", flexShrink: 0 }}
+                                    >
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
+                                    </svg>
                                 </button>
                             </span>
                         )
@@ -12042,6 +12152,10 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     cursor: isSubmitting ? "not-allowed" : "pointer",
                     opacity: isSubmitting ? 0.5 : 1,
                     paddingRight: paddingHorizontalFrom(fsPadding) + 22,
+                    // BE-117: pin the exact inputBaseStyle line-height rule —
+                    // inputs compute their own `normal`, divs inherit the
+                    // root's computed px value (measured 38px vs 43px).
+                    lineHeight: fs?.font?.lineHeight ?? "normal",
                     color:
                         !displayValue && fs?.placeholderColor
                             ? fs.placeholderColor
@@ -12055,7 +12169,10 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                         : {}),
                 }}
             >
-                {selectedOption?.label ?? ""}
+                {/* BE-112: nbsp strut when no option exists to display (NOT a
+                    placeholder feature — rule 133 stands; an empty closed box
+                    has no line box and collapses to the 23px floor). */}
+                {selectedOption?.label ?? " "}
                 <svg
                     width="16"
                     height="16"
@@ -12154,10 +12271,13 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     const [query, setQuery] = React.useState("")
     const [activeIndex, setActiveIndex] = React.useState(0)
     const [menuRect, setMenuRect] = React.useState<SelectMenuPlacement | null>(null)
-    const [triggerFocused, setTriggerFocused] = React.useState(false)
-    const [inputFocused, setInputFocused] = React.useState(false)
     const lastComposedRef = React.useRef<string | null>(null)
     const settledRef = React.useRef(false)
+    const nationalRef = React.useRef<HTMLInputElement | null>(null)
+    const dialEditRef = React.useRef<HTMLInputElement | null>(null)
+    // BE-105: dial-edit mode — typing "+" first opens country-code entry in
+    // the middle slot (Cal.com parity). Null = normal display.
+    const [dialEdit, setDialEdit] = React.useState<string | null>(null)
 
     const full = typeof value === "string" ? value : ""
     const country =
@@ -12191,9 +12311,30 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     const emitNational = React.useCallback(
         (nextNational: string) => {
+            // BE-105/BE-111: a bare "+" replaces everything (empty box or
+            // select-all) — clear the number and open dial-edit mode instead
+            // of entering the number (Cal.com parity: typing "+" means "I
+            // want another country's code"). Anything longer keeps the
+            // normal path, so pasting "+20..." still fills digits directly.
+            if (dialEdit === null && nextNational === "+") {
+                setNational("")
+                settledRef.current = true
+                lastComposedRef.current = ""
+                onFieldChange(field.id, "")
+                setDialEdit("+")
+                return
+            }
+            if (dialEdit !== null) setDialEdit(null)
             // BE-063 + rule 97: letters/symbols stripped at the write point;
             // the "+" prefix belongs to the country button, never the box.
-            const clean = sanitizePhoneInput(nextNational).replace(/\+/g, "")
+            // BE-104: hard E.164 budget — 15 digits TOTAL international, so
+            // the national box gets 15 minus the dial length (US +1 → 14,
+            // Egypt +20 → 13). Over-budget keystrokes vanish; no real number
+            // on earth exceeds the budget, so nothing legitimate is ever cut.
+            const clean = truncatePhoneNational(
+                sanitizePhoneInput(nextNational).replace(/\+/g, ""),
+                phoneNationalBudget(country[0], country[2])
+            )
             const digits = clean.replace(/\D/g, "")
             const nextFull = digits ? `+${country[2]}${digits}` : ""
             setNational(clean)
@@ -12201,8 +12342,44 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
             lastComposedRef.current = nextFull
             onFieldChange(field.id, nextFull)
         },
-        [country, field.id, onFieldChange]
+        [country, field.id, onFieldChange, dialEdit]
     )
+
+    // BE-105: dial-edit typing — digits accumulate after the "+", an exact
+    // dial match selects that country and jumps back to the number box
+    // (flag updates, focus follows). Clearing everything exits the mode.
+    const onDialEditChange = (raw: string) => {
+        const cleaned = raw.replace(/\D/g, "").slice(0, 4)
+        if (!cleaned) {
+            setDialEdit(null)
+            return
+        }
+        setDialEdit(`+${cleaned}`)
+        const canonical = PHONE_DIAL_CANONICAL_ISO[cleaned]
+        const hit =
+            (canonical && phoneCountryByIso(canonical)) ||
+            PHONE_COUNTRIES.find((c) => c[2] === cleaned)
+        if (!hit) return
+        settledRef.current = true
+        setIso(hit[0])
+        setDialEdit(null)
+        const digits = national.replace(/\D/g, "")
+        const nextFull = digits ? `+${hit[2]}${digits}` : ""
+        lastComposedRef.current = nextFull
+        onFieldChange(field.id, nextFull)
+        nationalRef.current?.focus()
+    }
+
+    const exitDialEditToNational = () => {
+        setDialEdit(null)
+        nationalRef.current?.focus()
+    }
+
+    // Typing continues in the middle slot (Cal.com parity) — same pattern as
+    // the country-search autofocus on menu open.
+    React.useEffect(() => {
+        if (dialEdit !== null) dialEditRef.current?.focus()
+    }, [dialEdit !== null])
 
     const filtered = React.useMemo(() => {
         const q = query.trim().toLowerCase()
@@ -12238,6 +12415,8 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     const openMenu = React.useCallback(() => {
         if (isSubmitting) return
+        // BE-105: opening the dropdown abandons an in-progress dial edit.
+        setDialEdit(null)
         const placement = computePlacement()
         if (!placement) return
         setQuery("")
@@ -12407,20 +12586,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     }
 
     const listboxDomId = `${fieldDomId}-country`
-    // BE-098/BE-101: empty panel row always renders the dynamic dial code.
-    // (BE-099's ?? tried to separate never-set from cleared, but Framer
-    // stores "" for both — an untouched row arrives as "", so ?? never fires
-    // for panel fields. To show NO placeholder at all, type a single space.)
-    const derivedPlaceholder = field.placeholder || `+${country[2]}`
-    // BE-103: one continuous focus ring around the JOINED control — each half
-    // omits its seam side (trigger skips right, input skips left), so the
-    // 1px divider never doubles under focus. Same color other fields use
-    // (error-aware), just joint-aware geometry.
-    const focusRingColor = hasError
-        ? theme.errorColor
-        : (fs?.focusBorderColor ?? theme.accentColor)
-    const triggerRing = `inset 2px 0 0 0 ${focusRingColor}`
-    const inputRing = `inset -2px 0 0 0 ${focusRingColor}`
 
     return (
         <div>
@@ -12432,6 +12597,12 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     type="button"
                     style={{
                         ...inputBaseStyle,
+                        // BE-103: the trigger keeps the FULL shared border
+                        // (exactly like the select trigger — no side
+                        // overrides at all, so no shorthand/longhand reset
+                        // trap can ever resurrect or kill an edge). The seam
+                        // divider is the trigger's own opaque right edge;
+                        // the input tucks 1px beneath it.
                         width: "auto",
                         flexShrink: 0,
                         display: "inline-flex",
@@ -12442,25 +12613,11 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         paddingBottom: padAxes.y,
                         paddingLeft: 10,
                         paddingRight: 8,
-                        borderRightWidth: 0,
                         borderTopRightRadius: 0,
                         borderBottomRightRadius: 0,
                         cursor: isSubmitting ? "not-allowed" : "pointer",
-                        position: "relative",
-                        zIndex: triggerFocused || open ? 1 : undefined,
                         opacity: isSubmitting ? 0.5 : 1,
                         color: theme.textSecondaryColor,
-                        // BE-090: focus treatment matches every other field —
-                        // inset accent ring, never the global button outline
-                        // (inset + outline had stacked into a muted double
-                        // ring). Gated on :focus-visible like the platform
-                        // heuristic, so mouse clicks stay ring-free.
-                        outline: "none",
-                        ...(triggerFocused
-                            ? {
-                                  boxShadow: triggerRing,
-                              }
-                            : {}),
                     }}
                     aria-haspopup="listbox"
                     aria-expanded={open}
@@ -12470,16 +12627,44 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     disabled={isSubmitting}
                     onClick={() => (open ? setOpen(false) : openMenu())}
                     onKeyDown={handleButtonKeyDown}
-                    onFocus={(e) =>
-                        setTriggerFocused(
-                            e.currentTarget.matches
-                                ? e.currentTarget.matches(":focus-visible")
-                                : true
-                        )
-                    }
-                    onBlur={() => setTriggerFocused(false)}
                 >
-                    <PhoneFlag key={country[0]} iso={country[0]} />
+                    {/* BE-111: globe while no code is recognized (dial-edit
+                        mode) INSTEAD of the flag — author-supplied lucide
+                        paths, verbatim. */}
+                    {dialEdit !== null ? (
+                        // BE-113: same fixed 22×16 slot as the flag — a 16px
+                        // globe swapping in used to shrink the trigger.
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                width: 22,
+                                height: 16,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <svg
+                                aria-hidden="true"
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                style={{ display: "block", flexShrink: 0 }}
+                            >
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                                <path d="M2 12h20" />
+                            </svg>
+                        </span>
+                    ) : (
+                        <PhoneFlag key={country[0]} iso={country[0]} />
+                    )}
                     {/* BE-089: unfold-more affordance (author-supplied paths,
                         both chevrons filled solid — the source file's upper
                         chevron was stroke-only). Muted, fixed size: no layout
@@ -12496,7 +12681,98 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         <path d="M10.3483 14H13.6517C15.6822 14 16.6974 14 16.9501 14.6086C17.2028 15.2172 16.4849 15.9335 15.0491 17.3661L13.3974 19.0141C12.7387 19.6714 12.4093 20 12 20C11.5907 20 11.2613 19.6714 10.6026 19.0141L8.95091 17.3661C7.51513 15.9335 6.79724 15.2172 7.0499 14.6086C7.30256 14 8.31781 14 10.3483 14Z" />
                     </svg>
                 </button>
+                {/* BE-105: middle slot — the selected dial as muted plain text
+                    (Cal.com parity: not a placeholder), or the dial-edit box
+                    while the visitor types a "+"-led code. */}
+                {/* BE-108: the span + input live inside ONE bordered group —
+                    the group owns the border (longhands only, no left edge),
+                    the input itself is borderless. Single divider forever,
+                    and the span stretches to the full row height. */}
+                <div
+                    className="be-phone-group"
+                    style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "stretch",
+                        background: fs?.backgroundColor ?? theme.surfaceColor,
+                        borderWidth: fsBorder.width,
+                        borderStyle: fsBorder.style,
+                        borderColor: hasError
+                            ? theme.errorColor
+                            : (fsBorder.color ?? theme.borderColor),
+                        borderLeftWidth: 0,
+                        borderTopRightRadius: fsRadius,
+                        borderBottomRightRadius: fsRadius,
+                        borderTopLeftRadius: 0,
+                        borderBottomLeftRadius: 0,
+                        boxSizing: "border-box",
+                        ...shadowStyle(fs?.shadow),
+                        // BE-108: focus color for the :focus-within group
+                        // ring (constant CSS selector below) — the only
+                        // dynamic half; no focus JS anywhere on this control.
+                        ...({
+                            "--be-group-ring": hasError
+                                ? theme.errorColor
+                                : (fs?.focusBorderColor ?? theme.accentColor),
+                        } as React.CSSProperties),
+                    }}
+                >
+                {dialEdit !== null ? (
+                    <input
+                        ref={dialEditRef}
+                        aria-label="Country calling code"
+                        type="text"
+                        inputMode="tel"
+                        value={dialEdit}
+                        onChange={(e) => onDialEditChange(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                e.preventDefault()
+                                exitDialEditToNational()
+                            }
+                        }}
+                        onBlur={() => setDialEdit(null)}
+                        disabled={isSubmitting}
+                        style={{
+                            alignSelf: "stretch",
+                            textAlign: "center",
+                            flexShrink: 0,
+                            // BE-106/BE-108: same fixed slot as display mode.
+                            width: "3.5em",
+                            boxSizing: "border-box",
+                            border: 0,
+                            background: "transparent",
+                            outline: "none",
+                            padding: 0,
+                            color: theme.textSecondaryColor,
+                            fontSize: fsInputFontSize,
+                            fontFamily: fs?.font?.fontFamily ?? "inherit",
+                        }}
+                    />
+                ) : (
+                    <span
+                        aria-hidden="true"
+                        style={{
+                            alignSelf: "stretch",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            whiteSpace: "nowrap",
+                            // BE-106/BE-108: fixed slot, centered, no padding.
+                            width: "3.5em",
+                            boxSizing: "border-box",
+                            color: theme.textSecondaryColor,
+                            fontSize: fsInputFontSize,
+                            fontFamily: fs?.font?.fontFamily ?? "inherit",
+                        }}
+                    >
+                        +{country[2]}
+                    </span>
+                )}
                 <input
+                    ref={nationalRef}
                     id={fieldDomId}
                     className={hasError ? "be-input be-input-invalid" : "be-input"}
                     type="tel"
@@ -12505,29 +12781,32 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         ...inputBaseStyle,
                         flex: 1,
                         minWidth: 0,
+                        // BE-109: the group owns the ONLY border — this input
+                        // must never paint one. `border: undefined` drops the
+                        // shared shorthand (whose error-time color flip used
+                        // to resurrect a width, the BE-103 trap mirrored), and
+                        // the lone constant borderWidth: 0 can never be reset
+                        // by anything. Phone-only exception: every other
+                        // field type keeps its own input border + radius.
+                        border: undefined,
+                        borderWidth: 0,
+                        background: "transparent",
+                        boxShadow: "none",
                         borderTopLeftRadius: 0,
                         borderBottomLeftRadius: 0,
-                        // BE-103: joint-aware ring (skips the seam side) —
-                        // inline wins over the be-input class ring, same color.
-                        ...(inputFocused ? { boxShadow: inputRing } : {}),
+                        borderTopRightRadius: 0,
+                        borderBottomRightRadius: 0,
                     }}
                     value={national}
-                    placeholder={derivedPlaceholder}
+                    placeholder={field.placeholder || ""}
                     required={field.required}
                     autoComplete="tel"
                     disabled={isSubmitting}
                     aria-invalid={hasError || undefined}
                     aria-describedby={hasError ? errorDomId : undefined}
                     onChange={(e) => emitNational(e.target.value)}
-                    onFocus={(e) =>
-                        setInputFocused(
-                            e.currentTarget.matches
-                                ? e.currentTarget.matches(":focus-visible")
-                                : true
-                        )
-                    }
-                    onBlur={() => setInputFocused(false)}
                 />
+                </div>
                 <input type="hidden" name={field.calFieldId || field.id} value={full} />
             </div>
             {open && typeof document !== "undefined"
@@ -12895,7 +13174,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         name={field.calFieldId || field.id}
                         className={error ? "be-input be-input-invalid" : "be-input"}
                         value={typeof value === "string" ? value : ""}
-                        placeholder={field.placeholder || defaultFieldPlaceholder(field.fieldType)}
+                        placeholder={field.placeholder || ""}
                         required={field.required}
                         autoComplete={autocompleteToken(field)}
                         disabled={isSubmitting}
@@ -13239,7 +13518,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                                     : undefined
                         }
                         value={typeof value === "string" ? value : ""}
-                        placeholder={field.placeholder || defaultFieldPlaceholder(field.fieldType)}
+                        placeholder={field.placeholder || ""}
                         required={field.required}
                         autoComplete={autocompleteToken(field)}
                         disabled={isSubmitting}
