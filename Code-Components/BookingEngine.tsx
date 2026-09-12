@@ -12092,12 +12092,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4)
     const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0
     // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
-    // keep winning for stored canvases, engine defaults last.
-    const selectedRowText =
-        fs?.selected?.textColor ??
-        fs?.selectedTextColor ??
-        theme.accentForegroundColor ??
-        TEXT_ON_ACCENT
+    // keep winning for stored canvases, engine defaults last. (BE-122: the
+    // text carrier is retired here — selected rows are check-only.)
     const selectedRowSurface =
         fs?.selected?.backgroundColor ?? fs?.selectedBackgroundColor ?? theme.accentColor
     const optionTextColor = fs?.textColor ?? theme.textPrimaryColor
