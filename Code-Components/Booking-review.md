@@ -575,6 +575,42 @@
 
 ---
 
+### BE-126 — Over-customization audit: caps needed so authors cannot break the UI (audit only, no fix)
+
+- **Status:** Open
+- **Description:** The component exposes near-total customization (paddings, fonts, borders, durations with no upper bounds), so an exploring author can push a value that visibly breaks the UI — e.g. 40px field padding makes giant fields. The author ordered three subagents to audit everything in this family and report only, so a per-item decision (cap, fix, remove, or keep) can follow.
+- **Current Behavior:** Many controls are unbounded with no runtime clamp; a guarded minority (Radius token 0–24, Gap 0–48, section gaps 0–64, thumb prefs, steps/fields/options counts, validation caps, Cal.com fallbacks) is correctly dual-enforced.
+- **Expected Behavior:** TBD per item by the author after reading this inventory — each finding below ends with a guard direction, none implemented.
+- **Acceptance Criteria:**
+  - [x] Three audit reports filed (spacing/geometry, typography/content, structure/behavior) with control paths + breakage scenarios.
+  - [ ] Author decision per item (cap / fix / remove / keep), then implementation under a new explicit order.
+- **Constraints / Must Not Do:** No fix in the audit session; never contrast policing (rules 1–3/70/71); do not add controls for fixed-by-design geometry.
+- **Related AGENTS.md Rule(s):** Rules 1–3, 60, 70, 71, 82, 83, 98, 100, 142, 154, 157, 190.
+- **Additional Context:** Ordered 2026-09-11 (Arabic). Findings inventory (condensed from the three reports; line numbers refer to the file at audit time and will shift):
+  - HIGH-1 Field Styles Padding (all types, free-form, no clamp): 40px+ makes ~100px+ tall fields, breaks embeds and the animated form height; 0 collapses touch targets; asymmetric values drift the phone seam and chevron room. Direction: runtime per-axis clamp (e.g. 0–24).
+  - HIGH-2 Button paddings (Primary/Secondary/Calendar Links, free-form): 40px+ makes ~100px footer buttons covering content; 0 puts ghost text on edges. Direction: clamp axes (e.g. Y 4–20, X 8–32).
+  - HIGH-3 All seven Font rows (Head, Body, Label, Field, Selected, Button, Calendar tile — Framer Font has no max, runtime never caps top): 100px values blow up titles, body copy engine-wide (Body is highest blast radius), fields, selected options vs siblings, footer rows, calendar cells; lineHeight 0 collapses text. Direction: one shared clamp helper per row (e.g. head 16–40, body 11–20, field 10–28, button 10–24, tile 10–24) + lineHeight floor ≥1.
+  - HIGH-4 Border widths (fields/calendar/buttons/selected, free-form, no ceiling): 20px eats content boxes and buries rings; 0 removes the only affordance. Direction: runtime max (e.g. 4px), keep 0 = none.
+  - HIGH-5 Transition duration (no cap): 10s freezes step changes mid-ghost; confirmation circle stretches too. Direction: runtime clamp (e.g. 0–1.5s).
+  - HIGH-6 Selected Styles Padding vs segmented thumb math: 32px+ collapses the thumb (`calc((100%-pad)/N)`) and misaligns the track. Direction: clamp selected axes (e.g. 0–16) at consumption.
+  - HIGH-7 Long button labels (Next/Back/Final free strings, no maxLength, no ellipsis; primary is nowrap): 100-char labels overflow the footer; Fill + long labels make a tall sticky footer covering the form. Direction: maxLength and/or ellipsis + max-width on footer buttons.
+  - HIGH-8 Closed select trigger has no ellipsis (menu rows do): long selected labels wrap and grow the trigger. Direction: same nowrap/ellipsis as menu rows.
+  - HIGH-9 Empty strings that win and render blank UI: Manage Link label (only button label using `??` instead of first-non-empty), all Copy titles/subtitles/error/validation strings, field Label (empty element + gap kept). Direction: first-non-empty resolution everywhere; skip empty label elements. (Step/calendar titles, the three footer labels, and options already fall back or filter — excluded.)
+  - HIGH-10 Half-width orphan fields: a lone Half leaves a half-empty row. Direction: stretch trailing orphan to full or dense flow (not a control removal).
+  - HIGH-11 Hover Scale 0.5–1.5 / Opacity 0–1: 0.5 shrinks the button under the cursor; 0 makes a clickable ghost. Direction: narrow ranges (scale 0.95–1.05, opacity 0.5–1) or runtime clamp.
+  - HIGH-12 Twelve long multiselect picks wrap into a viewport-dominating chip stack. Direction: "+N more" overflow chip or max-height + scroll.
+  - MED-1 Huge shadows hard-clip at the form's 24px paint clip. Direction: cap blur/spread or document the 24px room. Lowest priority.
+  - MED-2 Thumb Stiffness 50 / Damping 5 extremes crawl or bounce violently (geometry never breaks). Direction: narrow panel ranges (e.g. 150–600 / 20–60).
+  - MED-3 Runtime-only gaps (no panel path, programmatic values pass through): Field Styles Gap 0–24, Check Size 12–32, fields-per-step re-cap, selected/option axes. Direction: one-line runtime clamps mirroring the panels.
+  - MED-4 Calendar surface Padding (default 0, free-form): 40px+ squeezes the 7-column grid at narrow widths. Direction: clamp 0–24 like its Radius sibling.
+  - MED-5 Field/Selected/Button Radius rows are free-form BorderRadius (vs the capped 0–24 token): 100px makes capsule inputs and 96px menu rows. Direction: Number 0–24 rows or runtime clamp (pills 999 excepted).
+  - MED-6 Blur transitions jank on low-end devices over the large stacked calendar. Direction: keep control; no new control.
+  - MED-7 Cards/radio long option text wraps and stretches sibling rows (no overflow, just distortion). Direction: optional 2–3 line clamp.
+  - GUARDED (no action): Radius token, Gap, section gaps, thumb prefs, steps 1–10, fields ≤10, options ≤12, validation caps, Radius/Thumb fallbacks, Cal.com graceful degradation, persistence isolation, empty-fallback labels (step/calendar/footer/options/placeholders), menu geometry caps, fixed floors (23px field, 320px form, 32px button, 44px touch, avatar/marks/icons/flag/dial slots), textarea fixed at 4 rows, Instance ID slug guards.
+- **Implementation record (2026-09-11):** Audit only — three subagents, zero code changes.
+
+---
+
 ### BE-120 — Phone national input keeps shared padding everywhere except the left
 
 - **Status:** Done (2026-09-11)
