@@ -805,7 +805,7 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
 // Radius/Gap/section-gap clamps. Stored, typed, or programmatic values
 // outside the bounds clamp instead of breaking the UI.
 const FIELD_PADDING_MIN = 0
-const FIELD_PADDING_MAX = 24
+const FIELD_PADDING_MAX = 16
 const BUTTON_PADDING_MIN_Y = 4
 const BUTTON_PADDING_MAX_Y = 20
 const BUTTON_PADDING_MIN_X = 8
