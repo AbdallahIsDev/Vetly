@@ -670,18 +670,26 @@ function resolveFieldBorder(
             b.borderLeftWidth != null)
     if (compoundSet && b) {
         // Explicit 0 is a real answer: all-zero sides resolve to width 0
-        // instead of falling back to the default width.
+        // instead of falling back to the default width. BE-126: sides clamp
+        // so author widths can never eat the content box.
         const sides = [
             b.borderTopWidth,
             b.borderRightWidth,
             b.borderBottomWidth,
             b.borderLeftWidth,
         ].filter((v): v is number => typeof v === "number")
-        const width = sides.length ? Math.max(...sides) : (b.borderWidth ?? defWidth)
+        const width = sides.length
+            ? clamp(
+                  Math.max(...sides.map((s) => clamp(s, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX))),
+                  BORDER_WIDTH_MIN,
+                  BORDER_WIDTH_MAX
+              )
+            : clamp(b.borderWidth ?? defWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)
         return { width, style: b.borderStyle || "solid", color: b.borderColor ?? defColor }
     }
     return {
-        width: fs?.borderWidth ?? defWidth,
+        // BE-126: author widths clamp; explicit 0 survives as none.
+        width: clamp(fs?.borderWidth ?? defWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX),
         style: "solid",
         color: fs?.borderColor ?? defColor,
     }
@@ -692,8 +700,11 @@ function resolveFieldRadius(
     themeRadius: string | number,
     fieldType?: FieldType
 ): string {
-    if (typeof fs?.radius === "string" && fs.radius.trim()) return fs.radius
-    if (typeof fs?.radius === "number") return `${fs.radius}px`
+    // BE-126: author radii clamp per corner (pill-scale and % untouched).
+    if (typeof fs?.radius === "string" && fs.radius.trim())
+        return `${clampRadiusToken(fs.radius)}`
+    if (typeof fs?.radius === "number" && Number.isFinite(fs.radius))
+        return `${clampRadiusToken(fs.radius)}`
     // Untouched fields track the global Radius token (buttons already do) — except
     // types with a distinctive native shape (pills, checkbox box), which keep it.
     if (fieldType) {
@@ -704,9 +715,11 @@ function resolveFieldRadius(
 }
 
 function resolveFieldPadding(fs: FieldStyleOverrides | undefined, fieldType?: FieldType): string {
-    if (typeof fs?.padding === "string" && fs.padding.trim()) return fs.padding
+    // BE-126: author padding clamps per axis — giant fields are impossible.
+    if (typeof fs?.padding === "string" && fs.padding.trim())
+        return clampPadding(fs.padding, FIELD_PADDING_MIN, FIELD_PADDING_MAX)
     if (fs?.paddingY != null || fs?.paddingX != null) {
-        return `${fs?.paddingY ?? 10}px ${fs?.paddingX ?? 14}px`
+        return `${clamp(fs?.paddingY ?? 10, FIELD_PADDING_MIN, FIELD_PADDING_MAX)}px ${clamp(fs?.paddingX ?? 14, FIELD_PADDING_MIN, FIELD_PADDING_MAX)}px`
     }
     if (fieldType) return getFieldStylesEffectiveDefaults(fieldType).padding
     return FIELD_STYLES_INPUT_PADDING
@@ -784,6 +797,118 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
     const y = parts[0]
     const x = Number.isFinite(parts[1]) ? parts[1] : y
     return { y, x }
+}
+
+// CUSTOMIZATION-CAPS (BE-126): Framer exposes no min/max on Padding, Font,
+// Border, Shadow, Radius, or Transition controls, so every bound below is
+// enforced here at runtime — the same dual-enforcement contract as the
+// Radius/Gap/section-gap clamps. Stored, typed, or programmatic values
+// outside the bounds clamp instead of breaking the UI.
+const FIELD_PADDING_MIN = 0
+const FIELD_PADDING_MAX = 24
+const BUTTON_PADDING_MIN_Y = 4
+const BUTTON_PADDING_MAX_Y = 20
+const BUTTON_PADDING_MIN_X = 8
+const BUTTON_PADDING_MAX_X = 32
+const SELECTED_PADDING_MIN = 0
+const SELECTED_PADDING_MAX = 16
+const BORDER_WIDTH_MIN = 0
+const BORDER_WIDTH_MAX = 4
+const STEP_DURATION_MIN = 0
+const STEP_DURATION_MAX = 1.5
+const STEP_DELAY_MIN = 0
+const STEP_DELAY_MAX = 1
+const SHADOW_LENGTH_MAX_ABS = 48
+function clampPaddingLength(part: string, min: number, max: number): string {
+    const m = /^(-?\d*\.?\d+)([a-z%]*)$/i.exec(part.trim())
+    if (!m) return part
+    const unit = m[2] || "px"
+    // Only px (and unitless) lengths clamp — %/em scale differently.
+    if (unit !== "px") return part
+    return `${clamp(Number(m[1]), min, max)}px`
+}
+function clampPadding(padding: string, min: number, max: number): string {
+    const parts = padding.trim().split(/\s+/)
+    if (!parts.length) return padding
+    return parts.map((p) => clampPaddingLength(p, min, max)).join(" ")
+}
+/** Clamp a 1-4 value padding string with separate vertical/horizontal bounds,
+ *  expanding CSS shorthand to [top, right, bottom, left]. */
+function clampBoxPadding(
+    padding: string,
+    minY: number,
+    maxY: number,
+    minX: number,
+    maxX: number
+): string {
+    const parts = padding.trim().split(/\s+/)
+    if (!parts.length) return padding
+    const nums = parts.map((p) => {
+        const m = /^(-?\d*\.?\d+)([a-z%]*)$/i.exec(p)
+        if (!m || (m[2] && m[2] !== "px")) return null
+        const n = Number(m[1])
+        return Number.isFinite(n) ? n : null
+    })
+    if (nums.some((n) => n === null)) return padding
+    const [t, r = t, b = t, l = r] = nums as number[]
+    return [
+        clamp(t, minY, maxY),
+        clamp(r, minX, maxX),
+        clamp(b, minY, maxY),
+        clamp(l, minX, maxX),
+    ]
+        .map((n) => `${n}px`)
+        .join(" ")
+}
+function clampFontPx(
+    value: string | number | undefined,
+    min: number,
+    max: number,
+    fallback: number
+): number {
+    const px = fontPixelSize(value)
+    if (px === undefined) return fallback
+    return clamp(px, min, max)
+}
+/** Line-height floor: null/undefined/"normal" pass through; numeric values
+ *  below 1 (percents normalized to unitless) floor to 1. */
+function clampLineHeight(value: string | number | undefined): string | number | undefined {
+    if (value === undefined || value === null) return value
+    if (typeof value === "number") return Number.isFinite(value) && value < 1 ? 1 : value
+    const s = value.trim().toLowerCase()
+    if (s === "" || s === "normal") return value
+    const m = /^(-?\d*\.?\d+)([a-z%]*)$/.exec(s)
+    if (!m) return value
+    let n = Number(m[1])
+    if (!Number.isFinite(n)) return value
+    if (m[2] === "%") n = n / 100
+    else if (m[2] !== "" && m[2] !== "px" && m[2] !== "em" && m[2] !== "rem") return value
+    if (n < 1) return 1
+    return value
+}
+/** Clamp every px length inside a box-shadow string (offsets, blur, spread)
+ *  to ±maxAbs. Colors never contain px tokens, so a flat token pass is safe. */
+function clampShadowLengths(shadow: string, maxAbs: number): string {
+    return shadow.replace(/(-?\d*\.?\d+)px/gi, (tok, num: string) => {
+        const n = Number(num)
+        if (!Number.isFinite(n)) return tok
+        return `${clamp(n, -maxAbs, maxAbs)}px`
+    })
+}
+/** Clamp a radius token: numbers/px clamp 0-24 per corner; pill-scale
+ *  (>=999) and % pass through untouched. */
+function clampRadiusToken(value: string | number | undefined): string | number | undefined {
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) return value
+        return value >= 999 ? value : clamp(value, 0, 24)
+    }
+    if (typeof value !== "string" || !value.trim()) return value
+    const s = value.trim()
+    if (s.endsWith("%")) return value
+    const parts = s.split(/\s+/)
+    if (!parts.every((p) => /^-?\d*\.?\d+(px)?$/i.test(p))) return value
+    if (parts.some((p) => Number.parseFloat(p) >= 999)) return value
+    return parts.map((p) => `${clamp(Number.parseFloat(p), 0, 24)}px`).join(" ")
 }
 
 // SECTION-SPACING (BE-075/BE-078): author rhythm for the three vertical
@@ -942,8 +1067,10 @@ function useMountedOnce(): boolean {
 // engines with different settings stay isolated (rule 94). Clamped once at
 // the single resolution site; the component only reads.
 const SEGMENTED_MOTION_LIMITS = {
-    stiffness: { min: 50, max: 1000, fallback: 400 },
-    damping: { min: 5, max: 100, fallback: 38 },
+    // BE-126: narrowed panel ranges mirrored here (stored/programmatic
+    // values outside still clamp instead of crawling or bouncing).
+    stiffness: { min: 150, max: 600, fallback: 400 },
+    damping: { min: 20, max: 60, fallback: 38 },
 } as const
 const SegmentedMotionContext = React.createContext<{
     stiffness: number
@@ -1027,8 +1154,13 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
     const thumbPadX = selectedPaddingX ?? 3
     const thumbWidth =
         count > 0 ? `calc((100% - ${thumbPadX * 2}px) / ${count})` : "calc(50% - 3px)"
-    const thumbRadius = selectedRadius ?? segmentInnerRadius
-    const thumbBorderWidth = selectedBorderWidth ?? 1
+    // BE-126: selected radius/border clamp — huge values overflow the track.
+    const thumbRadius = clampRadiusToken(selectedRadius) ?? segmentInnerRadius
+    const thumbBorderWidth = clamp(
+        selectedBorderWidth ?? 1,
+        BORDER_WIDTH_MIN,
+        BORDER_WIDTH_MAX
+    )
     const thumbBorderStyle = selectedBorderStyle ?? "solid"
     const effectiveTrackBackground = trackBackground ?? withAlpha(borderColor, 0.14)
     const thumbBorder = thumbBorderColor ?? borderColor
@@ -1036,13 +1168,14 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         selectedShadow && !isNoShadowValue(selectedShadow)
             ? selectedShadow
             : "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)"
+    // BE-126: option/selected fonts mirror a 10-28 panel range.
     const segmentFontSize =
-        optionFont?.fontSize != null ? (fontPixelSize(optionFont.fontSize) ?? 13) : 13
+        optionFont?.fontSize != null ? clampFontPx(optionFont.fontSize, 10, 28, 13) : 13
     const activeFontStyle: React.CSSProperties = selectedFont
         ? {
               ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
               ...(selectedFont.fontSize != null
-                  ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? segmentFontSize }
+                  ? { fontSize: clampFontPx(selectedFont.fontSize, 10, 28, segmentFontSize) }
                   : {}),
               ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
               ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
@@ -1161,8 +1294,9 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             ...(optionFont?.letterSpacing != null
                                 ? { letterSpacing: optionFont.letterSpacing }
                                 : {}),
+                            // BE-126: line-height floor (verbatim "normal" untouched).
                             ...(optionFont?.lineHeight != null
-                                ? { lineHeight: optionFont.lineHeight }
+                                ? { lineHeight: clampLineHeight(optionFont.lineHeight) }
                                 : {}),
                             ...(active ? activeFontStyle : {}),
                             whiteSpace: "nowrap",
@@ -1484,19 +1618,25 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...(selectedFont?.letterSpacing != null
             ? { letterSpacing: selectedFont.letterSpacing }
             : {}),
-        ...(selectedFont?.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
+        // BE-126: line-height floor (verbatim "normal" untouched).
+        ...(selectedFont?.lineHeight != null
+            ? { lineHeight: clampLineHeight(selectedFont.lineHeight) }
+            : {}),
     }
     const compact = measuredWidth < COMPACT_BREAKPOINT
+    // BE-126: option/selected fonts mirror a 10-28 panel range.
     const effectiveFontSize =
         optionFont?.fontSize != null
-            ? (fontPixelSize(optionFont.fontSize) ?? Math.max(14, fontSize))
+            ? clampFontPx(optionFont.fontSize, 10, 28, Math.max(14, fontSize))
             : Math.max(14, fontSize)
     const optionFontExtraStyle: React.CSSProperties = {
         ...(optionFont?.fontFamily ? { fontFamily: optionFont.fontFamily } : {}),
         ...(optionFont?.fontWeight != null ? { fontWeight: optionFont.fontWeight } : {}),
         ...(optionFont?.fontStyle ? { fontStyle: optionFont.fontStyle } : {}),
         ...(optionFont?.letterSpacing != null ? { letterSpacing: optionFont.letterSpacing } : {}),
-        ...(optionFont?.lineHeight != null ? { lineHeight: optionFont.lineHeight } : {}),
+        ...(optionFont?.lineHeight != null
+            ? { lineHeight: clampLineHeight(optionFont.lineHeight) }
+            : {}),
     }
 
     const selectOption = React.useCallback(
@@ -1571,7 +1711,10 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         : -1
 
     const selectedStyleOverride: React.CSSProperties = {
-        ...(selectedRadius != null ? { borderRadius: selectedRadius } : {}),
+        // BE-126: selected radius/border clamp (padding already clamped).
+        ...(selectedRadius != null
+            ? { borderRadius: clampRadiusToken(selectedRadius) }
+            : {}),
         ...(selectedPaddingY != null || selectedPaddingX != null
             ? {
                   padding: `${selectedPaddingY ?? 10}px ${selectedPaddingX ?? 14}px`,
@@ -1579,11 +1722,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
             : {}),
         ...(selectedBorderWidth != null
             ? {
-                  border: `${Math.max(selectedBorderWidth, 0)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
+                  border: `${clamp(selectedBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)}px ${selectedBorderStyle ?? "solid"} ${selectedRing}`,
               }
             : {}),
         ...(selectedFont?.fontSize != null
-            ? { fontSize: fontPixelSize(selectedFont.fontSize) ?? effectiveFontSize }
+            ? { fontSize: clampFontPx(selectedFont.fontSize, 10, 28, effectiveFontSize) }
             : {}),
         ...selectedFontExtraStyle,
         ...(!isNoShadowValue(selectedShadow) && selectedShadow
@@ -1748,7 +1891,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 whiteSpace: "normal",
-                                display: "block",
+                                // BE-126: long labels clamp instead of
+                                // stretching sibling rows.
+                                display: "-webkit-box",
+                                WebkitBoxOrient: "vertical",
+                                WebkitLineClamp: 2,
                                 minWidth: 0,
                                 maxWidth: "100%",
                             }}
@@ -1758,7 +1905,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                         {showMedia && option.description ? (
                             <span
                                 style={{
-                                    display: "block",
+                                    display: "-webkit-box",
+                                    WebkitBoxOrient: "vertical",
+                                    WebkitLineClamp: 3,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
                                     fontSize: effectiveFontSize - 2,
                                     color: isSelected ? selectedTextColor : mutedTextColor,
                                     marginTop: 2,
@@ -1778,7 +1929,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: variant === "pills" ? "nowrap" : "normal",
-                            display: "block",
+                            display: variant === "pills" ? "block" : "-webkit-box",
+                            // BE-126: wrapping variants clamp long labels.
+                            ...(variant === "pills"
+                                ? {}
+                                : { WebkitBoxOrient: "vertical", WebkitLineClamp: 2 }),
                             minWidth: 0,
                             ...labelExtraStyle,
                         }}
@@ -1789,7 +1944,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                 {variant === "cards" && showMedia && option.description ? (
                     <span
                         style={{
-                            display: "block",
+                            display: "-webkit-box",
+                            WebkitBoxOrient: "vertical",
+                            WebkitLineClamp: 3,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
                             fontSize: effectiveFontSize - 2,
                             color: isSelected ? selectedTextColor : mutedTextColor,
                             marginTop: 4,
@@ -2118,8 +2277,11 @@ const CalendarCell = React.memo(function CalendarCell({
                           : textColor,
                     cursor: isUnavailable ? "default" : "pointer",
                     fontFamily: tileFont?.fontFamily ?? "inherit",
-                    fontSize: fontPixelSize(tileFont?.fontSize) ?? 14,
-                    ...(tileFont?.lineHeight != null ? { lineHeight: tileFont.lineHeight } : {}),
+                    // BE-126: tile font mirrors a 10-24 panel range.
+                    fontSize: clampFontPx(tileFont?.fontSize, 10, 24, 14),
+                    ...(tileFont?.lineHeight != null
+                        ? { lineHeight: clampLineHeight(tileFont.lineHeight) }
+                        : {}),
                     transition: reducedMotion
                         ? "none"
                         : "background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease",
@@ -4163,13 +4325,14 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
     const subtleBorder = React.useMemo(() => `1px solid ${borderColor}`, [borderColor])
     const surfaceBorder = !tileBorder
         ? subtleBorder
-        : tileBorderWidth > 0
-          ? `${tileBorderWidth}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
+        : clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX) > 0
+          ? `${clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
           : "none"
+    // BE-126: calendar surface padding clamps like its Radius sibling.
     const surfacePadding =
         typeof normalizedCalendarStyles?.padding === "string" &&
         normalizedCalendarStyles.padding.trim()
-            ? normalizedCalendarStyles.padding
+            ? clampPadding(normalizedCalendarStyles.padding, FIELD_PADDING_MIN, FIELD_PADDING_MAX)
             : undefined
 
     const dateKeyOf = React.useCallback(
@@ -7517,71 +7680,86 @@ function useBookingEngineState(
 
     // BE-083: screen-grouped copy with the flat keys as readable legacy
     // carriers - one resolution site, ?? chains (never ||).
+    // BE-126: firstNonEmpty — clearing a row restores its default instead
+    // of rendering a blank gap.
     const rawCopy = advanced?.copy ?? props.copy
     const copy = {
         ...rawCopy,
         successTitle:
-            rawCopy?.success?.successTitle ??
-            rawCopy?.successTitle ??
-            DEFAULT_COPY_SUCCESS_TITLE,
+            firstNonEmpty(
+                rawCopy?.success?.successTitle,
+                rawCopy?.successTitle
+            ) ?? DEFAULT_COPY_SUCCESS_TITLE,
         successSubtitle:
-            rawCopy?.success?.successSubtitle ??
-            rawCopy?.successSubtitle ??
-            DEFAULT_COPY_SUCCESS_SUBTITLE,
+            firstNonEmpty(
+                rawCopy?.success?.successSubtitle,
+                rawCopy?.successSubtitle
+            ) ?? DEFAULT_COPY_SUCCESS_SUBTITLE,
         errorTitle:
-            rawCopy?.failure?.errorTitle ??
-            rawCopy?.errorTitle ??
+            firstNonEmpty(rawCopy?.failure?.errorTitle, rawCopy?.errorTitle) ??
             DEFAULT_COPY_ERROR_TITLE,
         errorSubtitle:
-            rawCopy?.failure?.errorSubtitle ??
-            rawCopy?.errorSubtitle ??
+            firstNonEmpty(rawCopy?.failure?.errorSubtitle, rawCopy?.errorSubtitle) ??
             DEFAULT_COPY_ERROR_SUBTITLE,
         unknownErrorLabel:
-            rawCopy?.failure?.unknownErrorLabel ??
-            rawCopy?.unknownErrorLabel ??
+            firstNonEmpty(rawCopy?.failure?.unknownErrorLabel, rawCopy?.unknownErrorLabel) ??
             DEFAULT_COPY_UNKNOWN_ERROR_LABEL,
         errorFallbackMessage:
-            rawCopy?.failure?.errorFallbackMessage ??
-            rawCopy?.errorFallbackMessage ??
-            DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
+            firstNonEmpty(
+                rawCopy?.failure?.errorFallbackMessage,
+                rawCopy?.errorFallbackMessage
+            ) ?? DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
         stepCounterTemplate:
-            progressBar?.content?.stepCounterTemplate ??
-            rawCopy?.stepCounterTemplate ??
-            DEFAULT_COPY_STEP_COUNTER_TEMPLATE,
+            firstNonEmpty(
+                progressBar?.content?.stepCounterTemplate,
+                rawCopy?.stepCounterTemplate
+            ) ?? DEFAULT_COPY_STEP_COUNTER_TEMPLATE,
         stepProgressLabel:
-            progressBar?.content?.stepProgressLabel ??
-            rawCopy?.stepProgressLabel ??
-            DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
+            firstNonEmpty(
+                progressBar?.content?.stepProgressLabel,
+                rawCopy?.stepProgressLabel
+            ) ?? DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
         stepAnnouncementTemplate:
-            progressBar?.content?.stepAnnouncementTemplate ??
-            rawCopy?.stepAnnouncementTemplate ??
-            DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
+            firstNonEmpty(
+                progressBar?.content?.stepAnnouncementTemplate,
+                rawCopy?.stepAnnouncementTemplate
+            ) ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
         rescheduleOrCancelLabel:
-            buttonLabels?.buttonTexts?.manageLinkLabel ??
-            rawCopy?.rescheduleOrCancelLabel ??
-            DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
+            firstNonEmpty(
+                buttonLabels?.buttonTexts?.manageLinkLabel,
+                rawCopy?.rescheduleOrCancelLabel
+            ) ?? DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
     }
 
     const validation = copy?.validation ?? props.validation
 
     const validationCopy: ValidationCopy = React.useMemo(() => {
         const validationMessages = validation
+        // BE-126: cleared messages fall back instead of blank error rows.
         return {
             requiredFieldError:
-                validationMessages?.requiredFieldError ??
+                firstNonEmpty(validationMessages?.requiredFieldError) ??
                 DEFAULT_VALIDATION_COPY.requiredFieldError,
-            emailError: validationMessages?.emailError ?? DEFAULT_VALIDATION_COPY.emailError,
-            phoneError: validationMessages?.phoneError ?? DEFAULT_VALIDATION_COPY.phoneError,
-            numberError: validationMessages?.numberError ?? DEFAULT_VALIDATION_COPY.numberError,
-            urlError: validationMessages?.urlError ?? DEFAULT_VALIDATION_COPY.urlError,
+            emailError:
+                firstNonEmpty(validationMessages?.emailError) ?? DEFAULT_VALIDATION_COPY.emailError,
+            phoneError:
+                firstNonEmpty(validationMessages?.phoneError) ?? DEFAULT_VALIDATION_COPY.phoneError,
+            numberError:
+                firstNonEmpty(validationMessages?.numberError) ??
+                DEFAULT_VALIDATION_COPY.numberError,
+            urlError: firstNonEmpty(validationMessages?.urlError) ?? DEFAULT_VALIDATION_COPY.urlError,
             minLengthError:
-                validationMessages?.minLengthError ?? DEFAULT_VALIDATION_COPY.minLengthError,
+                firstNonEmpty(validationMessages?.minLengthError) ??
+                DEFAULT_VALIDATION_COPY.minLengthError,
             maxLengthError:
-                validationMessages?.maxLengthError ?? DEFAULT_VALIDATION_COPY.maxLengthError,
+                firstNonEmpty(validationMessages?.maxLengthError) ??
+                DEFAULT_VALIDATION_COPY.maxLengthError,
             pickDateTimeError:
-                validationMessages?.pickDateTimeError ?? DEFAULT_VALIDATION_COPY.pickDateTimeError,
+                firstNonEmpty(validationMessages?.pickDateTimeError) ??
+                DEFAULT_VALIDATION_COPY.pickDateTimeError,
             pastTimeError:
-                validationMessages?.pastTimeError ?? DEFAULT_VALIDATION_COPY.pastTimeError,
+                firstNonEmpty(validationMessages?.pastTimeError) ??
+                DEFAULT_VALIDATION_COPY.pastTimeError,
             minLength: DEFAULT_VALIDATION_COPY.minLength,
         }
     }, [validation])
@@ -7679,9 +7857,35 @@ function useBookingEngineState(
 
     const prefersReducedMotion = useReducedMotion() ?? false
 
+    // BE-126: author duration/delay clamp — a 10s step change used to ghost
+    // both steps with dead clicks for the whole time.
     const stepTransition: Transition = prefersReducedMotion
         ? ({ type: "tween", duration: 0 } as const)
-        : transition || ({ type: "tween", ease: [0.44, 0, 0.56, 1], duration: 0.4 } as const)
+        : {
+              ...(transition || {
+                  type: "tween",
+                  ease: [0.44, 0, 0.56, 1],
+                  duration: 0.4,
+              }),
+              ...(typeof (transition as { duration?: unknown } | null)?.duration === "number"
+                  ? {
+                        duration: clamp(
+                            (transition as { duration: number }).duration,
+                            STEP_DURATION_MIN,
+                            STEP_DURATION_MAX
+                        ),
+                    }
+                  : {}),
+              ...(typeof (transition as { delay?: unknown } | null)?.delay === "number"
+                  ? {
+                        delay: clamp(
+                            (transition as { delay: number }).delay,
+                            STEP_DELAY_MIN,
+                            STEP_DELAY_MAX
+                        ),
+                    }
+                  : {}),
+          }
 
     const allowedTransitionVariants: TransitionVariantId[] = [
         "fadeRise",
@@ -9134,16 +9338,18 @@ function useBookingEngineState(
     const fontStack: React.CSSProperties = React.useMemo(
         () => ({
             fontFamily: font?.fontFamily ?? DEFAULT_FONT_FAMILY,
-            fontSize: font?.fontSize ?? 15,
-            lineHeight: font?.lineHeight ?? 1.4,
+            // BE-126: root body size mirrors an 11-20 panel range.
+            fontSize: clampFontPx(font?.fontSize, 11, 20, 15),
+            lineHeight: clampLineHeight(font?.lineHeight) ?? 1.4,
             letterSpacing: font?.letterSpacing ?? 0,
             fontWeight: font?.fontWeight ?? 400,
             fontStyle: font?.fontStyle ?? "normal",
         }),
         [font]
     )
-    const bodySubtitleSize = fontPixelSize(font?.fontSize) ?? 14
-    const bodySubtitleLineHeight = font?.lineHeight ?? 1.5
+    // BE-126: body font mirrors an 11-20 panel range at runtime.
+    const bodySubtitleSize = clampFontPx(font?.fontSize, 11, 20, 14)
+    const bodySubtitleLineHeight = clampLineHeight(font?.lineHeight) ?? 1.5
 
     const needsCalSetup = hasDatetimeStep && !hasCalConfig
 
@@ -9749,10 +9955,25 @@ export default function BookingEngine(props: BookingEngineProps) {
                 ),
                 cursor: isSubmitting ? "not-allowed" : "pointer",
                 opacity: isSubmitting ? 0.5 : 1,
-                ...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
+                // BE-126: minWidth 0 lets long labels shrink-to-ellipsis
+                // instead of overflowing the footer row.
+                minWidth: 0,
+                ...(navFill ? { flex: "1 1 0" } : {}),
             }}
         >
-            {backLabel}
+            {/* BE-126: long labels truncate instead of overflowing the row. */}
+            <span
+                style={{
+                    display: "block",
+                    minWidth: 0,
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                }}
+            >
+                {backLabel}
+            </span>
         </button>
     ) : null
     const primaryGroupEl = (
@@ -9786,7 +10007,9 @@ export default function BookingEngine(props: BookingEngineProps) {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    ...(navFill ? { flex: "1 1 0", minWidth: 0 } : {}),
+                    // BE-126: minWidth 0 lets long labels shrink-to-ellipsis.
+                    minWidth: 0,
+                    ...(navFill ? { flex: "1 1 0" } : {}),
                 }}
             >
                 {isSubmitting ? (
@@ -9813,7 +10036,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                         {DEFAULT_COPY_BOOKING_LABEL}
                     </motion.span>
                 ) : (
-                    <span style={{ display: "grid" }}>
+                    <span style={{ display: "grid", minWidth: 0 }}>
                         <AnimatePresence initial={false}>
                             <motion.span
                                 key={primaryLabel}
@@ -9833,6 +10056,11 @@ export default function BookingEngine(props: BookingEngineProps) {
                                     gridArea: "1 / 1",
                                     display: "inline-block",
                                     whiteSpace: "nowrap",
+                                    // BE-126: long labels truncate (24-char
+                                    // panel cap + this backstop for stored).
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    maxWidth: "100%",
                                 }}
                             >
                                 {primaryLabel}
@@ -10196,8 +10424,8 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                     ? { textAlign: step.alignment }
                                                     : { textAlign: terminalAlignment }),
                                                 fontFamily: headingFont?.fontFamily ?? "inherit",
-                                                fontSize:
-                                                    fontPixelSize(headingFont?.fontSize) ?? 22,
+                                                // BE-126: head font 16-40 + line-height floor.
+                                                fontSize: clampFontPx(headingFont?.fontSize, 16, 40, 22),
                                                 fontWeight: headingFont?.fontWeight ?? 700,
                                                 ...(headingFont?.fontStyle
                                                     ? { fontStyle: headingFont.fontStyle }
@@ -10206,7 +10434,12 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                     ? { letterSpacing: headingFont.letterSpacing }
                                                     : {}),
                                                 ...(headingFont?.lineHeight != null
-                                                    ? { lineHeight: headingFont.lineHeight }
+                                                    ? {
+                                                          lineHeight:
+                                                              clampLineHeight(
+                                                                  headingFont.lineHeight
+                                                              ) ?? 1.2,
+                                                      }
                                                     : { lineHeight: 1.2 }),
                                                 marginBottom: 0,
                                                 marginTop: 0,
@@ -10621,6 +10854,27 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 
     const slotErrorId = `${instanceId ? `${instanceId}-` : ""}be-slot-error`
 
+    // BE-126: a trailing lone Half (odd halves in its row segment) spans
+    // both tracks instead of leaving a half-empty row beside it.
+    const halfOrphanId = React.useMemo(() => {
+        let pos = 0
+        let lastHalfId: string | null = null
+        for (const f of step.fields) {
+            const isHalf = f.width === "half" && f.fieldType !== "textarea"
+            if (!isHalf) {
+                pos = 0
+                lastHalfId = null
+            } else if (pos === 1) {
+                pos = 0
+                lastHalfId = null
+            } else {
+                pos = 1
+                lastHalfId = f.id ?? null
+            }
+        }
+        return lastHalfId
+    }, [step.fields])
+
     const slotErrorBannerRef = React.useRef<HTMLDivElement | null>(null)
     const prevSlotErrorRef = React.useRef<string | null>(null)
     React.useEffect(() => {
@@ -10663,6 +10917,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         instanceId={instanceId}
                         globalFieldStyles={globalFieldStyles}
                         transitionVariant={transitionVariant}
+                        forceFullWidth={field.id === halfOrphanId}
                     />
                 ))}
             </div>
@@ -10873,6 +11128,7 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             instanceId={instanceId}
                             globalFieldStyles={globalFieldStyles}
                             transitionVariant={transitionVariant}
+                            forceFullWidth={field.id === halfOrphanId}
                         />
                     ))}
             </div>
@@ -11483,6 +11739,8 @@ interface FieldRendererProps {
     instanceId: string
     /** BE-125: author-selected Transition Type for menu surfaces. */
     transitionVariant: TransitionVariantId
+    /** BE-126: trailing lone Half spans both tracks (no half-empty row). */
+    forceFullWidth?: boolean
 }
 
 function FieldErrorMessage({
@@ -11521,6 +11779,9 @@ function FieldErrorMessage({
 const SELECT_MENU_MAX_PX = 320
 const SELECT_MENU_VIEWPORT_RATIO = 0.4
 const SELECT_MENU_Z_INDEX = 999999
+// BE-126: visible chip cap — the rest collapse into a "+N" overflow chip
+// (their hidden inputs still submit, values/validation untouched).
+const MAX_VISIBLE_CHIPS = 3
 
 interface SelectMenuPlacement {
     left: number
@@ -11934,7 +12195,8 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     // BE-117: pin the exact inputBaseStyle line-height rule —
                     // inputs compute their own `normal`, divs inherit the
                     // root's computed px value (measured 38px vs 43px).
-                    lineHeight: fs?.font?.lineHeight ?? "normal",
+                    // BE-126: same line-height floor as the input.
+                    lineHeight: clampLineHeight(fs?.font?.lineHeight) ?? "normal",
                     color:
                         picked.length === 0 && fs?.placeholderColor
                             ? fs.placeholderColor
@@ -11966,7 +12228,8 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                         {placeholder || " "}
                     </span>
                 ) : (
-                    pickedOptions.map((o) => {
+                    <>
+                    {pickedOptions.slice(0, MAX_VISIBLE_CHIPS).map((o) => {
                         const v = optionValue(o)
                         return (
                             <motion.span
@@ -12042,7 +12305,28 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                 </button>
                             </motion.span>
                         )
-                    })
+                    })}
+                    {/* BE-126: overflow chip — hidden picks still submit via
+                        their hidden inputs; only visible chips are capped. */}
+                    {pickedOptions.length > MAX_VISIBLE_CHIPS ? (
+                        <span
+                            title={`${pickedOptions.length - MAX_VISIBLE_CHIPS} more selected`}
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                padding: "4px 8px",
+                                borderRadius: menuRowRadiusValue,
+                                background: withAlpha(theme.textPrimaryColor, 0.08),
+                                color: theme.textSecondaryColor,
+                                fontSize: 13,
+                                lineHeight: 1.4,
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            +{pickedOptions.length - MAX_VISIBLE_CHIPS}
+                        </span>
+                    ) : null}
+                    </>
                 )}
                 <svg
                     width="16"
@@ -12497,7 +12781,8 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     // BE-117: pin the exact inputBaseStyle line-height rule —
                     // inputs compute their own `normal`, divs inherit the
                     // root's computed px value (measured 38px vs 43px).
-                    lineHeight: fs?.font?.lineHeight ?? "normal",
+                    // BE-126: same line-height floor as the input.
+                    lineHeight: clampLineHeight(fs?.font?.lineHeight) ?? "normal",
                     color:
                         !displayValue && fs?.placeholderColor
                             ? fs.placeholderColor
@@ -12519,6 +12804,15 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     initial={selectMounted ? { opacity: 0 } : false}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.12 }}
+                    // BE-126: long labels truncate like the menu rows do.
+                    style={{
+                        display: "block",
+                        minWidth: 0,
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                    }}
                 >
                     {selectedOption?.label ?? " "}
                 </motion.span>
@@ -13401,6 +13695,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         instanceId = "",
         globalFieldStyles,
         transitionVariant,
+        forceFullWidth = false,
     } = props
 
     const domIdPrefix = instanceId ? `${instanceId}-` : ""
@@ -13465,7 +13760,16 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
     // keep winning for stored canvases, engine defaults last.
     const fsSelected = normalizeStyleOverrides(fs?.selected)
-    const fsSelectedPaddingAxes = paddingAxesFrom(fsSelected?.padding ?? "")
+    // BE-126: selected padding clamps — huge values collapse the segmented
+    // thumb math and balloon selected options past their siblings.
+    const fsSelectedPaddingAxes = (() => {
+        const axes = paddingAxesFrom(fsSelected?.padding ?? "")
+        if (!axes) return axes
+        return {
+            y: clamp(axes.y, SELECTED_PADDING_MIN, SELECTED_PADDING_MAX),
+            x: clamp(axes.x, SELECTED_PADDING_MIN, SELECTED_PADDING_MAX),
+        }
+    })()
     const firstSetColor = (...values: Array<string | undefined>): string | undefined => {
         for (const value of values) {
             if (typeof value === "string" && value.trim()) return value
@@ -13484,17 +13788,20 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
 
     const labelTextStyle: React.CSSProperties = {
         display: "block",
-        fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 13,
+        // BE-126: label font mirrors a 10-24 panel range at runtime.
+        fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 13),
         fontWeight: fs?.labelFont?.fontWeight ?? 500,
         ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
         ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
         ...(fs?.labelFont?.letterSpacing != null
             ? { letterSpacing: fs.labelFont.letterSpacing }
             : {}),
-        lineHeight: fs?.labelFont?.lineHeight ?? 1.6,
+        lineHeight: clampLineHeight(fs?.labelFont?.lineHeight) ?? 1.6,
         color: fs?.labelColor ?? theme.textPrimaryColor,
     }
-    const labelEl = isChoiceFieldType ? (
+    // BE-126: blank labels render no element (an empty div kept its gap).
+    const hasLabel = typeof field.label === "string" && field.label.trim() !== ""
+    const labelEl = !hasLabel ? null : isChoiceFieldType ? (
         <div style={labelTextStyle}>{field.label}</div>
     ) : (
         <label htmlFor={fieldDomId} style={labelTextStyle}>
@@ -13531,12 +13838,16 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     const containerStyle: React.CSSProperties = {
         // BE-091/BE-102: spans are config-only and width-agnostic — span 1 in
         // a single-track grid still fills the whole row, so no measurement is
-        // ever needed here. Textarea always spans both tracks.
+        // ever needed here. Textarea always spans both tracks. BE-126: a
+        // trailing lone Half spans both tracks (no half-empty row).
         gridColumn:
-            field.fieldType === "textarea" || field.width !== "half" ? "span 2" : "span 1",
+            field.fieldType === "textarea" || field.width !== "half" || forceFullWidth
+                ? "span 2"
+                : "span 1",
         display: "flex",
         flexDirection: "column",
-        gap: fs?.spacing ?? 6,
+        // BE-126: inner gap mirrors its 0-24 panel range at runtime.
+        gap: clamp(fs?.spacing ?? 6, 0, 24),
         minWidth: 0,
     }
 
@@ -13546,9 +13857,14 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     const reducedMotion = useReducedMotion() ?? false
 
     const fsFontSize = fontPixelSize(fs?.font?.fontSize)
-    const fsInputFontSize = isCoarsePointer
-        ? Math.max(16, fsFontSize ?? inputFontSize)
-        : (fsFontSize ?? inputFontSize)
+    // BE-126: field font mirrors a 10-28 panel range at runtime (coarse
+    // pointers keep their 16px legibility floor first).
+    const fsInputFontSize = clampFontPx(
+        isCoarsePointer ? Math.max(16, fsFontSize ?? inputFontSize) : (fsFontSize ?? inputFontSize),
+        10,
+        28,
+        inputFontSize
+    )
     const fsBorder = resolveFieldBorder(fs, field.fieldType)
     const fsRadius = resolveFieldRadius(fs, borderRadius, field.fieldType)
     const fsPadding = resolveFieldPadding(fs, field.fieldType)
@@ -13567,7 +13883,10 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ...(fs?.font?.fontWeight != null ? { fontWeight: fs.font.fontWeight } : {}),
         ...(fs?.font?.fontStyle ? { fontStyle: fs.font.fontStyle } : {}),
         ...(fs?.font?.letterSpacing != null ? { letterSpacing: fs.font.letterSpacing } : {}),
-        ...(fs?.font?.lineHeight != null ? { lineHeight: fs.font.lineHeight } : {}),
+        // BE-126: line-height floor (verbatim "normal" untouched).
+        ...(fs?.font?.lineHeight != null
+            ? { lineHeight: clampLineHeight(fs.font.lineHeight) }
+            : {}),
         boxSizing: "border-box",
         ...(fs?.placeholderColor
             ? ({ "--be-ph-color": fs.placeholderColor } as React.CSSProperties)
@@ -13709,7 +14028,8 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         backgroundColor={fs?.backgroundColor ?? theme.surfaceColor}
                         borderColor={fsBorder.color ?? theme.borderColor}
                         radius={resolveFieldRadius(fs, borderRadius, field.fieldType)}
-                        fontSize={fontPixelSize(fs?.font?.fontSize) ?? 14}
+                        // BE-126: trigger text mirrors the 10-28 field range.
+                        fontSize={clampFontPx(fs?.font?.fontSize, 10, 28, 14)}
                         selectedBackgroundColor={fsSelectedBg}
                         selectedTextColor={fsSelectedText}
                         selectedBorderColor={fsSelectedBorderColor}
@@ -13746,18 +14066,25 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
             const checked = Boolean(value)
             const checkAccent = fs?.accentColor ?? theme.accentColor
             // CHECK-SIZE (BE-025): field-level control first, legacy
-            // carriers keep winning for stored canvases.
-            const checkSize = field.checkSize ?? fs?.checkSize ?? FIELD_STYLES_CHECK_SIZE
+            // carriers keep winning for stored canvases. BE-126: mirrors
+            // its 12-32 panel range at runtime.
+            const checkSize = clamp(
+                field.checkSize ?? fs?.checkSize ?? FIELD_STYLES_CHECK_SIZE,
+                12,
+                32
+            )
             const checkLabelStyle: React.CSSProperties = {
-                fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 14,
+                // BE-126: label font mirrors a 10-24 panel range at runtime.
+                fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 14),
                 fontWeight: fs?.labelFont?.fontWeight ?? 400,
                 ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
                 ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
                 ...(fs?.labelFont?.letterSpacing != null
                     ? { letterSpacing: fs.labelFont.letterSpacing }
                     : {}),
+                // BE-126: line-height floor (verbatim "normal" untouched).
                 ...(fs?.labelFont?.lineHeight != null
-                    ? { lineHeight: fs.labelFont.lineHeight }
+                    ? { lineHeight: clampLineHeight(fs.labelFont.lineHeight) }
                     : {}),
                 color: fs?.labelColor ?? theme.textPrimaryColor,
             }
@@ -13808,7 +14135,8 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
             const checkAccent = fs?.accentColor ?? theme.accentColor
             const checkSize = field.checkSize ?? fs?.checkSize ?? FIELD_STYLES_CHECK_SIZE
             const checkLabelStyle: React.CSSProperties = {
-                fontSize: fontPixelSize(fs?.labelFont?.fontSize) ?? 14,
+                // BE-126: label font mirrors a 10-24 panel range at runtime.
+                fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 14),
                 fontWeight: fs?.labelFont?.fontWeight ?? 400,
                 ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
                 ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
@@ -14853,7 +15181,13 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                           fontFamily:
                                               calendarLinkSet?.font?.fontFamily ?? "inherit",
                                           fontSize:
-                                              fontPixelSize(calendarLinkSet?.font?.fontSize) ?? 14,
+                                              // BE-126: menu rows mirror a 10-24 range.
+                                              clampFontPx(
+                                                  calendarLinkSet?.font?.fontSize,
+                                                  10,
+                                                  24,
+                                                  14
+                                              ),
                                           ...(calendarLinkSet?.font?.fontWeight != null
                                               ? { fontWeight: calendarLinkSet.font.fontWeight }
                                               : {}),
@@ -15213,13 +15547,14 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         className="be-focus-target"
                         style={{
                             fontFamily: headingFont?.fontFamily ?? "inherit",
-                            fontSize: fontPixelSize(headingFont?.fontSize) ?? 22,
+                            // BE-126: head font mirrors a 16-40 panel range.
+                            fontSize: clampFontPx(headingFont?.fontSize, 16, 40, 22),
                             fontWeight: headingFont?.fontWeight ?? 700,
                             ...(headingFont?.fontStyle ? { fontStyle: headingFont.fontStyle } : {}),
                             ...(headingFont?.letterSpacing != null
                                 ? { letterSpacing: headingFont.letterSpacing }
                                 : {}),
-                            lineHeight: headingFont?.lineHeight ?? 1.2,
+                            lineHeight: clampLineHeight(headingFont?.lineHeight) ?? 1.2,
                             color: textPrimaryColor,
                             textAlign: terminalAlignment,
                             marginBottom: 4,
@@ -15532,7 +15867,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                                 ...(headingFont?.letterSpacing != null
                                     ? { letterSpacing: headingFont.letterSpacing }
                                     : {}),
-                                lineHeight: headingFont?.lineHeight ?? 1.2,
+                                lineHeight: clampLineHeight(headingFont?.lineHeight) ?? 1.2,
                                 color: textPrimaryColor,
                                 marginTop: 0,
                                 marginBottom: 0,
@@ -15702,7 +16037,10 @@ function fieldStylesShadowControl(title: string = "Shadow") {
     }
 }
 function shadowStyle(shadow: string | undefined): React.CSSProperties {
-    return !isNoShadowValue(shadow) && shadow && shadow.trim() ? { boxShadow: shadow } : {}
+    if (isNoShadowValue(shadow) || !shadow || !shadow.trim()) return {}
+    // BE-126: shadow lengths clamp — huge spreads used to hard-clip at the
+    // form's 24px paint boundary.
+    return { boxShadow: clampShadowLengths(shadow.trim(), SHADOW_LENGTH_MAX_ABS) }
 }
 
 function makeInputFieldStylesControls() {
@@ -15814,15 +16152,18 @@ function makeButtonInteractionControls(borderDefaultColor: string) {
             type: ct(ControlType.Number),
             title: "Scale",
             defaultValue: 1,
-            min: 0.5,
-            max: 1.5,
+            // BE-126: narrowed so hover/pressed can never shrink the button
+            // under the cursor or blow up the footer row.
+            min: 0.95,
+            max: 1.05,
             step: 0.01,
         },
         opacity: {
             type: ct(ControlType.Number),
             title: "Opacity",
             defaultValue: 1,
-            min: 0,
+            // BE-126: never below 0.5 — no clickable ghost buttons.
+            min: 0.5,
             max: 1,
             step: 0.01,
         },
@@ -15895,7 +16236,13 @@ function resolveButtonStyle(
     radiusToken: string | number
 ): React.CSSProperties {
     const font = group?.font
-    const width = group?.border?.borderWidth ?? role.borderWidth
+    // BE-126: author border/padding/radius/font clamp — footer buttons can
+    // never outgrow the embed; explicit 0 border survives as none.
+    const width = clamp(
+        group?.border?.borderWidth ?? role.borderWidth,
+        BORDER_WIDTH_MIN,
+        BORDER_WIDTH_MAX
+    )
     const style = group?.border?.borderStyle || "solid"
     const bColor = group?.border?.borderColor || role.borderColor
     return {
@@ -15904,22 +16251,28 @@ function resolveButtonStyle(
         border: width > 0 ? `${width}px ${style} ${bColor}` : "none",
         borderRadius:
             typeof group?.radius === "string" && group.radius.trim()
-                ? group.radius
-                : typeof group?.radius === "number"
-                  ? `${group.radius}px`
+                ? `${clampRadiusToken(group.radius)}`
+                : typeof group?.radius === "number" && Number.isFinite(group.radius)
+                  ? `${clampRadiusToken(group.radius)}`
                   : typeof radiusToken === "number"
                     ? `${radiusToken}px`
                     : radiusToken,
         padding:
             typeof group?.padding === "string" && group.padding.trim()
-                ? group.padding
+                ? clampBoxPadding(
+                      group.padding,
+                      BUTTON_PADDING_MIN_Y,
+                      BUTTON_PADDING_MAX_Y,
+                      BUTTON_PADDING_MIN_X,
+                      BUTTON_PADDING_MAX_X
+                  )
                 : role.padding,
         fontFamily: font?.fontFamily ?? "inherit",
-        fontSize: fontPixelSize(font?.fontSize) ?? 14,
+        fontSize: clampFontPx(font?.fontSize, 10, 24, 14),
         fontWeight: font?.fontWeight ?? 600,
         ...(font?.fontStyle ? { fontStyle: font.fontStyle } : {}),
         ...(font?.letterSpacing != null ? { letterSpacing: font.letterSpacing } : {}),
-        ...(font?.lineHeight != null ? { lineHeight: font.lineHeight } : {}),
+        ...(font?.lineHeight != null ? { lineHeight: clampLineHeight(font.lineHeight) } : {}),
         ...shadowStyle(group?.shadow),
     }
 }
@@ -16017,9 +16370,13 @@ function applyButtonInteraction(
             const baseColor = typeof base.color === "string" && base.color ? base.color : null
             out.border = `${hbWidth}px ${hb.borderStyle || (baseParts ? baseParts[1] : "solid")} ${hb.borderColor || (baseParts ? baseParts[2] : null) || baseColor || "currentColor"}`
         }
-        if (st.opacity != null) out.opacity = st.opacity
+        // BE-126: runtime clamp mirrors the narrowed panel ranges, so
+        // stored/programmatic values outside still cannot shrink, hide,
+        // or blow up the button.
+        if (st.opacity != null) out.opacity = clamp(st.opacity, 0.5, 1)
         if (st.scale != null && st.scale !== 1) {
-            out.transform = `scale(${st.scale})`
+            const s = clamp(st.scale, 0.95, 1.05)
+            if (s !== 1) out.transform = `scale(${s})`
         }
         Object.assign(out, shadowStyle(st.shadow))
     }
@@ -16050,6 +16407,15 @@ function resolveButtonText(...candidates: Array<string | undefined>): string {
         if (candidate) return candidate
     }
     return ""
+}
+
+// BE-126: first non-blank string wins — clearing a copy row restores its
+// default instead of rendering a blank gap.
+function firstNonEmpty(...candidates: Array<string | undefined>): string | undefined {
+    for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim() !== "") return candidate
+    }
+    return undefined
 }
 
 function makeFieldObjectControls() {
@@ -16556,6 +16922,9 @@ addPropertyControls(BookingEngine, {
                         defaultValue: "Book Now",
                     },
                     // BE-083: the Manage menu-item label moved here from Copy.
+                    // BE-126: no maxLength — the installed String types reject
+                    // it (docs describe it, @types lag); the footer ellipsis
+                    // backstop below covers long stored values instead.
                     manageLinkLabel: {
                         type: ControlType.String,
                         title: "Manage Link",
@@ -16665,8 +17034,9 @@ addPropertyControls(BookingEngine, {
                 type: ControlType.Number,
                 title: "Thumb Stiffness",
                 defaultValue: 400,
-                min: 50,
-                max: 1000,
+                // BE-126: narrowed — below crawls, above snaps (motion dead).
+                min: 150,
+                max: 600,
                 step: 10,
                 displayStepper: true,
                 description: "Slide speed of the segmented thumb — higher is snappier.",
@@ -16675,8 +17045,9 @@ addPropertyControls(BookingEngine, {
                 type: ControlType.Number,
                 title: "Thumb Damping",
                 defaultValue: 38,
-                min: 5,
-                max: 100,
+                // BE-126: narrowed — below bounces violently past the edge.
+                min: 20,
+                max: 60,
                 step: 1,
                 displayStepper: true,
                 description: "Calmness of the segmented thumb — higher means less overshoot and bounce.",
