@@ -520,3 +520,19 @@
 - **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order.
 - **Implementation record (2026-09-11):** One-line `paddingLeft: 0` after the `inputBaseStyle` spread in the national input (wins over the shared shorthand). Full-file tsc clean; biome at the pre-existing baseline.
 
+---
+
+### BE-121 — Phone flag trigger: left padding follows the shared Padding control
+
+- **Status:** Done (2026-09-11)
+- **Description:** The phone field has three parts (flag button, dial slot, national input). Raising the shared Padding control grew the national input on all sides, but the flag button only grew top/bottom — its left (fixed 10px) and right (fixed 8px) never moved. The author wants top/bottom/left to follow the shared padding, right excluded.
+- **Current Behavior:** (pre-fix) flag trigger hardcodes `paddingLeft: 10, paddingRight: 8` regardless of the Padding control.
+- **Expected Behavior:** Flag trigger uses `paddingLeft: padAxes.x` (shared horizontal) with top/bottom already on `padAxes.y`; `paddingRight` stays fixed at 8px so the seam divider never drifts from the dial slot.
+- **Acceptance Criteria:**
+  - [x] Raising Padding grows the flag button top/bottom/left exactly like other fields; right side unchanged.
+  - [x] Seam/divider geometry and dial-slot adjacency untouched.
+- **Constraints / Must Not Do:** Do not add a Property Control for this; do not change the fixed right padding.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — trigger padding clause).
+- **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order.
+- **Implementation record (2026-09-11):** One-line change (`paddingLeft: 10` to `paddingLeft: padAxes.x`). Full-file tsc clean; biome at the pre-existing baseline.
+

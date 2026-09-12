@@ -12622,7 +12622,10 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         gap: 4,
                         paddingTop: padAxes.y,
                         paddingBottom: padAxes.y,
-                        paddingLeft: 10,
+                        // BE-121: left follows the shared horizontal padding
+                        // like every other field; right stays fixed so the
+                        // seam divider never drifts from the dial slot.
+                        paddingLeft: padAxes.x,
                         paddingRight: 8,
                         borderTopRightRadius: 0,
                         borderBottomRightRadius: 0,
