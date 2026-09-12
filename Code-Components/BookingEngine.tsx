@@ -12803,6 +12803,9 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         borderWidth: 0,
                         background: "transparent",
                         boxShadow: "none",
+                        // BE-120: shared padding everywhere except the left —
+                        // the typed digits sit flush against the dial slot.
+                        paddingLeft: 0,
                         borderTopLeftRadius: 0,
                         borderBottomLeftRadius: 0,
                         borderTopRightRadius: 0,

@@ -504,3 +504,19 @@
 - **Related AGENTS.md Rule(s):** Rules 87, 90, 93, 96, 98, 154, BE-117 entry, Rule 130.
 - **Additional Context:** Reported 2026-09-11 (Arabic). Root-cause analysis: pre-BE-117 trigger roots inherited the root computed px line-height while inputs computed their own normal; defaults coincided, but activation materializes the Field Font row (Framer fills a concrete lineHeight), so inputs recompute from their own font while triggers kept inheriting the root value — the gap. BE-117 pins both sides to the identical rule, which in-browser measurement proved equal (38px = 38px), and every Field Styles row already carries its effective default — so on current code activation cannot diverge shared-key geometry. The report was filed while BE-092..BE-117 were still uncommitted working-tree edits, so the canvas under test predates the fix. If a single OLD field still diverges post-sync, its hidden stored legacy carriers differ from its siblings (per-field Styles controls are removed, so delete + re-add that field to clear them).
 
+---
+
+### BE-120 — Phone national input keeps shared padding everywhere except the left
+
+- **Status:** Done (2026-09-11)
+- **Description:** In the phone field the national-number box (where the visitor types the rest of the digits) carried the full shared padding on all four sides, leaving a wide gap between the dial slot and the typed digits. The author wants the shared padding kept on every side except the left, so the digits sit flush against the dial slot.
+- **Current Behavior:** (pre-fix) the national input inherits the whole shared padding including 14px on the left.
+- **Expected Behavior:** The national input keeps the shared top/right/bottom padding with `paddingLeft: 0`; dial slot, group border, divider behavior, and all other phone mechanics unchanged.
+- **Acceptance Criteria:**
+  - [x] Typed digits (and placeholder) start flush against the dial slot; top/right/bottom spacing unchanged.
+  - [x] No other field type affected; phone validation/storage/display untouched.
+- **Constraints / Must Not Do:** Do not add a Property Control for this; do not touch the dial slot width or the group border.
+- **Related AGENTS.md Rule(s):** Rule 196 (amended — national-input padding clause).
+- **Additional Context:** Ordered 2026-09-11 (Arabic), explicit implement order.
+- **Implementation record (2026-09-11):** One-line `paddingLeft: 0` after the `inputBaseStyle` spread in the national input (wins over the shared shorthand). Full-file tsc clean; biome at the pre-existing baseline.
+
