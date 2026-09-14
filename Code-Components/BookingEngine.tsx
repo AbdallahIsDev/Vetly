@@ -642,23 +642,88 @@ function innerRadiusValue(value: string | number | undefined, inset: number): st
     return `${Math.max(0, parseRadiusNumber(value) - inset)}px`
 }
 
+// BE-131: font sizes arrive as bare numbers, px, rem, em or % — every form is
+// normalized to px here so the size caps are unit-correct (1rem/1em = 16px).
+const FONT_UNIT_BASE_PX = 16
 function fontPixelSize(value: string | number | undefined): number | undefined {
     if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : undefined
-    if (typeof value === "string") {
-        const parsed = Number.parseFloat(value)
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+    if (typeof value !== "string") return undefined
+    const s = value.trim().toLowerCase()
+    if (!s) return undefined
+    const m = /^(-?\d*\.?\d+)\s*([a-z%]*)$/.exec(s)
+    if (!m) return undefined
+    const n = Number(m[1])
+    if (!Number.isFinite(n) || n <= 0) return undefined
+    switch (m[2]) {
+        case "":
+        case "px":
+            return n
+        case "rem":
+        case "em":
+            return n * FONT_UNIT_BASE_PX
+        case "%":
+            return (n / 100) * FONT_UNIT_BASE_PX
+        default:
+            return undefined
     }
-    return undefined
+}
+
+/** BE-135: the two field shapes an author can pick in the shared `Field Styles`
+ *  group. `boxed` is the historical look (untouched canvases resolve to it);
+ *  `underline` renders the boxed-input family as a clean bottom-edge-only field. */
+type FieldShape = "boxed" | "underline"
+
+/** The only family `Field Shape = Underline` may touch: every field that renders
+ *  as a boxed input. Choice variants (segmented/pills/cards/radio/checkbox/
+ *  checkboxgroup) and the calendar keep their own shape and fill — that scoping
+ *  is the whole point of BE-135, not an omission. */
+const UNDERLINE_FIELD_TYPES: ReadonlySet<string> = new Set<string>([
+    "text",
+    "email",
+    "phone",
+    "number",
+    "url",
+    "textarea",
+    "select",
+    "multiselect",
+])
+
+function usesUnderlineShape(shape: FieldShape | undefined, fieldType: FieldType): boolean {
+    return shape === "underline" && UNDERLINE_FIELD_TYPES.has(fieldType)
+}
+
+/** BE-143: `Hide Label` is offered only for the boxed-input family — the exact
+ *  set that can take the Underline shape (BE-135/rule 205). Hiding a label only
+ *  reads as a design where the placeholder guides the eye, which is that shape.
+ *  Choice variants (segmented/pills/cards/radio/checkbox/checkboxgroup) render
+ *  their label inside the group's own frame and the calendar widget has no label
+ *  row at all, so none of them offers the control — and a stored flag on one of
+ *  them never applies, so the panel and the render agree. */
+function supportsHiddenLabel(fieldType: FieldType | undefined): boolean {
+    return typeof fieldType === "string" && UNDERLINE_FIELD_TYPES.has(fieldType)
+}
+
+type ResolvedFieldBorder = {
+    /** Legacy aggregate (the widest side) — option/tile consumers keep one width. */
+    width: number
+    style: string
+    color: string | undefined
+    top: number
+    right: number
+    bottom: number
+    left: number
 }
 
 function resolveFieldBorder(
     fs: FieldStyleOverrides | undefined,
     fieldType?: FieldType
-): { width: number; style: string; color: string | undefined } {
+): ResolvedFieldBorder {
     const eff = fieldType ? getFieldStylesEffectiveDefaults(fieldType) : null
     const defWidth = eff?.borderWidth ?? FIELD_STYLES_BORDER_WIDTH
     const defColor = eff?.borderColor ?? FIELD_STYLES_BORDER_COLOR
     const b = fs?.border
+    const sideWidth = (v: number | undefined, fallback: number): number =>
+        clamp(v ?? fallback, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)
     const compoundSet =
         b != null &&
         (b.borderWidth != null ||
@@ -669,30 +734,61 @@ function resolveFieldBorder(
             b.borderBottomWidth != null ||
             b.borderLeftWidth != null)
     if (compoundSet && b) {
-        // Explicit 0 is a real answer: all-zero sides resolve to width 0
-        // instead of falling back to the default width. BE-126: sides clamp
-        // so author widths can never eat the content box.
-        const sides = [
-            b.borderTopWidth,
-            b.borderRightWidth,
-            b.borderBottomWidth,
-            b.borderLeftWidth,
-        ].filter((v): v is number => typeof v === "number")
-        const width = sides.length
-            ? clamp(
-                  Math.max(...sides.map((s) => clamp(s, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX))),
-                  BORDER_WIDTH_MIN,
-                  BORDER_WIDTH_MAX
-              )
-            : clamp(b.borderWidth ?? defWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)
-        return { width, style: b.borderStyle || "solid", color: b.borderColor ?? defColor }
+        // BE-129: each side keeps its own width — a bottom-only underline is a
+        // real design, never "highest value wins on all four edges". An unset
+        // side falls back to the all-sides row, then the per-type default, and
+        // an explicit 0 survives as a genuine override. BE-126: sides clamp so
+        // author widths can never eat the content box.
+        const base = b.borderWidth ?? defWidth
+        const top = sideWidth(b.borderTopWidth, base)
+        const right = sideWidth(b.borderRightWidth, base)
+        const bottom = sideWidth(b.borderBottomWidth, base)
+        const left = sideWidth(b.borderLeftWidth, base)
+        return {
+            width: Math.max(top, right, bottom, left),
+            style: b.borderStyle || "solid",
+            color: b.borderColor ?? defColor,
+            top,
+            right,
+            bottom,
+            left,
+        }
     }
+    // BE-126: author widths clamp; explicit 0 survives as none.
+    const width = clamp(fs?.borderWidth ?? defWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)
     return {
-        // BE-126: author widths clamp; explicit 0 survives as none.
-        width: clamp(fs?.borderWidth ?? defWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX),
+        width,
         style: "solid",
         color: fs?.borderColor ?? defColor,
+        top: width,
+        right: width,
+        bottom: width,
+        left: width,
     }
+}
+
+/** The single place a resolved field border becomes CSS. All-sides mode writes
+ *  four equal longhands, so the computed box matches the historical shorthand. */
+function fieldBorderCss(
+    b: Pick<ResolvedFieldBorder, "style" | "top" | "right" | "bottom" | "left">,
+    color: string
+): React.CSSProperties {
+    return {
+        borderStyle: b.style as React.CSSProperties["borderStyle"],
+        borderColor: color,
+        borderTopWidth: b.top,
+        borderRightWidth: b.right,
+        borderBottomWidth: b.bottom,
+        borderLeftWidth: b.left,
+    }
+}
+
+/** BE-135: the underline variant of a resolved border — only the bottom edge
+ *  survives, keeping the author's width, style, and color. Menus keep the full
+ *  resolved border, so this is applied per surface, never to `resolveFieldBorder`
+ *  itself. */
+function underlineBorder(b: ResolvedFieldBorder): ResolvedFieldBorder {
+    return { ...b, width: b.bottom, top: 0, right: 0, left: 0 }
 }
 
 function resolveFieldRadius(
@@ -716,10 +812,37 @@ function resolveFieldRadius(
 
 function resolveFieldPadding(fs: FieldStyleOverrides | undefined, fieldType?: FieldType): string {
     // BE-126: author padding clamps per axis — giant fields are impossible.
+    // BE-149: 8–24 for the whole field family (BE-141's 12px floor superseded
+    // for this family only). The axis fallbacks are named constants so the code
+    // says what it actually renders.
+    //
+    // BE-150: the first two branches are LEGACY CARRIERS. The `Field Styles >
+    // Padding` control is gone, so nothing writes `fs.padding` any more — but a
+    // canvas saved while the control existed still holds one, and rule 116's
+    // contract is that a removed control's stored value stays readable at one
+    // resolution site. That site is this function — the choice variants read
+    // their option padding through it too (BE-150), so author values enter at
+    // exactly one place and there is no second clamp to keep in step.
+    //
+    // The third branch is what every untouched canvas renders, and it is
+    // deliberately NOT clamped: it is the per-type built-in, derived from
+    // `FIELD_ROW_HEIGHT`, and it is already inside 8–24 by construction — the
+    // one exception being the segmented option's `0px` vertical axis, which is
+    // not a field padding at all but the track's flex centring.
     if (typeof fs?.padding === "string" && fs.padding.trim())
         return clampPadding(fs.padding, FIELD_PADDING_MIN, FIELD_PADDING_MAX)
     if (fs?.paddingY != null || fs?.paddingX != null) {
-        return `${clamp(fs?.paddingY ?? 10, FIELD_PADDING_MIN, FIELD_PADDING_MAX)}px ${clamp(fs?.paddingX ?? 14, FIELD_PADDING_MIN, FIELD_PADDING_MAX)}px`
+        const y = clamp(
+            fs?.paddingY ?? FIELD_PADDING_FALLBACK_Y,
+            FIELD_PADDING_MIN,
+            FIELD_PADDING_MAX
+        )
+        const x = clamp(
+            fs?.paddingX ?? FIELD_PADDING_FALLBACK_X,
+            FIELD_PADDING_MIN,
+            FIELD_PADDING_MAX
+        )
+        return `${y}px ${x}px`
     }
     if (fieldType) return getFieldStylesEffectiveDefaults(fieldType).padding
     return FIELD_STYLES_INPUT_PADDING
@@ -799,19 +922,86 @@ function paddingAxesFrom(padding: string): { y: number; x: number } | null {
     return { y, x }
 }
 
+// ── BE-150: the field family's row model ────────────────────────────────────
+// The author ordered ONE height for every field type and asked for each type's
+// padding and floor to be derived from it rather than hand-picked: "Give every
+// field one height, and derive each type's padding and floor from it. I'd use
+// 44px." So the row height below is the single number the family is built on,
+// and every field padding constant is a function of it — no field type carries
+// a private magic number for its vertical padding any more.
+//
+// `TOUCH_TARGET_MIN` is a component-wide token (the calendar cells use it too)
+// and it lives here because the field row is DEFINED in terms of it: 44 is not
+// a new number, it is the touch-target minimum the component already had, so
+// the field family joins an existing token instead of inventing a second one.
+const TOUCH_TARGET_MIN = 44
+/** BE-150: every field type and every choice option fills this row. */
+const FIELD_ROW_HEIGHT = TOUCH_TARGET_MIN
+/** One line of the default field text — the 14px field font at the ~1.3 line
+ *  box the boxed inputs render (~18px). Only used to derive the padding below. */
+const FIELD_TEXT_LINE = 18
+/** The field frame's own border, which sits inside the row's height. */
+const FIELD_ROW_BORDER = 1
+/** The vertical padding that centres one text line in a bordered row —
+ *  (44 − 18) / 2 − 1 = 12px. Every type that renders a bordered box or a
+ *  bordered option uses this; the two zero-padding types are the segmented
+ *  option (centred by flex in a fixed-height track) and the checkbox/calendar
+ *  (their own geometry). */
+const FIELD_ROW_PAD_Y = (FIELD_ROW_HEIGHT - FIELD_TEXT_LINE) / 2 - FIELD_ROW_BORDER
+/** The segmented track's inset: its own padding, the thumb's inset, and the
+ *  step its inner radius sits inside the track radius by. One meaning, one
+ *  name — it used to be the literal `3` in four separate places. */
+const SEGMENTED_TRACK_INSET = 3
+const SEGMENTED_TRACK_BORDER = 1
+/** BE-150: the height a segmented option gets inside a track of `trackHeight` —
+ *  the row, less the track's border and inset on both sides. */
+function segmentedOptionHeight(trackHeight: number): number {
+    return trackHeight - 2 * (SEGMENTED_TRACK_INSET + SEGMENTED_TRACK_BORDER)
+}
+/** The generic button floor (nav buttons, terminal actions, menu triggers).
+ *  Buttons are not fields: they keep their own height and padding regime. */
+const BUTTON_MIN_HEIGHT = 32
+/** BE-150: the axes of a padding that has already been RESOLVED through
+ *  `resolveFieldPadding` — i.e. the per-type built-in, or a clamped legacy
+ *  value. `paddingAxesFrom` returns `null` only for a string that is not a CSS
+ *  padding at all (its job is to vet raw author strings); a resolved padding is
+ *  always one, so this variant is total and callers need no `??` of their own.
+ *  The defensive fallback is the row's own padding, which is what the field
+ *  family renders at anyway. */
+function resolvedPaddingAxes(padding: string): { y: number; x: number } {
+    return paddingAxesFrom(padding) ?? { y: FIELD_ROW_PAD_Y, x: FIELD_ROW_PAD_Y }
+}
+
 // CUSTOMIZATION-CAPS (BE-126): Framer exposes no min/max on Padding, Font,
 // Border, Shadow, Radius, or Transition controls, so every bound below is
 // enforced here at runtime — the same dual-enforcement contract as the
 // Radius/Gap/section-gap clamps. Stored, typed, or programmatic values
 // outside the bounds clamp instead of breaking the UI.
-const FIELD_PADDING_MIN = 0
-const FIELD_PADDING_MAX = 16
-const BUTTON_PADDING_MIN_Y = 4
-const BUTTON_PADDING_MAX_Y = 20
-const BUTTON_PADDING_MIN_X = 8
-const BUTTON_PADDING_MAX_X = 32
-const SELECTED_PADDING_MIN = 0
-const SELECTED_PADDING_MAX = 16
+// BE-149: the author ordered 8–24px for the FIELD family — every field type and
+// its choice/selected options — superseding BE-141's single 12px floor for that
+// family only. Framer's Padding control exposes no min/max, so these constants
+// are the only enforcement site.
+// BE-152: the BUTTON padding clamp is gone entirely, by author order. The
+// author's model is that padding is never bounded — an element is bounded by its
+// own min/max width and height instead — so the old 12px floor and the Y 20 /
+// X 32 ceilings were deleted, together with `clampBoxPadding`, which had no
+// other caller. Button padding now renders exactly as configured, at any
+// magnitude (150px is fine). See rule 221.
+const FIELD_PADDING_MIN = 8
+const FIELD_PADDING_MAX = 24
+// The Y/X an author gets when they set only the other axis. Named because they
+// must sit inside the bounds above — a literal below the floor would be rewritten
+// by the clamp on every read, and the code would stop saying what it renders
+// (the BE-141 lesson, now stated where the value lives). BE-150: the Y is the
+// row's own padding, because a lone axis should fall back to the value every
+// field already renders at; it stays inside 8–24 by construction.
+const FIELD_PADDING_FALLBACK_Y = FIELD_ROW_PAD_Y
+const FIELD_PADDING_FALLBACK_X = 14
+// The selected option is part of the field family, so it shares the bounds
+// rather than repeating them. BE-146 removed its control, so this clamp now acts
+// only on a stored legacy `selected.padding`.
+const SELECTED_PADDING_MIN = FIELD_PADDING_MIN
+const SELECTED_PADDING_MAX = FIELD_PADDING_MAX
 const BORDER_WIDTH_MIN = 0
 const BORDER_WIDTH_MAX = 4
 const STEP_DURATION_MIN = 0
@@ -832,34 +1022,6 @@ function clampPadding(padding: string, min: number, max: number): string {
     if (!parts.length) return padding
     return parts.map((p) => clampPaddingLength(p, min, max)).join(" ")
 }
-/** Clamp a 1-4 value padding string with separate vertical/horizontal bounds,
- *  expanding CSS shorthand to [top, right, bottom, left]. */
-function clampBoxPadding(
-    padding: string,
-    minY: number,
-    maxY: number,
-    minX: number,
-    maxX: number
-): string {
-    const parts = padding.trim().split(/\s+/)
-    if (!parts.length) return padding
-    const nums = parts.map((p) => {
-        const m = /^(-?\d*\.?\d+)([a-z%]*)$/i.exec(p)
-        if (!m || (m[2] && m[2] !== "px")) return null
-        const n = Number(m[1])
-        return Number.isFinite(n) ? n : null
-    })
-    if (nums.some((n) => n === null)) return padding
-    const [t, r = t, b = t, l = r] = nums as number[]
-    return [
-        clamp(t, minY, maxY),
-        clamp(r, minX, maxX),
-        clamp(b, minY, maxY),
-        clamp(l, minX, maxX),
-    ]
-        .map((n) => `${n}px`)
-        .join(" ")
-}
 function clampFontPx(
     value: string | number | undefined,
     min: number,
@@ -870,20 +1032,78 @@ function clampFontPx(
     if (px === undefined) return fallback
     return clamp(px, min, max)
 }
-/** Line-height floor: null/undefined/"normal" pass through; numeric values
- *  below 1 (percents normalized to unitless) floor to 1. */
+// BE-131: typography caps — one table, applied at every text control. These are
+// product decisions enforced at runtime (rule 199), never "dead code".
+const FONT_CAP = {
+    /** "Standard text": field/option text, labels, button/menu/tile copy. */
+    text: { min: 12, max: 18 },
+    /** Head Font: step titles + terminal titles. */
+    head: { min: 16, max: 48 },
+    /** Body Font: root stack + subtitles. */
+    body: { min: 11, max: 18 },
+} as const
+
+/** Line-height caps: floor 1 (percents normalized to a ratio), ceiling 2em /
+ *  200% / 20px by unit. In-range values pass through verbatim; "normal" and
+ *  unknown units are never touched. */
+const LINE_HEIGHT_MAX_EM = 2
+const LINE_HEIGHT_MAX_PX = 20
 function clampLineHeight(value: string | number | undefined): string | number | undefined {
     if (value === undefined || value === null) return value
-    if (typeof value === "number") return Number.isFinite(value) && value < 1 ? 1 : value
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) return value
+        return value < 1 || value > LINE_HEIGHT_MAX_EM
+            ? clamp(value, 1, LINE_HEIGHT_MAX_EM)
+            : value
+    }
     const s = value.trim().toLowerCase()
     if (s === "" || s === "normal") return value
-    const m = /^(-?\d*\.?\d+)([a-z%]*)$/.exec(s)
+    const m = /^(-?\d*\.?\d+)\s*([a-z%]*)$/.exec(s)
     if (!m) return value
-    let n = Number(m[1])
+    const n = Number(m[1])
     if (!Number.isFinite(n)) return value
-    if (m[2] === "%") n = n / 100
-    else if (m[2] !== "" && m[2] !== "px" && m[2] !== "em" && m[2] !== "rem") return value
-    if (n < 1) return 1
+    const unit = m[2]
+    if (unit !== "" && unit !== "%" && unit !== "px" && unit !== "em" && unit !== "rem") {
+        return value
+    }
+    const ratio = unit === "%" ? n / 100 : n
+    const max = unit === "px" ? LINE_HEIGHT_MAX_PX : LINE_HEIGHT_MAX_EM
+    if (ratio >= 1 && ratio <= max) return value
+    const clamped = clamp(ratio, 1, max)
+    if (unit === "%") return `${clamped * 100}%`
+    return unit === "" ? clamped : `${clamped}${unit}`
+}
+
+/** Letter-spacing caps: em/rem/unitless clamp to [-0.1, 0.5], px to [-2, 8].
+ *  In-range values pass through verbatim; "%"/unknown units are left alone. */
+const LETTER_SPACING_MIN_EM = -0.1
+const LETTER_SPACING_MAX_EM = 0.5
+const LETTER_SPACING_MIN_PX = -2
+const LETTER_SPACING_MAX_PX = 8
+function clampLetterSpacing(value: string | number | undefined): string | number | undefined {
+    if (value === undefined || value === null) return value
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) return value
+        return value < LETTER_SPACING_MIN_EM || value > LETTER_SPACING_MAX_EM
+            ? clamp(value, LETTER_SPACING_MIN_EM, LETTER_SPACING_MAX_EM)
+            : value
+    }
+    const s = value.trim().toLowerCase()
+    if (s === "" || s === "normal") return value
+    const m = /^(-?\d*\.?\d+)\s*([a-z%]*)$/.exec(s)
+    if (!m) return value
+    const n = Number(m[1])
+    if (!Number.isFinite(n)) return value
+    const unit = m[2]
+    if (unit === "px") {
+        if (n >= LETTER_SPACING_MIN_PX && n <= LETTER_SPACING_MAX_PX) return value
+        return `${clamp(n, LETTER_SPACING_MIN_PX, LETTER_SPACING_MAX_PX)}px`
+    }
+    if (unit === "" || unit === "em" || unit === "rem") {
+        if (n >= LETTER_SPACING_MIN_EM && n <= LETTER_SPACING_MAX_EM) return value
+        const clamped = clamp(n, LETTER_SPACING_MIN_EM, LETTER_SPACING_MAX_EM)
+        return unit === "" ? clamped : `${clamped}${unit}`
+    }
     return value
 }
 /** Clamp every px length inside a box-shadow string (offsets, blur, spread)
@@ -928,20 +1148,48 @@ const DERIVED_SECONDARY_TEXT_ALPHA = 0.62
 const DERIVED_SUCCESS_COLOR = "#15803D"
 const FIXED_ERROR_COLOR = "#DC2626"
 
-const FIELD_STYLES_INPUT_PADDING = "14px"
-const FIELD_STYLES_SELECT_PADDING = "14px"
-const FIELD_STYLES_CARDS_PADDING = "10px 8px 10px 8px"
-const FIELD_STYLES_PILLS_PADDING = "5px 12px 5px 12px"
-const FIELD_STYLES_SEGMENTED_PADDING = "11px 10px 11px 10px"
+// BE-150: every field padding is derived from FIELD_ROW_PAD_Y, so the row
+// height is the one number the field family is built on. The vertical axis is
+// what makes a field exactly FIELD_ROW_HEIGHT tall; the horizontal axis stays
+// per type, because a card, a pill and a segment genuinely want different side
+// room and none of that touches the row's height.
+const FIELD_STYLES_INPUT_PADDING = `${FIELD_ROW_PAD_Y}px 14px`
+const FIELD_STYLES_SELECT_PADDING = `${FIELD_ROW_PAD_Y}px 14px`
+const FIELD_STYLES_CARDS_PADDING = `${FIELD_ROW_PAD_Y}px 8px`
+const FIELD_STYLES_PILLS_PADDING = `${FIELD_ROW_PAD_Y}px 12px`
+// The segmented option is centred by flex inside a track that already fills the
+// row, so its vertical padding is deliberately zero: the option's own height
+// (derived from the track's) is what makes the segment 44px tall, not padding.
+const FIELD_STYLES_SEGMENTED_PADDING = "0px 10px"
 const FIELD_STYLES_SPACING = 6
 const FIELD_STYLES_CHECK_SIZE = 18
 const FIELD_STYLES_FIELD_RADIUS = "12px"
+// BE-151: CARDS and SEGMENTED are equal to FIELD_STYLES_FIELD_RADIUS *on
+// purpose* — that equality is exactly how `resolveFieldRadius` reads "this type
+// has no native radius of its own, so the global `Styles > Radius` token
+// applies". PILLS' 999px is the one that is a genuine native shape. So do not
+// give either of the two a different value unless that type should genuinely
+// stop tracking the token, and if FIELD_STYLES_FIELD_RADIUS ever changes,
+// change these two with it — otherwise they silently become private radii and
+// the token stops reaching them, which is precisely the BE-151 bug.
 const FIELD_STYLES_CARDS_RADIUS = "12px"
 const FIELD_STYLES_PILLS_RADIUS = "999px"
 const FIELD_STYLES_SEGMENTED_RADIUS = "12px"
 const FIELD_STYLES_BORDER_WIDTH = 1
 const FIELD_STYLES_BORDER_COLOR = "#E2E2E2"
 
+/** BE-150: the one per-type table of effective field defaults.
+ *
+ *  `minHeight` is the field's ROW FLOOR and is the same `FIELD_ROW_HEIGHT` for
+ *  every field type — this column is now actually read (it used to be declared
+ *  for all seven types and consumed by nobody, while the real heights came from
+ *  four unrelated literals elsewhere, which is why the types rendered at
+ *  different heights). `padding` is derived from that same row height. The two
+ *  exceptions are deliberate and documented at their rows: the checkbox's floor
+ *  is its label ROW (its 18px box is `checkSize`, a separate control), and the
+ *  calendar widget is not a row at all — it owns its own grid geometry.
+ *
+ *  `spacing` is the field's own label-to-input gap; it is not a height. */
 function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
     padding: string
     radius: string
@@ -957,7 +1205,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_CARDS_RADIUS,
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
         case "pills":
@@ -966,7 +1214,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_PILLS_RADIUS,
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
         case "segmented":
@@ -975,7 +1223,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_SEGMENTED_RADIUS,
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
         case "select":
@@ -984,7 +1232,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_FIELD_RADIUS,
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
         case "checkbox":
@@ -993,7 +1241,11 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: "4px",
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: FIELD_STYLES_CHECK_SIZE,
+                // BE-150: the floor is the checkbox's label ROW, which is what a
+                // checkbox field actually occupies. Its box is `checkSize`
+                // (FIELD_STYLES_CHECK_SIZE) and has its own control — the two were
+                // conflated here while this column was unread.
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
         case "calendar-widget":
@@ -1002,6 +1254,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_FIELD_RADIUS,
                 borderWidth: 0,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
+                // Not a row: the calendar is a grid widget with its own geometry.
                 minHeight: 0,
                 spacing: FIELD_STYLES_SPACING,
             }
@@ -1011,7 +1264,7 @@ function getFieldStylesEffectiveDefaults(fieldType: FieldType): {
                 radius: FIELD_STYLES_FIELD_RADIUS,
                 borderWidth: FIELD_STYLES_BORDER_WIDTH,
                 borderColor: FIELD_STYLES_BORDER_COLOR,
-                minHeight: TOUCH_TARGET_MIN,
+                minHeight: FIELD_ROW_HEIGHT,
                 spacing: FIELD_STYLES_SPACING,
             }
     }
@@ -1101,6 +1354,7 @@ interface SegmentedControlProps {
     trackBackground?: string
     thumbBorderColor?: string
     optionPaddingX?: number
+    optionPaddingY?: number
     optionFont?: FramerFont
     trackShadow?: string
     selectedRadius?: number | string
@@ -1110,6 +1364,11 @@ interface SegmentedControlProps {
     selectedShadow?: string
     selectedBorderWidth?: number
     selectedBorderStyle?: string
+    /** BE-150: the field row the track must fill, when the segmented control IS a
+     *  field. `ChoiceGroupInline` passes the field's per-type floor; the 12h/24h
+     *  time-format toggle passes nothing, because it is a viewer preference
+     *  control rather than a field and keeps its own compact height. */
+    rowHeight?: number
 }
 
 const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedControlProps) {
@@ -1127,6 +1386,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         trackBackground,
         thumbBorderColor,
         optionPaddingX,
+        optionPaddingY,
         optionFont,
         trackShadow,
         selectedRadius,
@@ -1136,6 +1396,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         selectedShadow,
         selectedBorderWidth,
         selectedBorderStyle,
+        rowHeight,
     } = props
     const isStaticRender = useIsStaticRenderer()
     const prefersReducedMotion = useReducedMotion() ?? false
@@ -1145,13 +1406,28 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         0,
         options.findIndex((o) => o.value === value)
     )
-    const segmentInnerRadius = innerRadiusValue(borderRadius, 3)
-    // Selected thumb surface: inset follows selected padding (default 3px), width
-    // math tracks it so alignment never drifts; unset keys inherit option look.
-    const thumbPadY = selectedPaddingY ?? 3
-    const thumbPadX = selectedPaddingX ?? 3
+    // BE-150: when the track fills a field row, its options fill what is left
+    // after the track's own border and inset. Otherwise the option keeps the
+    // generic button floor, which is the toggle's current height.
+    const optionMinHeight =
+        rowHeight != null ? segmentedOptionHeight(rowHeight) : BUTTON_MIN_HEIGHT
+    const segmentInnerRadius = innerRadiusValue(borderRadius, SEGMENTED_TRACK_INSET)
+    // Selected thumb surface: inset follows selected padding (default: the
+    // track's own inset), width math tracks it so alignment never drifts; unset
+    // keys inherit option look.
+    const thumbPadY = selectedPaddingY ?? SEGMENTED_TRACK_INSET
+    const thumbPadX = selectedPaddingX ?? SEGMENTED_TRACK_INSET
+    // BE-146: the selected segment no longer owns a padding control, so the only
+    // way `selectedPaddingY/X` can be set is a stored (legacy) value — and when
+    // it is set it still wins, exactly as it did before the control was removed.
+    const legacySelectedPad =
+        selectedPaddingY != null || selectedPaddingX != null
+            ? `${selectedPaddingY ?? 0}px ${selectedPaddingX ?? optionPaddingX ?? 8}px`
+            : null
     const thumbWidth =
-        count > 0 ? `calc((100% - ${thumbPadX * 2}px) / ${count})` : "calc(50% - 3px)"
+        count > 0
+            ? `calc((100% - ${thumbPadX * 2}px) / ${count})`
+            : `calc(50% - ${SEGMENTED_TRACK_INSET}px)`
     // BE-126: selected radius/border clamp — huge values overflow the track.
     const thumbRadius = clampRadiusToken(selectedRadius) ?? segmentInnerRadius
     const thumbBorderWidth = clamp(
@@ -1166,19 +1442,28 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
         selectedShadow && !isNoShadowValue(selectedShadow)
             ? selectedShadow
             : "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)"
-    // BE-126: option/selected fonts mirror a 10-28 panel range.
+    // BE-131: option/selected fonts mirror the standard-text cap range.
     const segmentFontSize =
-        optionFont?.fontSize != null ? clampFontPx(optionFont.fontSize, 10, 28, 13) : 13
+        optionFont?.fontSize != null
+            ? clampFontPx(optionFont.fontSize, FONT_CAP.text.min, FONT_CAP.text.max, 13)
+            : 13
     const activeFontStyle: React.CSSProperties = selectedFont
         ? {
               ...(selectedFont.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
               ...(selectedFont.fontSize != null
-                  ? { fontSize: clampFontPx(selectedFont.fontSize, 10, 28, segmentFontSize) }
+                  ? {
+                        fontSize: clampFontPx(
+                            selectedFont.fontSize,
+                            FONT_CAP.text.min,
+                            FONT_CAP.text.max,
+                            segmentFontSize
+                        ),
+                    }
                   : {}),
               ...(selectedFont.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
               ...(selectedFont.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
               ...(selectedFont.letterSpacing != null
-                  ? { letterSpacing: selectedFont.letterSpacing }
+                  ? { letterSpacing: clampLetterSpacing(selectedFont.letterSpacing) }
                   : {}),
               ...(selectedFont.lineHeight != null ? { lineHeight: selectedFont.lineHeight } : {}),
           }
@@ -1195,7 +1480,12 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                 border: `1px solid ${borderColor}`,
                 borderRadius: borderRadius,
                 overflow: "hidden",
-                padding: 3,
+                padding: SEGMENTED_TRACK_INSET,
+                // BE-150: when this track is a field it fills the field row, so
+                // its options (which stretch to the content box) and the thumb
+                // (inset by exactly the track's padding) line up with the row.
+                // Undefined for the time-format toggle, which sizes to content.
+                minHeight: rowHeight,
                 margin: 0,
                 minWidth: 0,
                 gap: 0,
@@ -1273,14 +1563,25 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             position: "relative",
                             zIndex: 1,
                             width: "100%",
-                            minHeight: BUTTON_MIN_HEIGHT,
+                            // BE-150: fills the track's content box — the field
+                            // row less the track's border and inset — when this
+                            // control is a field, else the generic button floor.
+                            minHeight: optionMinHeight,
                             display: "inline-flex",
                             alignItems: "center",
                             justifyContent: "center",
+                            // BE-146: every segment now takes the shared Field
+                            // Styles padding, so the selected item matches its
+                            // siblings instead of growing the track on its own.
+                            // A stored `selected.padding` still wins. BE-150: the
+                            // `??` here is for the time-format toggle, which
+                            // passes no padding because it is not a field; the
+                            // choice variant always supplies both axes from the
+                            // per-type table, so this is not a second table.
                             padding:
-                                active && (selectedPaddingY != null || selectedPaddingX != null)
-                                    ? `${selectedPaddingY ?? 0}px ${selectedPaddingX ?? optionPaddingX ?? 8}px`
-                                    : `0 ${optionPaddingX ?? 8}px`,
+                                active && legacySelectedPad
+                                    ? legacySelectedPad
+                                    : `${optionPaddingY ?? 0}px ${optionPaddingX ?? 8}px`,
                             border: "none",
                             borderRadius: segmentInnerRadius,
                             background: "transparent",
@@ -1290,7 +1591,7 @@ const SegmentedControl = React.memo(function SegmentedControl(props: SegmentedCo
                             fontSize: segmentFontSize,
                             fontWeight: 500,
                             ...(optionFont?.letterSpacing != null
-                                ? { letterSpacing: optionFont.letterSpacing }
+                                ? { letterSpacing: clampLetterSpacing(optionFont.letterSpacing) }
                                 : {}),
                             // BE-126: line-height floor (verbatim "normal" untouched).
                             ...(optionFont?.lineHeight != null
@@ -1379,10 +1680,16 @@ interface ChoiceGroupInlineProps {
     selectedShadow?: string
     optionHoverBorderColor?: string
     optionBorderWidth?: number
+    /** BE-129: per-side widths — takes precedence over the single width. */
+    optionBorderSides?: { top: number; right: number; bottom: number; left: number }
     optionRadius?: number | string
-    optionPaddingY?: number
-    optionPaddingX?: number
-    optionMinHeight?: number
+    /** BE-150: required, not optional-with-an-inline-fallback. `FieldRenderer` is
+     *  the only caller and always resolves these through the per-type table
+     *  (`resolveFieldPadding` + `getFieldStylesEffectiveDefaults`), so an inline
+     *  `?? 10` here could only ever disagree with the field it draws. */
+    optionPaddingY: number
+    optionPaddingX: number
+    optionMinHeight: number
     optionFont?: FramerFont
     optionShadow?: string
     trackBackground?: string
@@ -1460,6 +1767,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         selectedShadow,
         optionHoverBorderColor,
         optionBorderWidth,
+        optionBorderSides,
         optionRadius,
         optionPaddingY,
         optionPaddingX,
@@ -1605,12 +1913,19 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
     const selectedRing = selectedBorderColor ?? accentColor
     const hoverRing = optionHoverBorderColor ?? selectedRing
     const optionBorder = optionBorderWidth ?? 1
+    // BE-129: option edges honor the Field Styles per-side widths when present.
+    const optionBorderEdges = optionBorderSides ?? {
+        top: optionBorder,
+        right: optionBorder,
+        bottom: optionBorder,
+        left: optionBorder,
+    }
     const selectedFontExtraStyle: React.CSSProperties = {
         ...(selectedFont?.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
         ...(selectedFont?.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
         ...(selectedFont?.fontStyle ? { fontStyle: selectedFont.fontStyle } : {}),
         ...(selectedFont?.letterSpacing != null
-            ? { letterSpacing: selectedFont.letterSpacing }
+            ? { letterSpacing: clampLetterSpacing(selectedFont.letterSpacing) }
             : {}),
         ...(selectedFont?.lineHeight != null
             ? { lineHeight: clampLineHeight(selectedFont.lineHeight) }
@@ -1619,13 +1934,20 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
     const compact = measuredWidth < COMPACT_BREAKPOINT
     const effectiveFontSize =
         optionFont?.fontSize != null
-            ? clampFontPx(optionFont.fontSize, 10, 28, Math.max(14, fontSize))
+            ? clampFontPx(
+                  optionFont.fontSize,
+                  FONT_CAP.text.min,
+                  FONT_CAP.text.max,
+                  Math.max(14, fontSize)
+              )
             : Math.max(14, fontSize)
     const optionFontExtraStyle: React.CSSProperties = {
         ...(optionFont?.fontFamily ? { fontFamily: optionFont.fontFamily } : {}),
         ...(optionFont?.fontWeight != null ? { fontWeight: optionFont.fontWeight } : {}),
         ...(optionFont?.fontStyle ? { fontStyle: optionFont.fontStyle } : {}),
-        ...(optionFont?.letterSpacing != null ? { letterSpacing: optionFont.letterSpacing } : {}),
+        ...(optionFont?.letterSpacing != null
+            ? { letterSpacing: clampLetterSpacing(optionFont.letterSpacing) }
+            : {}),
         ...(optionFont?.lineHeight != null
             ? { lineHeight: clampLineHeight(optionFont.lineHeight) }
             : {}),
@@ -1718,7 +2040,14 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
               }
             : {}),
         ...(selectedFont?.fontSize != null
-            ? { fontSize: clampFontPx(selectedFont.fontSize, 10, 28, effectiveFontSize) }
+            ? {
+                  fontSize: clampFontPx(
+                      selectedFont.fontSize,
+                      FONT_CAP.text.min,
+                      FONT_CAP.text.max,
+                      effectiveFontSize
+                  ),
+              }
             : {}),
         ...selectedFontExtraStyle,
         ...(!isNoShadowValue(selectedShadow) && selectedShadow
@@ -1763,12 +2092,20 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                 onFocus={() => React.startTransition(() => setFocusedIndex(index))}
                 onBlur={() => React.startTransition(() => setFocusedIndex(null))}
                 style={{
-                    minHeight: optionMinHeight ?? 23,
+                    // BE-150: the option fills the field's row. This was
+                    // `optionMinHeight ?? 23`, where the carrier was never
+                    // written and the 23 was the second of the four unrelated
+                    // floors — which is why a pill, a card and a boxed input
+                    // were three different heights.
+                    minHeight: optionMinHeight,
                     minWidth: TOUCH_TARGET_MIN,
                     borderRadius: optionRadius ?? radius,
-                    border: `${optionBorder}px solid ${
-                        isSelected ? selectedRing : isHovered ? hoverRing : borderColor
-                    }`,
+                    borderStyle: "solid",
+                    borderColor: isSelected ? selectedRing : isHovered ? hoverRing : borderColor,
+                    borderTopWidth: optionBorderEdges.top,
+                    borderRightWidth: optionBorderEdges.right,
+                    borderBottomWidth: optionBorderEdges.bottom,
+                    borderLeftWidth: optionBorderEdges.left,
                     background: isSelected ? selectedSurface : backgroundColor,
                     color: option.disabled
                         ? mutedTextColor
@@ -2015,7 +2352,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                 >
                     {parsedOptions.map((option, index) =>
                         renderOptionButton(option, index, {
-                            padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? (compact ? 6 : 8)}px`,
+                            padding: `${optionPaddingY}px ${optionPaddingX}px`,
                             textAlign: "center",
                             minWidth: 0,
                         })
@@ -2030,13 +2367,28 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                         const opt = parsedOptions.find((o) => optionValue(o) === val)
                         if (opt) selectOption(opt)
                     }}
-                    borderRadius={optionRadius ?? 16}
+                    // BE-151: the fallback is the FIELD's resolved radius, not a
+                    // literal. `radius` already carries
+                    // `resolveFieldRadius(fs, borderRadius, fieldType)` — i.e. an
+                    // explicit author radius, else the global `Styles > Radius`
+                    // token — so a segmented field now tracks the token exactly
+                    // like every other field type (and exactly like the 12h/24h
+                    // toggle, which has always passed `borderRadius` straight
+                    // through). The old `?? 16` pinned the track to 16 whenever
+                    // no radius was authored, and because the thumb's radius is
+                    // `innerRadiusValue(trackRadius, inset)` it pinned the
+                    // selected item too.
+                    borderRadius={optionRadius ?? radius}
                     textColor={selectedTextColor}
                     mutedTextColor={textColor}
                     backgroundColor={selectedSurface}
                     trackBackground={trackBackground}
                     thumbBorderColor={selectedRing}
                     optionPaddingX={optionPaddingX}
+                    optionPaddingY={optionPaddingY}
+                    // BE-150: the segmented field's track fills the same row as
+                    // every other field type; its options take what is left.
+                    rowHeight={optionMinHeight}
                     optionFont={optionFont}
                     trackShadow={optionShadow}
                     borderColor={borderColor}
@@ -2074,7 +2426,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                             justifyContent: "flex-start",
                             gap: 10,
                             textAlign: "left",
-                            padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? 14}px`,
+                            padding: `${optionPaddingY}px ${optionPaddingX}px`,
                             flexShrink: 0,
                         })
                     )}
@@ -2097,7 +2449,7 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
                 >
                     {parsedOptions.map((option, index) =>
                         renderOptionButton(option, index, {
-                            padding: `${optionPaddingY ?? 10}px ${optionPaddingX ?? (compact ? 10 : 12)}px`,
+                            padding: `${optionPaddingY}px ${optionPaddingX}px`,
                             borderRadius: optionRadius ?? 999,
                             flex:
                                 measuredWidth < PILLS_TWO_PER_ROW_BREAKPOINT
@@ -2269,8 +2621,13 @@ const CalendarCell = React.memo(function CalendarCell({
                           : textColor,
                     cursor: isUnavailable ? "default" : "pointer",
                     fontFamily: tileFont?.fontFamily ?? "inherit",
-                    // BE-126: tile font mirrors a 10-24 panel range.
-                    fontSize: clampFontPx(tileFont?.fontSize, 10, 24, 14),
+                    // BE-131: tile font mirrors the standard-text cap range.
+                    fontSize: clampFontPx(
+                        tileFont?.fontSize,
+                        FONT_CAP.text.min,
+                        FONT_CAP.text.max,
+                        14
+                    ),
                     ...(tileFont?.lineHeight != null
                         ? { lineHeight: clampLineHeight(tileFont.lineHeight) }
                         : {}),
@@ -4310,11 +4667,15 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
         : clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX) > 0
           ? `${clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
           : "none"
-    const surfacePadding =
-        typeof normalizedCalendarStyles?.padding === "string" &&
-        normalizedCalendarStyles.padding.trim()
-            ? clampPadding(normalizedCalendarStyles.padding, FIELD_PADDING_MIN, FIELD_PADDING_MAX)
-            : undefined
+    // BE-152: `surfacePadding` is gone. The calendar root used to take a padding
+    // clamped to the field family's 8–24 range, which meant switching the group
+    // on materialised its `0px` default and the clamp rewrote it to 8px. The
+    // calendar is three cards — the event-metadata card, the days card and the
+    // time-slot list — and each carries its own padding (`16px`, `16px`,
+    // `16px 16px 0 16px`), so the root's was redundant on top of them. Removed
+    // from the element as well as the panel, by author order: a stored
+    // `calendarStyles.padding` no longer renders at all (this is the one place
+    // BE-152 supersedes the rule-116 carrier contract — see rule 221).
 
     const dateKeyOf = React.useCallback(
         (date: Date) => (timeZone ? getDateKeyInTimeZone(date, timeZone) : getLocalDateKey(date)),
@@ -4559,7 +4920,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
                 minHeight: 300,
                 borderRadius: surfaceRadius,
                 background: surfaceBackground,
-                ...(surfacePadding ? { padding: surfacePadding } : {}),
                 ...shadowStyle(normalizedCalendarStyles?.shadow),
                 color: resolvedTextColor,
                 border: surfaceBorder,
@@ -4869,7 +5229,11 @@ interface FieldStyleOverrides {
     paddingY?: number
     paddingX?: number
     focusBorderColor?: string
-    minHeight?: number
+    // BE-150: `minHeight?: number` is gone with the field's height control. It
+    // was declared here and read by two `?? 23` sites, but no Property Control
+    // ever wrote it (there is no `Min Height` row at HEAD, and `git log -S`
+    // finds none in history), so it was a carrier with no producer — and the
+    // per-type row floor now comes from `getFieldStylesEffectiveDefaults`.
     spacing?: number
     selectedBackgroundColor?: string
     selectedTextColor?: string
@@ -4878,6 +5242,9 @@ interface FieldStyleOverrides {
     accentColor?: string
     checkSize?: number
     shadow?: string
+    /** BE-135: boxed (default) vs underline — shared Field Styles only, scoped to
+     *  the boxed-input family. Absent/unknown resolves to boxed. */
+    fieldShape?: FieldShape
 }
 
 interface FieldConfig {
@@ -4885,6 +5252,11 @@ interface FieldConfig {
     label: string
     fieldType: FieldType
     placeholder?: string
+    /** BE-136: hide the label element (the placeholder guides instead). The
+     *  `label` string itself is never cleared — identity/payload/success-row
+     *  heuristics keep reading it. BE-143: only honoured for the boxed-input
+     *  family (`UNDERLINE_FIELD_TYPES`); see `supportsHiddenLabel`. */
+    hideLabel?: boolean
     required: boolean
     options?: Array<string>
     optionValues?: Array<string>
@@ -4929,6 +5301,8 @@ interface BookingEngineStyleProps {
             contentAlignment?: "left" | "center" | "right"
             font?: FramerFont
             headingFont?: FramerFont
+            /** BE-130: heading→fields gap (was `styles.headingGap`). */
+            headingGap?: number
         }
         contentAlignment?: "left" | "center" | "right"
         accentColor: string
@@ -4996,7 +5370,7 @@ interface BookingEngineCopyProps {
         primaryButtonStyles?: ButtonStyleGroup
         secondaryButtonStyles?: ButtonStyleGroup
         calendarLinkStyles?: ButtonStyleGroup
-        buttonTexts?: {
+        ButtonsText?: {
             continueLabel?: string
             backLabel?: string
             finalActionLabel?: string
@@ -5013,6 +5387,8 @@ interface BookingEngineCopyProps {
             groupedNavAlignment?: "left" | "center" | "right"
             buttonOrder?: "backFirst" | "primaryFirst"
             buttonWidth?: "fit" | "fill"
+            /** BE-130: fields→buttons gap (was `styles.footerGap`). */
+            footerGap?: number
         }
         groupNavButtons?: boolean
         groupedNavAlignment?: "left" | "center" | "right"
@@ -5072,6 +5448,12 @@ interface BookingEngineConfigProps {
         barVisible?: boolean
         visible?: boolean
         barStyle: "solid" | "dashed"
+        /** BE-128: bar version — `full` is the shipped full-width look. */
+        barVersion?: ProgressBarVersion
+        /** BE-144: horizontal placement of a bar narrower than its container. */
+        barAlign?: ProgressBarAlign
+        /** BE-130: progress→heading gap (was `styles.progressGap`). */
+        gap?: number
         showText?: boolean
         showTextContent?: boolean
         progressText?: "top" | "bottom"
@@ -5107,8 +5489,6 @@ interface BookingEngineProps
 const EMAIL_REGEX = /^[^\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$/
 const PHONE_REGEX = /^\+?[(]?\d{1,4}[)]?(?:[-\s.]?[(]?\d{1,4}[)]?){2,5}[-\s.]?\d{1,9}$/
 
-const TOUCH_TARGET_MIN = 44
-const BUTTON_MIN_HEIGHT = 32
 const FORM_CONTENT_MIN_HEIGHT = 320
 const COMPACT_BREAKPOINT = 768
 function weeksInMonthView(year: number, month: number, firstDayOfWeek: number): number {
@@ -5122,11 +5502,32 @@ const CHECKMARK_ICON_SIZE = 48
 const ERROR_ICON_SIZE = 48
 const CARDS_GRID_MIN_TRACK_PX = 160
 const PILLS_TWO_PER_ROW_BREAKPOINT = 420
+// BE-127: the progress fill's ONE fixed animation — a plain left-to-right
+// grow. Deliberately independent of the step Transition Type and of the
+// configured Transition timing; nothing about step navigation may change it.
 const PROGRESS_BAR_TRANSITION = {
     type: "spring",
     stiffness: 300,
     damping: 30,
 } as const
+// BE-128/BE-137/BE-139: progress-bar versions. `full` reproduces the shipped
+// full-width look exactly (no max-width); `minimal` is a shorter reading of the
+// same bar. Both are 4px tall and both take their corner radius from the
+// Styles tab's `Radius` token — neither version owns a radius of its own.
+// Anything unrecognised falls back to `full`, never to nothing.
+type ProgressBarVersion = "full" | "minimal"
+const PROGRESS_VERSION_SPECS: Record<
+    ProgressBarVersion,
+    { maxWidth: number | undefined; height: number; gap: number }
+> = {
+    full: { maxWidth: undefined, height: PROGRESS_BAR_HEIGHT, gap: 4 },
+    minimal: { maxWidth: 128, height: PROGRESS_BAR_HEIGHT, gap: 3 },
+}
+// BE-144: where a bar narrower than its container sits. `full` always spans the
+// container so alignment is inert there; `minimal` (maxWidth 128) is the version
+// that needs it. Anything unrecognised falls back to the shipped left edge.
+type ProgressBarAlign = "left" | "center" | "right"
+const PROGRESS_BAR_ALIGN_VALUES: readonly ProgressBarAlign[] = ["left", "center", "right"]
 const INSTANT_TRANSITION = { duration: 0 } as const
 const CHOICE_FIELD_TYPES = ["select", "segmented", "pills", "cards", "radio"]
 const MULTI_PICK_TYPES = ["multiselect", "checkboxgroup"]
@@ -7194,7 +7595,10 @@ function buildIcsDataUri(
 }
 
 function formatStepCounter(template: string, current: number, total: number): string {
-    return (template || DEFAULT_COPY_STEP_COUNTER_TEMPLATE)
+    // BE-145: no `|| DEFAULT` here — the template is already resolved upstream
+    // (a plain `??` chain), so an empty string is a deliberate blank, not a
+    // missing value to be replaced.
+    return template
         .replace(/\{current\}/g, String(current))
         .replace(/\{total\}/g, String(total))
 }
@@ -7653,24 +8057,31 @@ function useBookingEngineState(
                 rawCopy?.failure?.errorFallbackMessage,
                 rawCopy?.errorFallbackMessage
             ) ?? DEFAULT_COPY_SUBMIT_ERROR_FALLBACK,
+        // BE-145: the progress templates use a plain `??` chain rather than
+        // `firstNonEmpty` — clearing the control must render empty, so an
+        // explicit "" is a value, not an absence. Only a genuinely unset key
+        // falls through to the legacy flat carrier, and only an unset carrier
+        // to the default.
+        // BE-148: `stepAnnouncementTemplate` keeps both reads even though its
+        // control is gone — it is a stored-canvas carrier (it ships at HEAD),
+        // and the announcement it feeds is never visible, so there is nothing
+        // for the author to re-evaluate. Removing the row must not change what
+        // an existing canvas announces.
         stepCounterTemplate:
-            firstNonEmpty(
-                progressBar?.content?.stepCounterTemplate,
-                rawCopy?.stepCounterTemplate
-            ) ?? DEFAULT_COPY_STEP_COUNTER_TEMPLATE,
+            progressBar?.content?.stepCounterTemplate ??
+            rawCopy?.stepCounterTemplate ??
+            DEFAULT_COPY_STEP_COUNTER_TEMPLATE,
         stepProgressLabel:
-            firstNonEmpty(
-                progressBar?.content?.stepProgressLabel,
-                rawCopy?.stepProgressLabel
-            ) ?? DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
+            progressBar?.content?.stepProgressLabel ??
+            rawCopy?.stepProgressLabel ??
+            DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
         stepAnnouncementTemplate:
-            firstNonEmpty(
-                progressBar?.content?.stepAnnouncementTemplate,
-                rawCopy?.stepAnnouncementTemplate
-            ) ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
+            progressBar?.content?.stepAnnouncementTemplate ??
+            rawCopy?.stepAnnouncementTemplate ??
+            DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
         rescheduleOrCancelLabel:
             firstNonEmpty(
-                buttonLabels?.buttonTexts?.manageLinkLabel,
+                buttonLabels?.ButtonsText?.manageLinkLabel,
                 rawCopy?.rescheduleOrCancelLabel
             ) ?? DEFAULT_COPY_RESCHEDULE_OR_CANCEL_LABEL,
     }
@@ -7733,16 +8144,34 @@ function useBookingEngineState(
         const n = Number.isFinite(raw) ? raw : 24
         return Math.max(0, Math.min(48, Math.round(n)))
     }, [styles?.gap])
-    // SECTION-SPACING (BE-075): three clamped zone gaps resolved once —
-    // vertical rhythm for progress→form, header→fields, fields→nav.
+    // SECTION-SPACING (BE-075, relocated by BE-130): three clamped zone gaps
+    // resolved once — vertical rhythm for progress→form, header→fields,
+    // fields→nav. Each now lives in its owning submenu; the old flat
+    // `styles.*Gap` keys stay readable as legacy carriers (rule 116 contract).
     // Pure functions of props, so hydration stays byte-identical.
     const sectionSpacing = React.useMemo(
         () => ({
-            progress: clampSectionSpacing(styles?.progressGap, SECTION_SPACING_DEFAULTS.progress),
-            heading: clampSectionSpacing(styles?.headingGap, SECTION_SPACING_DEFAULTS.heading),
-            footer: clampSectionSpacing(styles?.footerGap, SECTION_SPACING_DEFAULTS.footer),
+            progress: clampSectionSpacing(
+                progressBar?.gap ?? styles?.progressGap,
+                SECTION_SPACING_DEFAULTS.progress
+            ),
+            heading: clampSectionSpacing(
+                styles?.header?.headingGap ?? styles?.headingGap,
+                SECTION_SPACING_DEFAULTS.heading
+            ),
+            footer: clampSectionSpacing(
+                buttonLabels?.buttonsLayout?.footerGap ?? styles?.footerGap,
+                SECTION_SPACING_DEFAULTS.footer
+            ),
         }),
-        [styles?.progressGap, styles?.headingGap, styles?.footerGap]
+        [
+            progressBar?.gap,
+            styles?.header?.headingGap,
+            buttonLabels?.buttonsLayout?.footerGap,
+            styles?.progressGap,
+            styles?.headingGap,
+            styles?.footerGap,
+        ]
     )
     const progressVisible = (progressBar?.barVisible ?? progressBar?.visible) !== false
     const stepCountPosition: "top" | "bottom" =
@@ -7753,6 +8182,23 @@ function useBookingEngineState(
         (progressBar?.showText ?? progressBar?.showTextContent) !== false
     const progressBarStyle: "solid" | "dashed" =
         progressBar?.barStyle === "solid" ? "solid" : "dashed"
+    // BE-144: same unvalidated-canvas-data contract as the version below — the
+    // stored value is read as a plain string and narrowed here, so an absent or
+    // unrecognised value resolves to the shipped left edge.
+    const storedBarAlign: string | undefined = progressBar?.barAlign
+    const progressBarAlign: ProgressBarAlign = PROGRESS_BAR_ALIGN_VALUES.includes(
+        storedBarAlign as ProgressBarAlign
+    )
+        ? (storedBarAlign as ProgressBarAlign)
+        : "left"
+    // BE-128/BE-139: the second version is `minimal` (renamed from `compact`).
+    // The stored value is unvalidated canvas data, so it is read as a plain
+    // string: the retired `compact` name still resolves to `minimal`, so a
+    // canvas that stored it keeps a bar, and anything unrecognised (including
+    // an absent value) falls back to full-width.
+    const storedBarVersion: string | undefined = progressBar?.barVersion
+    const progressBarVersion: ProgressBarVersion =
+        storedBarVersion === "minimal" || storedBarVersion === "compact" ? "minimal" : "full"
 
     const layoutSrc = buttonLabels.buttonsLayout ?? {}
     const groupNavButtons = layoutSrc.groupNavButtons ?? buttonLabels.groupNavButtons
@@ -7760,21 +8206,21 @@ function useBookingEngineState(
     const buttonOrderValue = layoutSrc.buttonOrder ?? buttonLabels.buttonOrder
     const buttonWidthValue = layoutSrc.buttonWidth ?? buttonLabels.buttonWidth
     const bl = buttonLabels ?? {}
-    const buttonTexts = bl.buttonTexts ?? {}
+    const ButtonsText = bl.ButtonsText ?? {}
     const continueLabel = resolveButtonText(
-        buttonTexts.continueLabel,
+        ButtonsText.continueLabel,
         bl.continueButton?.text,
         bl.continueLabel,
         "Continue"
     )
     const backLabel = resolveButtonText(
-        buttonTexts.backLabel,
+        ButtonsText.backLabel,
         bl.backButton?.text,
         bl.backLabel,
         "Back"
     )
     const finalActionLabel = resolveButtonText(
-        buttonTexts.finalActionLabel,
+        ButtonsText.finalActionLabel,
         bl.finalActionButton?.text,
         bl.finalActionLabel,
         "Book Now"
@@ -9269,17 +9715,17 @@ function useBookingEngineState(
     const fontStack: React.CSSProperties = React.useMemo(
         () => ({
             fontFamily: font?.fontFamily ?? DEFAULT_FONT_FAMILY,
-            // BE-126: root body size mirrors an 11-20 panel range.
-            fontSize: clampFontPx(font?.fontSize, 11, 20, 15),
+            // BE-131: root body size mirrors the body cap range.
+            fontSize: clampFontPx(font?.fontSize, FONT_CAP.body.min, FONT_CAP.body.max, 15),
             lineHeight: clampLineHeight(font?.lineHeight) ?? 1.4,
-            letterSpacing: font?.letterSpacing ?? 0,
+            letterSpacing: clampLetterSpacing(font?.letterSpacing) ?? 0,
             fontWeight: font?.fontWeight ?? 400,
             fontStyle: font?.fontStyle ?? "normal",
         }),
         [font]
     )
-    // BE-126: body font mirrors an 11-20 panel range at runtime.
-    const bodySubtitleSize = clampFontPx(font?.fontSize, 11, 20, 14)
+    // BE-131: body font mirrors the body cap range at runtime.
+    const bodySubtitleSize = clampFontPx(font?.fontSize, FONT_CAP.body.min, FONT_CAP.body.max, 14)
     const bodySubtitleLineHeight = clampLineHeight(font?.lineHeight) ?? 1.5
 
     const needsCalSetup = hasDatetimeStep && !hasCalConfig
@@ -9291,8 +9737,13 @@ function useBookingEngineState(
         safeCurrentIndex + 1,
         totalActive
     )
+    // BE-145/BE-148: `copy.stepAnnouncementTemplate` is already resolved (a
+    // plain `??` chain ending in the default), so no second fallback here. The
+    // template has no Property Control (BE-148) — it is fixed component copy
+    // that only a stored canvas value can override — so this is the default
+    // announcement unless the canvas already carried one.
     const stepAnnouncementText = currentStep
-        ? (copy.stepAnnouncementTemplate ?? DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE)
+        ? copy.stepAnnouncementTemplate
               .replace("{counter}", counterText)
               .replace("{percent}", String(completePct))
               .replace("{title}", currentStep.title)
@@ -9406,7 +9857,9 @@ function useBookingEngineState(
         navGrouped,
         progressAnimate,
         progressBar,
+        progressBarAlign,
         progressBarStyle,
+        progressBarVersion,
         progressPct,
         progressShowTextContent,
         progressVisible,
@@ -9556,7 +10009,9 @@ export default function BookingEngine(props: BookingEngineProps) {
         primaryFirst,
         navFill,
         progressAnimate,
+        progressBarAlign,
         progressBarStyle,
+        progressBarVersion,
         progressPct,
         progressShowTextContent,
         progressVisible,
@@ -9652,6 +10107,24 @@ export default function BookingEngine(props: BookingEngineProps) {
     const animateIx = !prefersReducedMotion
 
     const isStaticRender = useIsStaticRenderer()
+
+    // BE-128/BE-139: geometry of the selected bar version. Both versions take
+    // their corner radius from the Styles tab's `Radius` token.
+    const progressSpec = PROGRESS_VERSION_SPECS[progressBarVersion]
+    const progressRadius = sanitizedRadius
+    // BE-144: a bar narrower than its container (the `minimal` version) is
+    // positioned with auto margins. `left` is the shipped default and emits
+    // nothing, so an untouched canvas renders byte-identically; `full` spans the
+    // container, where both margins resolve to zero and the style is inert.
+    const progressAlignStyle: React.CSSProperties =
+        progressBarAlign === "center"
+            ? { marginLeft: "auto", marginRight: "auto" }
+            : progressBarAlign === "right"
+              ? { marginLeft: "auto" }
+              : {}
+    // BE-138: 1 when the dashed segment at `index` is filled, else 0. A helper
+    // keeps each segment's scaleX a plain one-line style entry.
+    const progressSegmentScale = (index: number): number => (index <= safeCurrentIndex ? 1 : 0)
 
     const ariaLabels = DEFAULT_ARIA_LABELS
 
@@ -10134,19 +10607,11 @@ export default function BookingEngine(props: BookingEngineProps) {
                 : null}
 
             {totalActive > 1 && (progressVisible || progressShowTextContent) ? (
-                <motion.div
-                    initial={
-                        mountedOnce
-                            ? {
-                                  ...surfaceEnterExit(resolvedTransitionVariant, 1).enter,
-                                  height: 0,
-                              }
-                            : false
-                    }
-                    animate={{ ...SURFACE_ANIMATE_RESET, height: "auto" }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
-                    style={{ marginBottom: sectionSpacing.progress, overflow: "hidden" }}
-                >
+                // BE-127: the progress block owns ONE fixed animation — the fill
+                // growing left-to-right. It never inherits the step Transition
+                // Type and has no enter of its own, so navigating steps can never
+                // fade/blur/scale it or make it appear out of nowhere.
+                <div style={{ marginBottom: sectionSpacing.progress }}>
                     {progressShowTextContent && stepCountPosition === "top" ? (
                         <div
                             style={{
@@ -10163,30 +10628,20 @@ export default function BookingEngine(props: BookingEngineProps) {
                             }}
                             aria-hidden="true"
                         >
-                            <motion.span
-                                key={counterText}
-                                initial={mountedOnce ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.14 }}
-                            >
-                                {counterText}
-                            </motion.span>
-                            <motion.span
-                                key={completePct}
-                                initial={mountedOnce ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.14 }}
-                            >
+                            <span>{counterText}</span>
+                            <span>
                                 {copy.stepProgressLabel.replace("{pct}", String(completePct))}
-                            </motion.span>
+                            </span>
                         </div>
                     ) : null}
                     {progressVisible && progressBarStyle === "dashed" ? (
                         <div
                             style={{
                                 display: "flex",
-                                gap: 4,
+                                gap: progressSpec.gap,
                                 width: "100%",
+                                maxWidth: progressSpec.maxWidth,
+                                ...progressAlignStyle,
                             }}
                             role="progressbar"
                             aria-valuemin={0}
@@ -10201,26 +10656,58 @@ export default function BookingEngine(props: BookingEngineProps) {
                                     aria-hidden="true"
                                     style={{
                                         flex: 1,
-                                        height: PROGRESS_BAR_HEIGHT,
-                                        borderRadius: sanitizedRadius,
-                                        background:
-                                            i <= safeCurrentIndex
-                                                ? theme.accentColor
-                                                : theme.surfaceColor,
-                                        transition: prefersReducedMotion
-                                            ? "none"
-                                            : "background-color 0.25s ease",
+                                        height: progressSpec.height,
+                                        borderRadius: progressRadius,
+                                        background: theme.surfaceColor,
+                                        overflow: "hidden",
                                     }}
-                                />
+                                >
+                                    {/* BE-138: each segment's accent is a sweeping
+                                        fill, never a colour cross-fade — forward
+                                        grows it left-to-right, back retracts it
+                                        right-to-left, on the same fixed animation
+                                        as the solid fill. */}
+                                    {isStaticRender ? (
+                                        <div
+                                            style={{
+                                                width: "100%",
+                                                height: "100%",
+                                                background: theme.accentColor,
+                                                borderRadius: progressRadius,
+                                                transform: `scaleX(${progressSegmentScale(i)})`,
+                                                transformOrigin: "left center",
+                                            }}
+                                        />
+                                    ) : (
+                                        <motion.div
+                                            initial={false}
+                                            animate={{ scaleX: progressSegmentScale(i) }}
+                                            transition={
+                                                prefersReducedMotion
+                                                    ? INSTANT_TRANSITION
+                                                    : PROGRESS_BAR_TRANSITION
+                                            }
+                                            style={{
+                                                width: "100%",
+                                                height: "100%",
+                                                background: theme.accentColor,
+                                                borderRadius: progressRadius,
+                                                transformOrigin: "left center",
+                                            }}
+                                        />
+                                    )}
+                                </div>
                             ))}
                         </div>
                     ) : progressVisible ? (
                         <div
                             style={{
                                 width: "100%",
-                                height: PROGRESS_BAR_HEIGHT,
+                                maxWidth: progressSpec.maxWidth,
+                                height: progressSpec.height,
                                 background: theme.surfaceColor,
-                                borderRadius: sanitizedRadius,
+                                borderRadius: progressRadius,
+                                ...progressAlignStyle,
                                 overflow: "hidden",
                             }}
                             role="progressbar"
@@ -10236,7 +10723,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                         width: "100%",
                                         height: "100%",
                                         background: theme.accentColor,
-                                        borderRadius: sanitizedRadius,
+                                        borderRadius: progressRadius,
                                         transform: `scaleX(${progressPct / 100})`,
                                         transformOrigin: "left center",
                                     }}
@@ -10255,7 +10742,7 @@ export default function BookingEngine(props: BookingEngineProps) {
                                         width: "100%",
                                         height: "100%",
                                         background: theme.accentColor,
-                                        borderRadius: sanitizedRadius,
+                                        borderRadius: progressRadius,
                                         transformOrigin: "left center",
                                     }}
                                     aria-hidden="true"
@@ -10279,25 +10766,13 @@ export default function BookingEngine(props: BookingEngineProps) {
                             }}
                             aria-hidden="true"
                         >
-                            <motion.span
-                                key={counterText}
-                                initial={mountedOnce ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.14 }}
-                            >
-                                {counterText}
-                            </motion.span>
-                            <motion.span
-                                key={completePct}
-                                initial={mountedOnce ? { opacity: 0 } : false}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.14 }}
-                            >
+                            <span>{counterText}</span>
+                            <span>
                                 {copy.stepProgressLabel.replace("{pct}", String(completePct))}
-                            </motion.span>
+                            </span>
                         </div>
                     ) : null}
-                </motion.div>
+                </div>
             ) : null}
 
             <motion.form
@@ -10354,14 +10829,23 @@ export default function BookingEngine(props: BookingEngineProps) {
                                                     ? { textAlign: step.alignment }
                                                     : { textAlign: terminalAlignment }),
                                                 fontFamily: headingFont?.fontFamily ?? "inherit",
-                                                // BE-126: head font 16-40 + line-height floor.
-                                                fontSize: clampFontPx(headingFont?.fontSize, 16, 40, 22),
+                                                // BE-131: head font caps at 48px.
+                                                fontSize: clampFontPx(
+                                                    headingFont?.fontSize,
+                                                    FONT_CAP.head.min,
+                                                    FONT_CAP.head.max,
+                                                    22
+                                                ),
                                                 fontWeight: headingFont?.fontWeight ?? 700,
                                                 ...(headingFont?.fontStyle
                                                     ? { fontStyle: headingFont.fontStyle }
                                                     : {}),
                                                 ...(headingFont?.letterSpacing != null
-                                                    ? { letterSpacing: headingFont.letterSpacing }
+                                                    ? {
+                                                          letterSpacing: clampLetterSpacing(
+                                                              headingFont.letterSpacing
+                                                          ),
+                                                      }
                                                     : {}),
                                                 ...(headingFont?.lineHeight != null
                                                     ? {
@@ -10480,6 +10964,17 @@ export default function BookingEngine(props: BookingEngineProps) {
 }
 .be-input.be-input-invalid:focus-visible {
     box-shadow: inset 0 0 0 2px ${theme.errorColor};
+}
+
+.be-input:-webkit-autofill,
+.be-input:-webkit-autofill:hover,
+.be-input:-webkit-autofill:focus,
+.be-input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--be-autofill-bg) inset !important;
+    box-shadow: 0 0 0 1000px var(--be-autofill-bg) inset !important;
+    background-color: var(--be-autofill-bg) !important;
+    -webkit-text-fill-color: var(--be-autofill-text);
+    caret-color: var(--be-autofill-text);
 }
 
 .be-motion-root.be-pointer-active .be-input:focus-visible {
@@ -10773,27 +11268,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
 
     const slotErrorId = `${instanceId ? `${instanceId}-` : ""}be-slot-error`
 
-    // BE-126: a trailing lone Half (odd halves in its row segment) spans
-    // both tracks instead of leaving a half-empty row beside it.
-    const halfOrphanId = React.useMemo(() => {
-        let pos = 0
-        let lastHalfId: string | null = null
-        for (const f of step.fields) {
-            const isHalf = f.width === "half" && f.fieldType !== "textarea"
-            if (!isHalf) {
-                pos = 0
-                lastHalfId = null
-            } else if (pos === 1) {
-                pos = 0
-                lastHalfId = null
-            } else {
-                pos = 1
-                lastHalfId = f.id ?? null
-            }
-        }
-        return lastHalfId
-    }, [step.fields])
-
     const slotErrorBannerRef = React.useRef<HTMLDivElement | null>(null)
     const prevSlotErrorRef = React.useRef<string | null>(null)
     React.useEffect(() => {
@@ -10832,7 +11306,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                         instanceId={instanceId}
                         globalFieldStyles={globalFieldStyles}
                         transitionVariant={transitionVariant}
-                        forceFullWidth={field.id === halfOrphanId}
                     />
                 ))}
             </div>
@@ -11043,7 +11516,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
                             instanceId={instanceId}
                             globalFieldStyles={globalFieldStyles}
                             transitionVariant={transitionVariant}
-                            forceFullWidth={field.id === halfOrphanId}
                         />
                     ))}
             </div>
@@ -11630,7 +12102,6 @@ interface FieldRendererProps {
     globalFieldStyles?: FieldStyleOverrides
     instanceId: string
     transitionVariant: TransitionVariantId
-    forceFullWidth?: boolean
 }
 
 function FieldErrorMessage({
@@ -11699,7 +12170,7 @@ interface MultiSelectFieldControlProps {
     fsInputFontSize: number
     fsPadding: string
     fsRadius: string
-    fsBorder: { width: number; style: string; color: string | undefined }
+    fsBorder: ResolvedFieldBorder
     theme: Theme
     fieldDomId: string
     errorDomId: string
@@ -11953,8 +12424,10 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
         overflowY: "auto",
         overscrollBehavior: "contain",
         zIndex: SELECT_MENU_Z_INDEX,
-        background: fs?.backgroundColor ?? theme.surfaceColor,
-        border: `${fsBorder.width}px ${fsBorder.style} ${fsBorder.color ?? theme.borderColor}`,
+        // BE-140: the menu owns its surface — it must never read the field's
+        // Fill, which the author may set transparent for the input frame (BE-135).
+        background: theme.surfaceColor,
+        ...fieldBorderCss(fsBorder, fsBorder.color ?? theme.borderColor),
         borderRadius: fsRadius,
         color: optionTextColor,
         ...(menuFont ?? {}),
@@ -11979,6 +12452,12 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                 onMouseEnter={() => setActiveIndex(index)}
                 style={{
                     padding: fsPadding,
+                    // BE-150: the row's padding is the field padding, which is
+                    // now smaller (12px, derived from the 44px field row). The
+                    // menu row keeps a 44px floor of its own so dropping that
+                    // padding cannot shrink a dropdown's touch targets below
+                    // the component's minimum.
+                    minHeight: FIELD_ROW_HEIGHT,
                     borderRadius: menuRowRadiusValue,
                     margin: 0,
                     listStyle: "none",
@@ -12272,7 +12751,7 @@ interface SelectFieldControlProps {
     fsInputFontSize: number
     fsPadding: string
     fsRadius: string
-    fsBorder: { width: number; style: string; color: string | undefined }
+    fsBorder: ResolvedFieldBorder
     theme: Theme
     fieldDomId: string
     errorDomId: string
@@ -12523,8 +13002,10 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
         overflowY: "auto",
         overscrollBehavior: "contain",
         zIndex: SELECT_MENU_Z_INDEX,
-        background: fs?.backgroundColor ?? theme.surfaceColor,
-        border: `${fsBorder.width}px ${fsBorder.style} ${fsBorder.color ?? theme.borderColor}`,
+        // BE-140: the menu owns its surface — it must never read the field's
+        // Fill, which the author may set transparent for the input frame (BE-135).
+        background: theme.surfaceColor,
+        ...fieldBorderCss(fsBorder, fsBorder.color ?? theme.borderColor),
         borderRadius: fsRadius,
         color: optionTextColor,
         ...(menuFont ?? {}),
@@ -12549,6 +13030,12 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                 onMouseEnter={() => setActiveIndex(index)}
                 style={{
                     padding: fsPadding,
+                    // BE-150: the row's padding is the field padding, which is
+                    // now smaller (12px, derived from the 44px field row). The
+                    // menu row keeps a 44px floor of its own so dropping that
+                    // padding cannot shrink a dropdown's touch targets below
+                    // the component's minimum.
+                    minHeight: FIELD_ROW_HEIGHT,
                     borderRadius: menuRowRadiusValue,
                     margin: 0,
                     listStyle: "none",
@@ -12742,7 +13229,7 @@ interface PhoneFieldControlProps {
     fsInputFontSize: number
     fsPadding: string
     fsRadius: string
-    fsBorder: { width: number; style: string; color: string | undefined }
+    fsBorder: ResolvedFieldBorder
     theme: Theme
     fieldDomId: string
     errorDomId: string
@@ -13063,6 +13550,12 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
         fs?.selected?.backgroundColor ?? fs?.selectedBackgroundColor ?? theme.accentColor
     const optionTextColor = fs?.textColor ?? theme.textPrimaryColor
 
+    // BE-135: the underline shape repaints the phone frame only — the country
+    // menu below keeps the whole resolved border and radius.
+    const groupUnderline = usesUnderlineShape(fs?.fieldShape, field.fieldType)
+    const groupBorder = groupUnderline ? underlineBorder(fsBorder) : fsBorder
+    const groupRadius = groupUnderline ? "0px" : fsRadius
+
     const menuSurfaceStyle: React.CSSProperties = {
         position: "fixed",
         left: menuRect?.left,
@@ -13075,8 +13568,10 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
         overflowY: "auto",
         overscrollBehavior: "contain",
         zIndex: SELECT_MENU_Z_INDEX,
-        background: fs?.backgroundColor ?? theme.surfaceColor,
-        border: `${fsBorder.width}px ${fsBorder.style} ${fsBorder.color ?? theme.borderColor}`,
+        // BE-140: the menu owns its surface — it must never read the field's
+        // Fill, which the author may set transparent for the input frame (BE-135).
+        background: theme.surfaceColor,
+        ...fieldBorderCss(fsBorder, fsBorder.color ?? theme.borderColor),
         borderRadius: fsRadius,
         color: optionTextColor,
         ...shadowStyle(fs?.shadow),
@@ -13191,15 +13686,16 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         minWidth: 0,
                         display: "flex",
                         alignItems: "stretch",
-                        background: fs?.backgroundColor ?? theme.surfaceColor,
-                        borderWidth: fsBorder.width,
-                        borderStyle: fsBorder.style,
-                        borderColor: hasError
-                            ? theme.errorColor
-                            : (fsBorder.color ?? theme.borderColor),
+                        background: groupUnderline
+                            ? "transparent"
+                            : (fs?.backgroundColor ?? theme.surfaceColor),
+                        ...fieldBorderCss(
+                            groupBorder,
+                            hasError ? theme.errorColor : (groupBorder.color ?? theme.borderColor)
+                        ),
                         borderLeftWidth: 0,
-                        borderTopRightRadius: fsRadius,
-                        borderBottomRightRadius: fsRadius,
+                        borderTopRightRadius: groupRadius,
+                        borderBottomRightRadius: groupRadius,
                         borderTopLeftRadius: 0,
                         borderBottomLeftRadius: 0,
                         boxSizing: "border-box",
@@ -13282,6 +13778,13 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         border: undefined,
                         borderWidth: 0,
                         background: "transparent",
+                        ...({
+                            // BE-133: the forced autofill bg stays identical to the
+                            // group frame. BE-135: an underlined group is transparent.
+                            "--be-autofill-bg": groupUnderline
+                                ? "transparent"
+                                : (fs?.backgroundColor ?? theme.surfaceColor),
+                        } as React.CSSProperties),
                         boxShadow: "none",
                         paddingLeft: 0,
                         borderTopLeftRadius: 0,
@@ -13296,6 +13799,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     disabled={isSubmitting}
                     aria-invalid={hasError || undefined}
                     aria-describedby={hasError ? errorDomId : undefined}
+                    aria-label={hiddenLabelAriaName(field)}
                     onChange={(e) => emitNational(e.target.value)}
                 />
                 </div>
@@ -13433,6 +13937,11 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                               onMouseEnter={() => setActiveIndex(index)}
                                               style={{
                                                   padding: fsPadding,
+                                                  // BE-150: same 44px row floor as
+                                                  // the select / multiselect menus
+                                                  // — the field padding shrank, the
+                                                  // touch target must not.
+                                                  minHeight: FIELD_ROW_HEIGHT,
                                                   borderRadius: menuRowRadiusValue,
                                                   margin: 0,
                                                   listStyle: "none",
@@ -13479,6 +13988,21 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     )
 })
 
+/** BE-136: the accessible name a hidden label must still expose. `Hide Label`
+ *  removes the label element from the DOM (so the placeholder guides the eye),
+ *  which would otherwise strip the accessible name from every input that relied
+ *  on `<label htmlFor>` — so those controls carry this string as `aria-label`.
+ *  Undefined when the label is visible or empty (byte-identical default).
+ *  BE-143: also undefined for a field type that does not offer `Hide Label`. */
+function hiddenLabelAriaName(field: {
+    hideLabel?: boolean
+    label?: string
+    fieldType?: FieldType
+}): string | undefined {
+    if (field.hideLabel !== true || !supportsHiddenLabel(field.fieldType)) return undefined
+    return typeof field.label === "string" && field.label.trim() !== "" ? field.label : undefined
+}
+
 const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProps) {
     const {
         field,
@@ -13492,7 +14016,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         instanceId = "",
         globalFieldStyles,
         transitionVariant,
-        forceFullWidth = false,
     } = props
 
     const domIdPrefix = instanceId ? `${instanceId}-` : ""
@@ -13571,9 +14094,13 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     }
     const fsSelectedBg = firstSetColor(fsSelected?.backgroundColor, fs?.selectedBackgroundColor)
     const fsSelectedText = firstSetColor(fsSelected?.textColor, fs?.selectedTextColor)
+    // BE-147: a zero-width border carries no colour — it must not become the
+    // selected ring, which would repaint the selected card/pill/radio item in
+    // the materialised default the moment Selected Styles is switched on.
+    const fsSelectedBorderWidth = fsSelected?.border?.borderWidth
     const fsSelectedBorderColor = firstSetColor(
         fsSelected?.borderColor,
-        fsSelected?.border?.borderColor,
+        (fsSelectedBorderWidth ?? 0) > 0 ? fsSelected?.border?.borderColor : undefined,
         fs?.selectedBorderColor
     )
     const fsSelectedShadow = fsSelected?.shadow
@@ -13581,25 +14108,34 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
 
     const labelTextStyle: React.CSSProperties = {
         display: "block",
-        // BE-126: label font mirrors a 10-24 panel range at runtime.
-        fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 13),
+        // BE-131: label font mirrors the standard-text cap range.
+        fontSize: clampFontPx(fs?.labelFont?.fontSize, FONT_CAP.text.min, FONT_CAP.text.max, 13),
         fontWeight: fs?.labelFont?.fontWeight ?? 500,
         ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
         ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
         ...(fs?.labelFont?.letterSpacing != null
-            ? { letterSpacing: fs.labelFont.letterSpacing }
+            ? { letterSpacing: clampLetterSpacing(fs.labelFont.letterSpacing) }
             : {}),
         lineHeight: clampLineHeight(fs?.labelFont?.lineHeight) ?? 1.6,
         color: fs?.labelColor ?? theme.textPrimaryColor,
     }
     const hasLabel = typeof field.label === "string" && field.label.trim() !== ""
-    const labelEl = !hasLabel ? null : isChoiceFieldType ? (
-        <div style={labelTextStyle}>{field.label}</div>
-    ) : (
-        <label htmlFor={fieldDomId} style={labelTextStyle}>
-            {field.label}
-        </label>
-    )
+    // BE-136: a hidden label leaves the DOM entirely (the placeholder guides the
+    // eye); the controls below carry the label as `aria-label` instead so the
+    // accessible name survives. `field.label` is never cleared, so identity and
+    // payload heuristics keep working.
+    const hiddenLabelName = hiddenLabelAriaName(field)
+    // BE-143: `Hide Label` is a boxed-input capability (the UNDERLINE_FIELD_TYPES
+    // set); a stored flag on a choice variant or the calendar never applies.
+    const hideLabelActive = field.hideLabel === true && supportsHiddenLabel(field.fieldType)
+    const labelEl =
+        !hasLabel || hideLabelActive ? null : isChoiceFieldType ? (
+            <div style={labelTextStyle}>{field.label}</div>
+        ) : (
+            <label htmlFor={fieldDomId} style={labelTextStyle}>
+                {field.label}
+            </label>
+        )
 
     const errorEl = error ? (
         <FieldErrorMessage
@@ -13626,10 +14162,11 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ) : null
 
     const containerStyle: React.CSSProperties = {
-        gridColumn:
-            field.fieldType === "textarea" || field.width !== "half" || forceFullWidth
-                ? "span 2"
-                : "span 1",
+        // BE-142: Width is the only layout truth — a `half` field always spans
+        // one track, including the last field in the step. It no longer stretches
+        // to fill the row just because nothing follows it to pair with, so adding
+        // or removing a later field can never resize it.
+        gridColumn: field.fieldType === "textarea" || field.width !== "half" ? "span 2" : "span 1",
         display: "flex",
         flexDirection: "column",
         gap: clamp(fs?.spacing ?? 6, 0, 24),
@@ -13644,28 +14181,45 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     const fsFontSize = fontPixelSize(fs?.font?.fontSize)
     const fsInputFontSize = clampFontPx(
         isCoarsePointer ? Math.max(16, fsFontSize ?? inputFontSize) : (fsFontSize ?? inputFontSize),
-        10,
-        28,
+        FONT_CAP.text.min,
+        FONT_CAP.text.max,
         inputFontSize
     )
     const fsBorder = resolveFieldBorder(fs, field.fieldType)
     const fsRadius = resolveFieldRadius(fs, borderRadius, field.fieldType)
     const fsPadding = resolveFieldPadding(fs, field.fieldType)
+    // BE-150: the field's row floor comes from the same per-type table that
+    // supplies its padding, so a field's height and its padding can no longer
+    // disagree. This replaces `fs?.minHeight ?? 23`, whose carrier no control
+    // ever wrote (no `Min Height` row exists at HEAD or in history) and whose
+    // literal 23 was one of the four unrelated floors that made the field types
+    // render at four different heights.
+    const fsMinHeight = getFieldStylesEffectiveDefaults(field.fieldType).minHeight
+    // BE-135: the underline shape repaints the input frame only. `fsBorder` and
+    // `fsRadius` stay whole because the dropdown menus read them directly.
+    const fsUnderline = usesUnderlineShape(fs?.fieldShape, field.fieldType)
+    const fsInputBorder = fsUnderline ? underlineBorder(fsBorder) : fsBorder
+    const fsInputBackground = fsUnderline
+        ? "transparent"
+        : (fs?.backgroundColor ?? theme.surfaceColor)
     const inputBaseStyle: React.CSSProperties = {
         width: "100%",
-        minHeight: fs?.minHeight ?? 23,
+        minHeight: fsMinHeight,
         padding: fsPadding,
-        borderRadius: fsRadius,
-        border: `${fsBorder.width}px ${fsBorder.style} ${
-            error ? theme.errorColor : (fsBorder.color ?? theme.borderColor)
-        }`,
-        background: fs?.backgroundColor ?? theme.surfaceColor,
+        borderRadius: fsUnderline ? "0px" : fsRadius,
+        ...fieldBorderCss(
+            fsInputBorder,
+            error ? theme.errorColor : (fsInputBorder.color ?? theme.borderColor)
+        ),
+        background: fsInputBackground,
         color: fs?.textColor ?? theme.textPrimaryColor,
         fontFamily: fs?.font?.fontFamily ?? "inherit",
         fontSize: fsInputFontSize,
         ...(fs?.font?.fontWeight != null ? { fontWeight: fs.font.fontWeight } : {}),
         ...(fs?.font?.fontStyle ? { fontStyle: fs.font.fontStyle } : {}),
-        ...(fs?.font?.letterSpacing != null ? { letterSpacing: fs.font.letterSpacing } : {}),
+        ...(fs?.font?.letterSpacing != null
+            ? { letterSpacing: clampLetterSpacing(fs.font.letterSpacing) }
+            : {}),
         // BE-126: line-height floor (verbatim "normal" untouched).
         ...(fs?.font?.lineHeight != null
             ? { lineHeight: clampLineHeight(fs.font.lineHeight) }
@@ -13677,6 +14231,13 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ...(fs?.focusBorderColor
             ? ({ "--be-focus-color": fs.focusBorderColor } as React.CSSProperties)
             : {}),
+        // Autofill backdrop/text mirror the resolved surface so browser autofill never recolors the field.
+        // BE-135: an underlined field is transparent, so autofill must mask the UA
+        // fill with nothing — the author-!important `background-color` still wins.
+        ...({
+            "--be-autofill-bg": fsInputBackground,
+            "--be-autofill-text": fs?.textColor ?? theme.textPrimaryColor,
+        } as React.CSSProperties),
         ...shadowStyle(fs?.shadow),
         transition: reducedMotion ? "none" : "border-color 0.15s ease, box-shadow 0.15s ease",
     }
@@ -13700,11 +14261,11 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         onChange={(e) => onFieldChange(field.id, e.target.value)}
                         aria-invalid={!!error}
                         aria-describedby={error ? errorDomId : undefined}
+                        aria-label={hiddenLabelName}
                         rows={typeof field.rows === "number" && field.rows > 0 ? field.rows : 4}
                         ref={textareaRef}
                         style={{
                             ...inputBaseStyle,
-                            minHeight: fs?.minHeight ?? 23,
                             resize: "vertical",
                             fontFamily: fs?.font?.fontFamily ?? "inherit",
                         }}
@@ -13780,7 +14341,23 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                       : field.fieldType === "radio"
                         ? "radio"
                         : "cards"
-            const fsPaddingAxes = fs?.padding ? paddingAxesFrom(fs.padding) : null
+            // BE-149: the choice variants' option padding reads the same author
+            // `padding` keys as every other field, so it obeys the same 8–24
+            // bounds — this path used to bypass the clamp entirely, which is why
+            // a large Field Styles Padding grew the segments without limit.
+            //
+            // BE-150: it now reads them through `resolveFieldPadding` itself, so
+            // the choice options and the field they belong to resolve through one
+            // function against one per-type table. Previously this site had its
+            // own inline fallback table (`?? 10` / `?? 14` / `?? 8` / `?? 0`), so
+            // the same field type rendered its padding from two different
+            // sources — and `FIELD_STYLES_CARDS_PADDING` / `_PILLS_` /
+            // `_SEGMENTED_` were constants named after types they never reached.
+            // The clamp is unchanged: it now lives in `resolveFieldPadding`'s
+            // legacy branches, which is the only place author values enter.
+            const fsOptionPaddingAxes = resolvedPaddingAxes(
+                resolveFieldPadding(fs, field.fieldType)
+            )
             const fsAuthorRadius =
                 typeof fs?.radius === "string" || typeof fs?.radius === "number"
                     ? resolveFieldRadius(fs, borderRadius, field.fieldType)
@@ -13812,11 +14389,16 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         borderColor={fsBorder.color ?? theme.borderColor}
                         radius={resolveFieldRadius(fs, borderRadius, field.fieldType)}
                         // BE-126: trigger text mirrors the 10-28 field range.
-                        fontSize={clampFontPx(fs?.font?.fontSize, 10, 28, 14)}
+                        fontSize={clampFontPx(
+                            fs?.font?.fontSize,
+                            FONT_CAP.text.min,
+                            FONT_CAP.text.max,
+                            14
+                        )}
                         selectedBackgroundColor={fsSelectedBg}
                         selectedTextColor={fsSelectedText}
                         selectedBorderColor={fsSelectedBorderColor}
-                        selectedBorderWidth={fsSelected?.border?.borderWidth}
+                        selectedBorderWidth={fsSelectedBorderWidth}
                         selectedBorderStyle={fsSelected?.border?.borderStyle}
                         selectedRadius={fsSelected?.radius}
                         selectedPaddingY={fsSelectedPaddingAxes?.y}
@@ -13825,10 +14407,20 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         selectedShadow={fsSelectedShadow}
                         optionHoverBorderColor={fsSelectedBorderColor ?? fsSelectedBg}
                         optionBorderWidth={fsAuthorBorderWidth}
+                        optionBorderSides={
+                            fs?.border
+                                ? {
+                                      top: fsBorder.top,
+                                      right: fsBorder.right,
+                                      bottom: fsBorder.bottom,
+                                      left: fsBorder.left,
+                                  }
+                                : undefined
+                        }
                         optionRadius={fsAuthorRadius}
-                        optionPaddingY={fsPaddingAxes?.y ?? fs?.paddingY}
-                        optionPaddingX={fsPaddingAxes?.x ?? fs?.paddingX}
-                        optionMinHeight={fs?.minHeight}
+                        optionPaddingY={fsOptionPaddingAxes.y}
+                        optionPaddingX={fsOptionPaddingAxes.x}
+                        optionMinHeight={fsMinHeight}
                         optionFont={fs?.font}
                         optionShadow={fs?.shadow}
                         trackBackground={fs?.backgroundColor}
@@ -13857,13 +14449,13 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                 32
             )
             const checkLabelStyle: React.CSSProperties = {
-                // BE-126: label font mirrors a 10-24 panel range at runtime.
-                fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 14),
+                // BE-131: label font mirrors the standard-text cap range.
+                fontSize: clampFontPx(fs?.labelFont?.fontSize, FONT_CAP.text.min, FONT_CAP.text.max, 14),
                 fontWeight: fs?.labelFont?.fontWeight ?? 400,
                 ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
                 ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
                 ...(fs?.labelFont?.letterSpacing != null
-                    ? { letterSpacing: fs.labelFont.letterSpacing }
+                    ? { letterSpacing: clampLetterSpacing(fs.labelFont.letterSpacing) }
                     : {}),
                 // BE-126: line-height floor (verbatim "normal" untouched).
                 ...(fs?.labelFont?.lineHeight != null
@@ -13881,7 +14473,10 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                             cursor: "pointer",
                             lineHeight: 1.4,
                             ...checkLabelStyle,
-                            minHeight: TOUCH_TARGET_MIN,
+                            // BE-150: the checkbox field's row floor, from the
+                            // same per-type table every other field reads — the
+                            // box itself keeps its own `checkSize`.
+                            minHeight: fsMinHeight,
                             opacity: isSubmitting ? 0.5 : 1,
                             ...(isSubmitting ? { cursor: "not-allowed" } : {}),
                         }}
@@ -13918,13 +14513,13 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
             const checkAccent = fs?.accentColor ?? theme.accentColor
             const checkSize = field.checkSize ?? fs?.checkSize ?? FIELD_STYLES_CHECK_SIZE
             const checkLabelStyle: React.CSSProperties = {
-                // BE-126: label font mirrors a 10-24 panel range at runtime.
-                fontSize: clampFontPx(fs?.labelFont?.fontSize, 10, 24, 14),
+                // BE-131: label font mirrors the standard-text cap range.
+                fontSize: clampFontPx(fs?.labelFont?.fontSize, FONT_CAP.text.min, FONT_CAP.text.max, 14),
                 fontWeight: fs?.labelFont?.fontWeight ?? 400,
                 ...(fs?.labelFont?.fontFamily ? { fontFamily: fs.labelFont.fontFamily } : {}),
                 ...(fs?.labelFont?.fontStyle ? { fontStyle: fs.labelFont.fontStyle } : {}),
                 ...(fs?.labelFont?.letterSpacing != null
-                    ? { letterSpacing: fs.labelFont.letterSpacing }
+                    ? { letterSpacing: clampLetterSpacing(fs.labelFont.letterSpacing) }
                     : {}),
                 color: fs?.labelColor ?? theme.textPrimaryColor,
             }
@@ -13959,7 +14554,9 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                                         cursor: isSubmitting ? "not-allowed" : "pointer",
                                         lineHeight: 1.4,
                                         ...checkLabelStyle,
-                                        minHeight: TOUCH_TARGET_MIN,
+                                        // BE-150: same row floor as the single
+                                        // checkbox, from the per-type table.
+                                        minHeight: fsMinHeight,
                                         opacity: isSubmitting ? 0.5 : 1,
                                     }}
                                 >
@@ -14073,6 +14670,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         }
                         aria-invalid={!!error}
                         aria-describedby={error ? errorDomId : undefined}
+                        aria-label={hiddenLabelName}
                         style={inputBaseStyle}
                     />
                     {errorEl}
@@ -14960,11 +15558,11 @@ const CalendarExportMenu = React.memo(function CalendarExportMenu(props: Calenda
                                           fontFamily:
                                               calendarLinkSet?.font?.fontFamily ?? "inherit",
                                           fontSize:
-                                              // BE-126: menu rows mirror a 10-24 range.
+                                              // BE-131: menu rows mirror the text cap range.
                                               clampFontPx(
                                                   calendarLinkSet?.font?.fontSize,
-                                                  10,
-                                                  24,
+                                                  FONT_CAP.text.min,
+                                                  FONT_CAP.text.max,
                                                   14
                                               ),
                                           ...(calendarLinkSet?.font?.fontWeight != null
@@ -15321,12 +15919,17 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                         className="be-focus-target"
                         style={{
                             fontFamily: headingFont?.fontFamily ?? "inherit",
-                            // BE-126: head font mirrors a 16-40 panel range.
-                            fontSize: clampFontPx(headingFont?.fontSize, 16, 40, 22),
+                            // BE-131: head font caps at 48px.
+                            fontSize: clampFontPx(
+                                headingFont?.fontSize,
+                                FONT_CAP.head.min,
+                                FONT_CAP.head.max,
+                                22
+                            ),
                             fontWeight: headingFont?.fontWeight ?? 700,
                             ...(headingFont?.fontStyle ? { fontStyle: headingFont.fontStyle } : {}),
                             ...(headingFont?.letterSpacing != null
-                                ? { letterSpacing: headingFont.letterSpacing }
+                                ? { letterSpacing: clampLetterSpacing(headingFont.letterSpacing) }
                                 : {}),
                             lineHeight: clampLineHeight(headingFont?.lineHeight) ?? 1.2,
                             color: textPrimaryColor,
@@ -15638,7 +16241,7 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                                     ? { fontStyle: headingFont.fontStyle }
                                     : {}),
                                 ...(headingFont?.letterSpacing != null
-                                    ? { letterSpacing: headingFont.letterSpacing }
+                                    ? { letterSpacing: clampLetterSpacing(headingFont.letterSpacing) }
                                     : {}),
                                 lineHeight: clampLineHeight(headingFont?.lineHeight) ?? 1.2,
                                 color: textPrimaryColor,
@@ -15787,7 +16390,26 @@ function fieldStylesRadiusControl(defaultValue: string = FIELD_STYLES_FIELD_RADI
         defaultValue,
     }
 }
-function fieldStylesPaddingControl(defaultValue: string = FIELD_STYLES_INPUT_PADDING) {
+/** BE-135: one scoped shape choice for the boxed-input family. Not optional —
+ *  an Enum has no meaningful "unset", and anything other than `underline`
+ *  resolves to `boxed`, so untouched canvases render unchanged. */
+function fieldStylesShapeControl() {
+    return {
+        type: ct(ControlType.Enum),
+        title: "Field Shape",
+        options: ["boxed", "underline"],
+        optionTitles: ["Boxed", "Underline"],
+        defaultValue: "boxed",
+        displaySegmentedControl: true,
+    }
+}
+/** BE-150: `defaultValue` is required, not defaulted. The only caller that ever
+ *  relied on the default was the shared field-styles group, whose `Padding` row
+ *  is gone. BE-152 removed the calendar's row too, so the three button groups are
+ *  now the only callers — and their default is the button's own inherit look, so
+ *  activating a group still materialises exactly what was already rendering
+ *  (rule 131). */
+function fieldStylesPaddingControl(defaultValue: string) {
     return {
         type: ct(ControlType.Padding),
         title: "Padding",
@@ -15816,6 +16438,8 @@ function shadowStyle(shadow: string | undefined): React.CSSProperties {
 function makeInputFieldStylesControls() {
     const eff = getFieldStylesEffectiveDefaults("text")
     return {
+        // BE-135: shape leads — it decides the frame the rows below refine.
+        fieldShape: fieldStylesShapeControl(),
         labelFont: fieldStylesFontControl("Label Font", {
             fontSize: "13px",
             variant: "Medium",
@@ -15830,7 +16454,19 @@ function makeInputFieldStylesControls() {
         placeholderColor: fieldStylesColorControl("Placeholder Color"),
         backgroundColor: fieldStylesColorControl("Fill"),
         radius: fieldStylesRadiusControl(),
-        padding: fieldStylesPaddingControl(),
+        // BE-150: there is deliberately NO `Padding` row. It was one control
+        // feeding six different per-type bases — a boxed input centred 14px, a
+        // card 10/8, a pill 5/12, a segment 0/8, a radio 10/14 — so it could
+        // never be right for more than one field type at a time. And because
+        // Framer materialises an activated optional object's defaults,
+        // switching the group on silently restyled the choice variants (their
+        // option padding jumped from their inline fallback to the input's 14px)
+        // while leaving boxed inputs untouched. The author's order was to delete
+        // it and let each type keep its own built-in value; those built-ins are
+        // `FIELD_STYLES_*_PADDING`, all derived from `FIELD_ROW_HEIGHT`, so the
+        // freedom that was lost is freedom no single number could have used.
+        // A stored `padding` from a canvas saved while the row existed is still
+        // read as a legacy carrier (rule 116) — see `resolveFieldPadding`.
         border: fieldStylesBorderControl(),
         focusBorderColor: fieldStylesColorControl("Focus Border"),
         spacing: fieldStylesNumberControl("Gap", 0, 24, eff.spacing),
@@ -15845,13 +16481,21 @@ function makeSelectedStylesControls() {
         }),
         textColor: fieldStylesColorControl("Color"),
         backgroundColor: fieldStylesColorControl("Fill"),
-        radius: fieldStylesRadiusControl(FIELD_STYLES_FIELD_RADIUS),
-        padding: fieldStylesPaddingControl(FIELD_STYLES_SELECT_PADDING),
-        border: fieldStylesBorderControl({
-            borderWidth: FIELD_STYLES_BORDER_WIDTH,
-            borderStyle: "solid",
-            borderColor: "#222222",
-        }),
+        // BE-146: `Radius` and `Padding` are deliberately absent. The shared
+        // Field Styles `Radius` drives the track *and* the selected item (the
+        // thumb's radius is the track radius minus the track's own 3px inset),
+        // and the shared Field Styles `Padding` drives the selected item's
+        // interior. Duplicating either here made one control fight the other.
+        // Stored `selected.radius` / `selected.padding` values are still read as
+        // legacy carriers, so a saved canvas renders exactly as before.
+        //
+        // BE-153: no `Border` row. The nested `ControlType.Border` color picker
+        // leaks on drag: click-hold-drag in Selected's picker repaints Field
+        // Styles' border too, while single-click stays isolated. The component
+        // cannot cause this: text inputs and unselected options read only
+        // `fs.border` via `resolveFieldBorder`, never `fs.selected`. Use Shadow
+        // X/Y/Blur 0 + Spread as the pseudo-border instead. A stored
+        // `selected.border` still renders as a legacy carrier.
         shadow: fieldStylesShadowControl(),
     }
 }
@@ -15872,8 +16516,14 @@ function makeGlobalFieldStylesControls() {
     }
 }
 
+/** BE-152: no `Padding` row. The calendar root's padding was clamped to the
+ *  field family's 8–24 range, so switching this group on materialised its `0px`
+ *  default and the clamp rewrote that to 8px — a control whose only honest value
+ *  was zero. The calendar is three cards (event metadata, days, time slots) and
+ *  each carries its own padding, so the root's was redundant on top of them.
+ *  Removed from the panel AND from the element, by author order: a stored
+ *  `calendarStyles.padding` no longer renders (see rule 221). */
 function makeCalendarStylesStylesControls() {
-    const eff = getFieldStylesEffectiveDefaults("calendar-widget")
     return {
         font: fieldStylesFontControl("Field Font", {
             fontSize: "14px",
@@ -15892,7 +16542,6 @@ function makeCalendarStylesStylesControls() {
             unit: "px",
             displayStepper: true,
         },
-        padding: fieldStylesPaddingControl(eff.padding),
         border: fieldStylesBorderControl({
             borderWidth: 1,
             borderStyle: "solid",
@@ -15998,8 +16647,13 @@ function resolveButtonStyle(
     radiusToken: string | number
 ): React.CSSProperties {
     const font = group?.font
-    // BE-126: author border/padding/radius/font clamp — footer buttons can
-    // never outgrow the embed; explicit 0 border survives as none.
+    // BE-126: author border/radius/font clamp — footer buttons can never
+    // outgrow the embed; explicit 0 border survives as none.
+    // BE-152: padding is deliberately NOT in that list any more. The author's
+    // model is that padding is never bounded — the element is bounded by its own
+    // min/max width and height instead — so the author's padding string is
+    // passed through verbatim, at any magnitude. The 32px `minHeight` the button
+    // carries is what keeps it from collapsing; see rule 221.
     const width = clamp(
         group?.border?.borderWidth ?? role.borderWidth,
         BORDER_WIDTH_MIN,
@@ -16021,19 +16675,15 @@ function resolveButtonStyle(
                     : radiusToken,
         padding:
             typeof group?.padding === "string" && group.padding.trim()
-                ? clampBoxPadding(
-                      group.padding,
-                      BUTTON_PADDING_MIN_Y,
-                      BUTTON_PADDING_MAX_Y,
-                      BUTTON_PADDING_MIN_X,
-                      BUTTON_PADDING_MAX_X
-                  )
+                ? group.padding
                 : role.padding,
         fontFamily: font?.fontFamily ?? "inherit",
-        fontSize: clampFontPx(font?.fontSize, 10, 24, 14),
+        fontSize: clampFontPx(font?.fontSize, FONT_CAP.text.min, FONT_CAP.text.max, 14),
         fontWeight: font?.fontWeight ?? 600,
         ...(font?.fontStyle ? { fontStyle: font.fontStyle } : {}),
-        ...(font?.letterSpacing != null ? { letterSpacing: font.letterSpacing } : {}),
+        ...(font?.letterSpacing != null
+            ? { letterSpacing: clampLetterSpacing(font.letterSpacing) }
+            : {}),
         ...(font?.lineHeight != null ? { lineHeight: clampLineHeight(font.lineHeight) } : {}),
         ...shadowStyle(group?.shadow),
     }
@@ -16180,12 +16830,6 @@ function firstNonEmpty(...candidates: Array<string | undefined>): string | undef
 
 function makeFieldObjectControls() {
     return {
-        label: {
-            type: ct(ControlType.String),
-            title: "Label",
-            defaultValue: "Field Label",
-            hidden: (p: FieldControlProps) => p?.fieldType === "calendar-widget",
-        },
         fieldType: {
             type: ct(ControlType.Enum),
             title: "Type",
@@ -16222,6 +16866,27 @@ function makeFieldObjectControls() {
                 "Radio",
             ],
             defaultValue: "text",
+        },
+        // BE-143: `Hide Label` sits directly under `Type` and is offered only for
+        // the boxed-input family (the UNDERLINE_FIELD_TYPES set) — hiding a label
+        // only reads as a design where the Underline shape lets the placeholder
+        // guide the eye. It also hides when there is no label to hide (blank
+        // labels render nothing anyway), so the row never looks broken.
+        hideLabel: {
+            type: ct(ControlType.Boolean),
+            title: "Hide Label",
+            defaultValue: false,
+            hidden: (p: FieldControlProps) =>
+                !supportsHiddenLabel(p?.fieldType) || (p?.label ?? "").trim() === "",
+        },
+        // BE-143: the Label row disappears while `Hide Label` is Yes — hidden,
+        // never deleted, so its value survives a Yes/No round-trip.
+        label: {
+            type: ct(ControlType.String),
+            title: "Label",
+            defaultValue: "Field Label",
+            hidden: (p: FieldControlProps) =>
+                p?.fieldType === "calendar-widget" || p?.hideLabel === true,
         },
         placeholder: {
             type: ct(ControlType.String),
@@ -16473,6 +17138,16 @@ addPropertyControls(BookingEngine, {
                             textAlign: "left",
                         },
                     },
+                    headingGap: {
+                        type: ControlType.Number,
+                        title: "Heading Gap",
+                        defaultValue: SECTION_SPACING_DEFAULTS.heading,
+                        min: SECTION_SPACING_MIN,
+                        max: SECTION_SPACING_MAX,
+                        step: 1,
+                        unit: "px",
+                        displayStepper: true,
+                    },
                 },
             },
             fieldStyles: {
@@ -16528,36 +17203,9 @@ addPropertyControls(BookingEngine, {
                 unit: "px",
                 displayStepper: true,
             },
-            progressGap: {
-                type: ControlType.Number,
-                title: "Progress Gap",
-                defaultValue: SECTION_SPACING_DEFAULTS.progress,
-                min: SECTION_SPACING_MIN,
-                max: SECTION_SPACING_MAX,
-                step: 1,
-                unit: "px",
-                displayStepper: true,
-            },
-            headingGap: {
-                type: ControlType.Number,
-                title: "Heading Gap",
-                defaultValue: SECTION_SPACING_DEFAULTS.heading,
-                min: SECTION_SPACING_MIN,
-                max: SECTION_SPACING_MAX,
-                step: 1,
-                unit: "px",
-                displayStepper: true,
-            },
-            footerGap: {
-                type: ControlType.Number,
-                title: "Footer Gap",
-                defaultValue: SECTION_SPACING_DEFAULTS.footer,
-                min: SECTION_SPACING_MIN,
-                max: SECTION_SPACING_MAX,
-                step: 1,
-                unit: "px",
-                displayStepper: true,
-            },
+            // BE-130: the three zone-gap rows moved to their owning submenus
+            // (Progress / Header / Buttons Layout). The flat `styles.*Gap`
+            // paths stay readable as legacy carriers — no data is dropped.
         },
     },
     buttonLabels: {
@@ -16605,6 +17253,16 @@ addPropertyControls(BookingEngine, {
                         defaultValue: "fit",
                         displaySegmentedControl: true,
                     },
+                    footerGap: {
+                        type: ControlType.Number,
+                        title: "Footer Gap",
+                        defaultValue: SECTION_SPACING_DEFAULTS.footer,
+                        min: SECTION_SPACING_MIN,
+                        max: SECTION_SPACING_MAX,
+                        step: 1,
+                        unit: "px",
+                        displayStepper: true,
+                    },
                 },
             },
             primaryButtonStyles: {
@@ -16643,10 +17301,10 @@ addPropertyControls(BookingEngine, {
                     borderColor: "#222222",
                 }),
             },
-            buttonTexts: {
+            ButtonsText: {
                 type: ControlType.Object,
-                title: "Button Texts",
-                buttonTitle: "Button Texts",
+                title: "Buttons Text",
+                buttonTitle: "Buttons Text",
                 icon: "object",
                 optional: true,
                 controls: {
@@ -16694,6 +17352,28 @@ addPropertyControls(BookingEngine, {
                 displaySegmentedControl: true,
                 hidden: (p: ProgressBarControlProps) => (p?.barVisible ?? p?.visible) === false,
             },
+            barVersion: {
+                type: ControlType.Enum,
+                title: "Bar Version",
+                options: ["full", "minimal"],
+                optionTitles: ["Full", "Minimal"],
+                defaultValue: "full",
+                displaySegmentedControl: true,
+                hidden: (p: ProgressBarControlProps) => (p?.barVisible ?? p?.visible) === false,
+            },
+            // BE-144: placement of a bar narrower than its container. Only the
+            // `Minimal` version is narrower than the container, so this is inert
+            // on `Full` — but it stays visible rather than appearing and
+            // disappearing with the version, so the author can set it up front.
+            barAlign: {
+                type: ControlType.Enum,
+                title: "Bar Align",
+                options: ["left", "center", "right"],
+                optionTitles: ["Left", "Center", "Right"],
+                defaultValue: "left",
+                displaySegmentedControl: true,
+                hidden: (p: ProgressBarControlProps) => (p?.barVisible ?? p?.visible) === false,
+            },
             showText: {
                 type: ControlType.Boolean,
                 title: "Show Text",
@@ -16701,7 +17381,7 @@ addPropertyControls(BookingEngine, {
             },
             progressText: {
                 type: ControlType.Enum,
-                title: "Progress Text",
+                title: "Text",
                 options: ["top", "bottom"],
                 optionTitles: ["Top", "Bottom"],
                 defaultValue: "top",
@@ -16710,12 +17390,27 @@ addPropertyControls(BookingEngine, {
                     (p?.showText ?? p?.showTextContent) === false ||
                     (p?.barVisible ?? p?.visible) === false,
             },
+            gap: {
+                type: ControlType.Number,
+                title: "Bottom Gap",
+                defaultValue: SECTION_SPACING_DEFAULTS.progress,
+                min: SECTION_SPACING_MIN,
+                max: SECTION_SPACING_MAX,
+                step: 1,
+                unit: "px",
+                displayStepper: true,
+            },
             content: {
                 type: ControlType.Object,
                 title: "Content",
                 icon: "object",
                 buttonTitle: "Content",
                 optional: true,
+                // BE-145: with `Show Text` off there is nothing to write copy
+                // for, so the whole group hides. `hidden` never clears it — the
+                // stored templates survive a No/Yes round-trip untouched.
+                hidden: (p: ProgressBarControlProps) =>
+                    (p?.showText ?? p?.showTextContent) === false,
                 controls: {
                     stepCounterTemplate: {
                         type: ControlType.String,
@@ -16727,12 +17422,14 @@ addPropertyControls(BookingEngine, {
                         title: "Step Progress",
                         defaultValue: DEFAULT_COPY_STEP_PROGRESS_TEMPLATE,
                     },
-                    stepAnnouncementTemplate: {
-                        type: ControlType.String,
-                        title: "Step Announcement Template",
-                        defaultValue: DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE,
-                        displayTextArea: true,
-                    },
+                    // BE-148: `Step Announcement Template` has NO control. It
+                    // renders into a visually hidden live region, so the author
+                    // can never see or preview what they are editing — a control
+                    // that cannot be evaluated is a trap, not a freedom. The
+                    // template stays in the component as its default
+                    // (`DEFAULT_COPY_STEP_ANNOUNCEMENT_TEMPLATE`) and both stored
+                    // paths are still read (see the `copy` resolution), so a
+                    // canvas that already set it announces exactly as before.
                 },
             },
         },
