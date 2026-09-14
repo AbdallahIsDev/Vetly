@@ -1103,8 +1103,6 @@ interface SegmentedControlProps {
     optionPaddingX?: number
     optionFont?: FramerFont
     trackShadow?: string
-    // Selected-state surface (BE-073): when set, the thumb + active option follow
-    // the Selected Styles subgroup; unset keys inherit the option's own look.
     selectedRadius?: number | string
     selectedPaddingY?: number
     selectedPaddingX?: number
@@ -1388,8 +1386,6 @@ interface ChoiceGroupInlineProps {
     optionFont?: FramerFont
     optionShadow?: string
     trackBackground?: string
-    /** CARDS-GRID (BE-053): true = auto-fit tracks so options share the
-     *  full row (Width Full); false = auto-fill fixed tracks (Width Fit). */
     fillRow?: boolean
 }
 
@@ -1609,8 +1605,6 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
     const selectedRing = selectedBorderColor ?? accentColor
     const hoverRing = optionHoverBorderColor ?? selectedRing
     const optionBorder = optionBorderWidth ?? 1
-    // SELECTED-STYLES (BE-024): full-vocabulary overrides apply to the
-    // selected option only; unset keys keep the option's own look.
     const selectedFontExtraStyle: React.CSSProperties = {
         ...(selectedFont?.fontFamily ? { fontFamily: selectedFont.fontFamily } : {}),
         ...(selectedFont?.fontWeight != null ? { fontWeight: selectedFont.fontWeight } : {}),
@@ -1618,13 +1612,11 @@ const ChoiceGroupInline = React.memo(function ChoiceGroupInline(props: ChoiceGro
         ...(selectedFont?.letterSpacing != null
             ? { letterSpacing: selectedFont.letterSpacing }
             : {}),
-        // BE-126: line-height floor (verbatim "normal" untouched).
         ...(selectedFont?.lineHeight != null
             ? { lineHeight: clampLineHeight(selectedFont.lineHeight) }
             : {}),
     }
     const compact = measuredWidth < COMPACT_BREAKPOINT
-    // BE-126: option/selected fonts mirror a 10-28 panel range.
     const effectiveFontSize =
         optionFont?.fontSize != null
             ? clampFontPx(optionFont.fontSize, 10, 28, Math.max(14, fontSize))
@@ -3697,8 +3689,6 @@ interface UseTimeGridOptions {
     today: Date
     amLabel?: string
     pmLabel?: string
-    /** W1-07-F3 fix: the visitor's chosen timezone, used to disambiguate
-     *  DST collision rows ("01:00 AM (EDT)" vs "01:00 AM (EST)"). */
     timeZone?: string
 }
 
@@ -4055,7 +4045,6 @@ interface DateAndTimeInlineProps {
     timeFormat: "12h" | "24h"
     initialDate?: Date | null
     initialTime?: string | null
-    /** Fix #19: parent-controlled visible month so navigation survives remounts. */
     initialVisibleMonth?: Date | null
     availableTimes?: Array<{
         value: string
@@ -4066,10 +4055,8 @@ interface DateAndTimeInlineProps {
     availableDates?: Set<string>
     slotsLoading?: boolean
     availabilitySettled?: boolean
-    /** INSTANCE-ISOLATION: per-engine id for DOM ids (gridLabelId, field ids). */
     instanceId?: string
     timeZone?: string
-    /** Copy shown in the time panel while Cal.com availability is loading. */
     loadingLabel?: string
     onSelectionReady?: (payload?: BookingPayload) => void
     onDateChange?: (date: Date) => void
@@ -4090,13 +4077,10 @@ interface DateAndTimeInlineProps {
     slotErrorId?: string
     eventMeta?: CalEventMeta | null
     eventMetaStatus?: CalEventMetaStatus
-    /** CAL-EVENT-META: author Default Meeting Duration (minutes) — only used
-     *  when Cal.com itself returns no reliable event length. */
     eventMetaFallbackDurationMinutes?: number
     calEventMetaUnavailableCopy?: string
     hourSuffix?: string
     minuteSuffix?: string
-    /** BE-125: author-selected Transition Type for grid/list/info surfaces. */
     transitionVariant: TransitionVariantId
 }
 
@@ -4304,8 +4288,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
         radius,
         "calendar-widget" as FieldType
     )
-    // RADIUS 0-24 (rule 60 parity): the Number control enforces it in the panel;
-    // the runtime clamps programmatic values the same way.
     const surfaceRadius = (() => {
         const n = Number.parseFloat(surfaceRadiusRaw)
         if (!Number.isFinite(n)) return surfaceRadiusRaw
@@ -4328,7 +4310,6 @@ const DateAndTimeInline = React.memo(function DateAndTimeInline(props: DateAndTi
         : clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX) > 0
           ? `${clamp(tileBorderWidth, BORDER_WIDTH_MIN, BORDER_WIDTH_MAX)}px ${tileBorder?.borderStyle || "solid"} ${tileBorder?.borderColor || borderColor}`
           : "none"
-    // BE-126: calendar surface padding clamps like its Radius sibling.
     const surfacePadding =
         typeof normalizedCalendarStyles?.padding === "string" &&
         normalizedCalendarStyles.padding.trim()
@@ -4944,8 +4925,6 @@ interface StepConfig {
 interface BookingEngineStyleProps {
     style?: React.CSSProperties
     styles: {
-        // BE-118: the three header rows live in the Header subgroup now;
-        // the flat keys stay as readable legacy carriers (rule-116 contract).
         header?: {
             contentAlignment?: "left" | "center" | "right"
             font?: FramerFont
@@ -5044,7 +5023,6 @@ interface BookingEngineCopyProps {
         retryButton?: ButtonStyleGroup
     }
     copy: {
-        // BE-083 nested groups (new canonical path).
         success?: {
             successTitle?: string
             successSubtitle?: string
@@ -5140,11 +5118,8 @@ function weeksInMonthView(year: number, month: number, firstDayOfWeek: number): 
 }
 const TIME_SLOT_SKELETON_COUNT = 8
 const PROGRESS_BAR_HEIGHT = 4
-// BE-042: terminal marks are fixed 48px circles with 24px glyphs.
 const CHECKMARK_ICON_SIZE = 48
 const ERROR_ICON_SIZE = 48
-// CARDS-GRID (BE-053): pure-CSS track sizing — no JS width measurement,
-// so the first paint is already the final layout (no reload flash).
 const CARDS_GRID_MIN_TRACK_PX = 160
 const PILLS_TWO_PER_ROW_BREAKPOINT = 420
 const PROGRESS_BAR_TRANSITION = {
@@ -5154,8 +5129,6 @@ const PROGRESS_BAR_TRANSITION = {
 } as const
 const INSTANT_TRANSITION = { duration: 0 } as const
 const CHOICE_FIELD_TYPES = ["select", "segmented", "pills", "cards", "radio"]
-// BE-055/BE-056: multi-pick types store string arrays (Option A). They share the
-// Options/Values authoring rows but never the first-option seed.
 const MULTI_PICK_TYPES = ["multiselect", "checkboxgroup"]
 const DEFAULT_MEETING_DURATION_MS = 30 * 60 * 1000
 const DEFAULT_CAL_API_BASE_URL = "https://api.cal.com"
@@ -5228,8 +5201,6 @@ function makeDefaultBlankFormStep(n: number): StepConfig {
             {
                 label: "Field Label",
                 fieldType: "text",
-                // BE-099: no placeholder key — a fresh blank field is
-                // never-set, so the per-type default shows in preview.
                 required: false,
                 width: "full",
             },
@@ -5289,8 +5260,6 @@ function isValidTimeZone(tz: string | null | undefined): tz is string {
 
 interface NormalizedField extends FieldConfig {
     id: string
-    /** BE-052: runtime-computed marker for later duplicate Primary-Name
-     *  flags (first-wins); drives the canvas-only escalation notice. */
     duplicatePrimaryName?: boolean
 }
 
@@ -5345,10 +5314,6 @@ function isNameFlagged(field: { isPrimaryName?: boolean; fieldType?: string }): 
     return field.isPrimaryName === true && field.fieldType === "text"
 }
 
-// BE-039: designations imply mandatory. Primary-Name and Email-typed
-// fields are always required (the attendee name + contact the Cal.com
-// booking needs); with no designation, the label-matched identity field
-// is forced instead. Identity resolution is first-wins.
 function applyMandatoryIdentityFields(steps: NormalizedStep[]): NormalizedStep[] {
     const allFields = steps.flatMap((step) => step.fields)
     const forcedIds = new Set<string>()
@@ -5364,8 +5329,6 @@ function applyMandatoryIdentityFields(steps: NormalizedStep[]): NormalizedStep[]
         const fallbackContact = findEmailField(steps)
         if (fallbackContact) forcedIds.add(fallbackContact.id)
     }
-    // BE-052: later Primary-Name flags are duplicates (first-wins runtime);
-    // marked so the canvas can escalate at the exact field site.
     const duplicatePrimaryIds = new Set(
         allFields
             .filter(
@@ -5607,17 +5570,6 @@ function sanitizePhoneInput(value: string): string {
     return value.replace(PHONE_DISALLOWED_CHARS, "")
 }
 
-// BE-092: number fields accept digits and a single leading minus only.
-// Letters, the decimal point, and every other symbol are stripped at the
-// write point so they never appear (rule 97 phone precedent). The PLUS SIGN
-// IS NOT RECOGNIZED AT ALL — stripped like a letter (author order, BE-100):
-// Cal.com ignores it completely, and a phone-number use belongs to the phone
-// type, never number. A repeat or interior minus is swallowed (the key simply
-// does not register): "-1" + "-" stays "-1", so "-1" + "1" is "-11".
-// BE-100: Cal.com's exact blur cleanup — a leading "+" is dropped and
-// everything from the first remaining "+" is cut ("+1" → "1", "1+5" → "1").
-// Typing can never produce "+" (stripped at write), so this fires for legacy
-// or pasted values; minus is never touched on blur.
 const NUMBER_DISALLOWED_CHARS = /[^0-9-]/g
 function sanitizeNumberInput(value: string): string {
     const clean = value.replace(NUMBER_DISALLOWED_CHARS, "")
@@ -6655,9 +6607,6 @@ async function submitCalcomBooking(params: {
                 })(),
                 attendee: {
                     name,
-                    // BE-062: an empty email is omitted, never sent as "".
-                    // Reachable only when the Cal email question is hidden
-                    // (validation forces a non-empty email otherwise).
                     ...(email.trim() ? { email } : {}),
                     timeZone,
                     language:
@@ -6892,9 +6841,6 @@ function mapCalcomError(
 ): string {
     const copy = { ...ERROR_COPY_DEFAULTS, ...(errorCopy || {}) }
     const m = (message || "").toLowerCase()
-    // BE-040: attendee/contact failures render actionable copy, never raw
-    // API text (message shapes: "Attendee must have at least one contact
-    // method (email or phone number)", "attendee property is wrong").
     if (
         m.includes("contact method") ||
         (m.includes("attendee") &&
@@ -7082,8 +7028,6 @@ function buildBookingFieldsResponses(
                 key = slugifyLabel(field.label) || field.id
                 if (!key) continue
             }
-            // BE-055/BE-056: multi-pick fields submit the raw string array — Cal.com
-            // expects a list for multiselect/checkbox-group kinds, never joined text.
             out[key] =
                 field.fieldType === "phone"
                     ? sanitizePhoneInput(String(value))
@@ -7837,8 +7781,6 @@ function useBookingEngineState(
     )
     const bookAnotherLabel = DEFAULT_CONFIRM_BOOK_ANOTHER_LABEL
     const addToCalendarButtonLabel = DEFAULT_CONFIRM_ADD_TO_CALENDAR_LABEL
-    // BUTTON-TEXTS (BE-038): Cancel/Retry are fixed constants — no
-    // control, no interface key, no legacy carrier.
     const retryLabel = DEFAULT_COPY_RETRY_LABEL
 
     const persistState = true
@@ -8593,8 +8535,6 @@ function useBookingEngineState(
             return {
                 id: `auto-cal-${f.slug}`,
                 label: f.label || f.slug,
-                // BE-099: Cal-provided placeholder only — absent stays
-                // undefined so the per-type default shows.
                 ...(f.placeholder ? { placeholder: f.placeholder } : {}),
                 required: f.required,
                 fieldType,
@@ -8662,14 +8602,6 @@ function useBookingEngineState(
         }
     }, [activeSteps, safeCurrentIndex, reachedDatetimeStep])
 
-    // BE-116: field ids are positional (step-0-field-1), so a field-type
-    // change orphans the stored value (select seed "Option 1" lingering in a
-    // field that is now text). The first render with a new type treats the
-    // field as brand-new: drop its value + error, keep everything else. The
-    // placeholder lives in config and is never touched — it survives type
-    // changes by design. First-seen ids only seed the map (fresh loads must
-    // never wipe restored autosave — rules 7/13); remounts with equal types
-    // are no-ops (rule 74).
     const prevFieldTypesRef = React.useRef<Record<string, string>>({})
     useIsomorphicLayoutEffect(() => {
         const prev = prevFieldTypesRef.current
@@ -8785,7 +8717,6 @@ function useBookingEngineState(
                 )
             }
         })
-        // BE-039: identity designation warnings (canvas-only).
         const identityFields = baseActiveSteps.flatMap((step) => step.fields)
         const flaggedNames = identityFields.filter((field) => isNameFlagged(field))
         const typedEmails = identityFields.filter((field) => field.fieldType === "email")
@@ -9722,7 +9653,6 @@ export default function BookingEngine(props: BookingEngineProps) {
 
     const isStaticRender = useIsStaticRenderer()
 
-    // BE-051: ARIA labels are fixed internal constants, never controls.
     const ariaLabels = DEFAULT_ARIA_LABELS
 
     const prevDiagnosticIndexRef = React.useRef<number>(safeCurrentIndex)
@@ -10515,8 +10445,6 @@ export default function BookingEngine(props: BookingEngineProps) {
                 })}
             </motion.form>
 
-            {/* Footer nav (BE-078): marginTop owns fields-to-nav distance
-            (36 default); sticky + safe-area bottom pin the row. */}
             <div
                 style={{
                     display: "flex",
@@ -10698,18 +10626,9 @@ const RootShell = React.memo(function RootShell(props: {
 
 .be-select-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .be-select-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
-/* PHONE-GROUP (BE-108): focus ring around the whole joined box, colored by
- * the inline --be-group-ring var (error-aware). Same pointer-active
- * convention as .be-input: mouse focus stays ring-free. */
 .be-phone-group:focus-within { box-shadow: inset 0 0 0 2px var(--be-group-ring); }
 .be-phone-group { transition: box-shadow 0.15s ease; }
 .be-motion-root.be-pointer-active .be-phone-group:focus-within { box-shadow: none; }
-/* FIELD-GRID (BE-102): the step field grid is container-responsive — the form
- * is the query container, so columns follow the embed width with no JS
- * measurement pass (the old measured-width state painted single-column first
- * and snapped: the reported rows flash). 768px mirrors COMPACT_BREAKPOINT.
- * Markup is width-independent (data-two-col derives from field config), so
- * server, prerender, and first client paint are byte-identical. */
 .be-form-scope { container-type: inline-size; }
 .be-form-grid { grid-template-columns: 1fr; }
 @container (min-width: 768px) {
@@ -10890,10 +10809,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
     }, [touched, errors])
 
     const renderFormFields = () => {
-        // BE-082/BE-102: the grid derives from field widths - any Half field
-        // marks the step two-column; the column switch itself lives in CSS
-        // (.be-form-grid + container query), so the first paint is already
-        // correct and never snaps.
         return (
             <div
                 style={{
@@ -11138,8 +11053,6 @@ const StepBody = React.memo(function StepBody(props: StepBodyProps) {
     return renderFormFields()
 }, areStepBodyPropsEqual)
 
-// PHONE-COUNTRY (BE-063): [ISO-3166, English name, ITU dial code]. The dial
-// code owns the "+" prefix; the stored value is always full-international.
 type PhoneCountryTuple = [iso: string, name: string, dial: string]
 const PHONE_COUNTRIES: PhoneCountryTuple[] = [
     ["AF", "Afghanistan", "93"],
@@ -11390,11 +11303,7 @@ function phoneCountryByIso(iso: string): PhoneCountryTuple | undefined {
     const upper = (iso || "").toUpperCase()
     return PHONE_COUNTRIES.find((c) => c[0] === upper)
 }
-// BE-087: flags render as real images, not emoji — Windows has no flag-emoji
-// font and shows the bare letter pair instead (the reported "DZ" box). Images
-// come from the flagcdn CDN as SVG (BE-088 — vector, no retina set needed);
-// offline/unknown iso fails closed to a fixed-size two-letter badge, so the
-// slot geometry never shifts.
+
 function PhoneFlag(props: { iso: string }) {
     const { iso } = props
     const [failed, setFailed] = React.useState(false)
@@ -11440,18 +11349,9 @@ function PhoneFlag(props: { iso: string }) {
         </span>
     )
 }
-// BE-063: canonical representative per shared dial code, so parsing a stored
-// number with a foreign fallback iso still lands a deterministic flag
-// (+1 → US, +7 → RU, +44 → GB). Manual re-pick always wins afterwards.
+
 const PHONE_DIAL_CANONICAL_ISO: Record<string, string> = { "1": "US", "7": "RU", "44": "GB" }
-// BE-063: deterministic pre-paint default (rule 42 — pure constant both
-// sides). Locale detection lands in a gated layout effect, never the first
-// markup, so there is no flag flash and no hydration mismatch.
 const PHONE_COUNTRY_DEFAULT_ISO = "US"
-// BE-088: IANA-zone → country second signal for detection. Locale stays
-// first (an explicit locale region always wins); the timezone only resolves
-// the ambiguous cases — English-browser visitors abroad (en-US + Africa/Cairo
-// → EG) and region-less locales. No IP geolocation, fully offline.
 const PHONE_TIMEZONE_TO_ISO: Record<string, string> = {
     "Africa/Cairo": "EG",
     "Africa/Lagos": "NG",
@@ -11646,14 +11546,6 @@ function detectPhoneCountryIso(): string {
     if (localeIso) return localeIso
     return PHONE_COUNTRY_DEFAULT_ISO
 }
-// BE-104: E.164 caps any international number at 15 digits — no real phone
-// number is ever longer, so keystrokes past 15 digits never appear (a hard
-// write-point limit, never a validation message). Formatting the visitor
-// typed is preserved; only the digit budget is enforced.
-// BE-110: max national-significant digits per country, extracted from
-// libphonenumber metadata (max over possibleLengths: general + every type —
-// erring loose, never tight — audited: no lengths live outside int arrays).
-// Missing entries fall back to the E.164 ceiling in the budget helper.
 const PHONE_MAX_NATIONAL: Record<string, number> = {
     AF: 9, AL: 9, DZ: 9, AS: 10, AD: 9, AO: 9, AI: 10, AG: 10, AR: 11, AM: 8,
     AW: 7, AU: 12, AT: 13, AZ: 9, BS: 10, BH: 8, BD: 10, BB: 10, BY: 11, BE: 9,
@@ -11737,9 +11629,7 @@ interface FieldRendererProps {
     isSubmitting?: boolean
     globalFieldStyles?: FieldStyleOverrides
     instanceId: string
-    /** BE-125: author-selected Transition Type for menu surfaces. */
     transitionVariant: TransitionVariantId
-    /** BE-126: trailing lone Half spans both tracks (no half-empty row). */
     forceFullWidth?: boolean
 }
 
@@ -11779,8 +11669,6 @@ function FieldErrorMessage({
 const SELECT_MENU_MAX_PX = 320
 const SELECT_MENU_VIEWPORT_RATIO = 0.4
 const SELECT_MENU_Z_INDEX = 999999
-// BE-126: visible chip cap — the rest collapse into a "+N" overflow chip
-// (their hidden inputs still submit, values/validation untouched).
 const MAX_VISIBLE_CHIPS = 3
 
 interface SelectMenuPlacement {
@@ -11816,13 +11704,9 @@ interface MultiSelectFieldControlProps {
     fieldDomId: string
     errorDomId: string
     reducedMotion: boolean
-    /** BE-125: author-selected Transition Type for the menu surface. */
     transitionVariant: TransitionVariantId
 }
 
-// BE-055: multi-pick combobox. Same trigger + portaled listbox mechanics as the
-// single select (rule 134), but options toggle in place, the menu stays open,
-// the closed box renders chips, and there is intentionally no first-option seed.
 const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
     props: MultiSelectFieldControlProps
 ) {
@@ -12046,12 +11930,6 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
 
     const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4)
     const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0
-    // BE-114: multiselect rows never take the full accent surface — the ONLY
-    // selected indicator is the accent-colored check; the row itself keeps
-    // the hover wash (selected or hovered alike). Single-select rows and
-    // choice options still consume the full Selected Styles (rule 158).
-    // (selectedRowText survives below for the chips only: light text on the
-    // accent chip surface — unchanged by design.)
     const selectedRowText =
         fs?.selected?.textColor ??
         fs?.selectedTextColor ??
@@ -12192,9 +12070,6 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                     cursor: isSubmitting ? "not-allowed" : "pointer",
                     opacity: isSubmitting ? 0.5 : 1,
                     paddingRight: paddingHorizontalFrom(fsPadding) + 22,
-                    // BE-117: pin the exact inputBaseStyle line-height rule —
-                    // inputs compute their own `normal`, divs inherit the
-                    // root's computed px value (measured 38px vs 43px).
                     // BE-126: same line-height floor as the input.
                     lineHeight: clampLineHeight(fs?.font?.lineHeight) ?? "normal",
                     color:
@@ -12215,9 +12090,6 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                 }}
             >
                 {pickedOptions.length === 0 ? (
-                    // BE-112/BE-115: nbsp strut + the REAL placeholder color
-                    // (opacity 0.7 on text color washed out wrong) — same
-                    // expression real input placeholders resolve to.
                     <span
                         style={{
                             color:
@@ -12285,8 +12157,6 @@ const MultiSelectFieldControl = React.memo(function MultiSelectFieldControl(
                                         cursor: isSubmitting ? "not-allowed" : "pointer",
                                     }}
                                 >
-                                    {/* BE-114: author-supplied lucide X paths,
-                                        verbatim — replaces the text glyph. */}
                                     <svg
                                         aria-hidden="true"
                                         width="12"
@@ -12407,7 +12277,6 @@ interface SelectFieldControlProps {
     fieldDomId: string
     errorDomId: string
     reducedMotion: boolean
-    /** BE-125: author-selected Transition Type for the menu surface. */
     transitionVariant: TransitionVariantId
 }
 
@@ -12441,7 +12310,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
     const [menuFont, setMenuFont] = React.useState<SelectMenuFont | null>(null)
 
     const listboxDomId = `${fieldDomId}-listbox`
-    // BE-125: menu surface follows the Transition Type family.
     const menuShapes = surfaceEnterExit(transitionVariant, 1)
 
     const storedValue = typeof value === "string" ? value : ""
@@ -12452,7 +12320,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
           ? getFirstNonEmptyOption(opts)
           : storedValue
     const selectedOption = opts.find((o) => optionValue(o) === displayValue)
-    // BE-124 batch 2: mount gate for the closed-box value fade.
     const selectMounted = useMountedOnce()
 
     React.useEffect(() => {
@@ -12638,9 +12505,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
 
     const menuRowRadius = Math.max(0, Number.parseFloat(fsRadius) - 4)
     const menuRowRadiusValue = Number.isFinite(menuRowRadius) ? menuRowRadius : 0
-    // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
-    // keep winning for stored canvases, engine defaults last. (BE-122: the
-    // text carrier is retired here — selected rows are check-only.)
     const selectedRowSurface =
         fs?.selected?.backgroundColor ?? fs?.selectedBackgroundColor ?? theme.accentColor
     const optionTextColor = fs?.textColor ?? theme.textPrimaryColor
@@ -12689,8 +12553,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     margin: 0,
                     listStyle: "none",
                     cursor: option.disabled ? "not-allowed" : "pointer",
-                    // BE-122: selected is a check glyph only (multiselect
-                    // parity) — rows never take the accent surface.
                     color: option.disabled
                         ? theme.textSecondaryColor
                         : optionTextColor,
@@ -12778,9 +12640,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     cursor: isSubmitting ? "not-allowed" : "pointer",
                     opacity: isSubmitting ? 0.5 : 1,
                     paddingRight: paddingHorizontalFrom(fsPadding) + 22,
-                    // BE-117: pin the exact inputBaseStyle line-height rule —
-                    // inputs compute their own `normal`, divs inherit the
-                    // root's computed px value (measured 38px vs 43px).
                     // BE-126: same line-height floor as the input.
                     lineHeight: clampLineHeight(fs?.font?.lineHeight) ?? "normal",
                     color:
@@ -12796,15 +12655,11 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                         : {}),
                 }}
             >
-                {/* BE-112: nbsp strut when no option exists to display (NOT a
-                    placeholder feature — rule 133 stands; an empty closed box
-                    has no line box and collapses to the 23px floor). */}
                 <motion.span
                     key={displayValue ?? "empty"}
                     initial={selectMounted ? { opacity: 0 } : false}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.12 }}
-                    // BE-126: long labels truncate like the menu rows do.
                     style={{
                         display: "block",
                         minWidth: 0,
@@ -12840,7 +12695,6 @@ const SelectFieldControl = React.memo(function SelectFieldControl(props: SelectF
                     />
                 </svg>
             </div>
-            {/* BE-123: same enter/exit pattern as the multiselect menu. */}
             {typeof document !== "undefined"
                 ? ReactDOM.createPortal(
                       <AnimatePresence>
@@ -12933,8 +12787,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
     const settledRef = React.useRef(false)
     const nationalRef = React.useRef<HTMLInputElement | null>(null)
     const dialEditRef = React.useRef<HTMLInputElement | null>(null)
-    // BE-105: dial-edit mode — typing "+" first opens country-code entry in
-    // the middle slot (Cal.com parity). Null = normal display.
     const [dialEdit, setDialEdit] = React.useState<string | null>(null)
 
     const full = typeof value === "string" ? value : ""
@@ -12969,11 +12821,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     const emitNational = React.useCallback(
         (nextNational: string) => {
-            // BE-105/BE-111: a bare "+" replaces everything (empty box or
-            // select-all) — clear the number and open dial-edit mode instead
-            // of entering the number (Cal.com parity: typing "+" means "I
-            // want another country's code"). Anything longer keeps the
-            // normal path, so pasting "+20..." still fills digits directly.
             if (dialEdit === null && nextNational === "+") {
                 setNational("")
                 settledRef.current = true
@@ -12985,10 +12832,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
             if (dialEdit !== null) setDialEdit(null)
             // BE-063 + rule 97: letters/symbols stripped at the write point;
             // the "+" prefix belongs to the country button, never the box.
-            // BE-104: hard E.164 budget — 15 digits TOTAL international, so
-            // the national box gets 15 minus the dial length (US +1 → 14,
-            // Egypt +20 → 13). Over-budget keystrokes vanish; no real number
-            // on earth exceeds the budget, so nothing legitimate is ever cut.
             const clean = truncatePhoneNational(
                 sanitizePhoneInput(nextNational).replace(/\+/g, ""),
                 phoneNationalBudget(country[0], country[2])
@@ -13003,9 +12846,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
         [country, field.id, onFieldChange, dialEdit]
     )
 
-    // BE-105: dial-edit typing — digits accumulate after the "+", an exact
-    // dial match selects that country and jumps back to the number box
-    // (flag updates, focus follows). Clearing everything exits the mode.
     const onDialEditChange = (raw: string) => {
         const cleaned = raw.replace(/\D/g, "").slice(0, 4)
         if (!cleaned) {
@@ -13073,7 +12913,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
 
     const openMenu = React.useCallback(() => {
         if (isSubmitting) return
-        // BE-105: opening the dropdown abandons an in-progress dial edit.
         setDialEdit(null)
         const placement = computePlacement()
         if (!placement) return
@@ -13257,12 +13096,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     type="button"
                     style={{
                         ...inputBaseStyle,
-                        // BE-103: the trigger keeps the FULL shared border
-                        // (exactly like the select trigger — no side
-                        // overrides at all, so no shorthand/longhand reset
-                        // trap can ever resurrect or kill an edge). The seam
-                        // divider is the trigger's own opaque right edge;
-                        // the input tucks 1px beneath it.
                         width: "auto",
                         flexShrink: 0,
                         display: "inline-flex",
@@ -13271,9 +13104,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         gap: 4,
                         paddingTop: padAxes.y,
                         paddingBottom: padAxes.y,
-                        // BE-121: left follows the shared horizontal padding
-                        // like every other field; right stays fixed so the
-                        // seam divider never drifts from the dial slot.
                         paddingLeft: padAxes.x,
                         paddingRight: 8,
                         borderTopRightRadius: 0,
@@ -13291,12 +13121,7 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                     onClick={() => (open ? setOpen(false) : openMenu())}
                     onKeyDown={handleButtonKeyDown}
                 >
-                    {/* BE-111: globe while no code is recognized (dial-edit
-                        mode) INSTEAD of the flag — author-supplied lucide
-                        paths, verbatim. */}
                     {dialEdit !== null ? (
-                        // BE-113: same fixed 22×16 slot as the flag — a 16px
-                        // globe swapping in used to shrink the trigger.
                         <motion.span
                             aria-hidden="true"
                             initial={{ opacity: 0, scale: 0.8 }}
@@ -13347,10 +13172,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                             <PhoneFlag iso={country[0]} />
                         </motion.span>
                     )}
-                    {/* BE-089: unfold-more affordance (author-supplied paths,
-                        both chevrons filled solid — the source file's upper
-                        chevron was stroke-only). Muted, fixed size: no layout
-                        shift, purely a clickable signal. */}
                     <svg
                         aria-hidden="true"
                         width="16"
@@ -13363,13 +13184,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         <path d="M10.3483 14H13.6517C15.6822 14 16.6974 14 16.9501 14.6086C17.2028 15.2172 16.4849 15.9335 15.0491 17.3661L13.3974 19.0141C12.7387 19.6714 12.4093 20 12 20C11.5907 20 11.2613 19.6714 10.6026 19.0141L8.95091 17.3661C7.51513 15.9335 6.79724 15.2172 7.0499 14.6086C7.30256 14 8.31781 14 10.3483 14Z" />
                     </svg>
                 </button>
-                {/* BE-105: middle slot — the selected dial as muted plain text
-                    (Cal.com parity: not a placeholder), or the dial-edit box
-                    while the visitor types a "+"-led code. */}
-                {/* BE-108: the span + input live inside ONE bordered group —
-                    the group owns the border (longhands only, no left edge),
-                    the input itself is borderless. Single divider forever,
-                    and the span stretches to the full row height. */}
                 <div
                     className="be-phone-group"
                     style={{
@@ -13390,9 +13204,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         borderBottomLeftRadius: 0,
                         boxSizing: "border-box",
                         ...shadowStyle(fs?.shadow),
-                        // BE-108: focus color for the :focus-within group
-                        // ring (constant CSS selector below) — the only
-                        // dynamic half; no focus JS anywhere on this control.
                         ...({
                             "--be-group-ring": hasError
                                 ? theme.errorColor
@@ -13423,7 +13234,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                             alignSelf: "stretch",
                             textAlign: "center",
                             flexShrink: 0,
-                            // BE-106/BE-108: same fixed slot as display mode.
                             width: "3.5em",
                             boxSizing: "border-box",
                             border: 0,
@@ -13449,7 +13259,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                             justifyContent: "center",
                             flexShrink: 0,
                             whiteSpace: "nowrap",
-                            // BE-106/BE-108: fixed slot, centered, no padding.
                             width: "3.5em",
                             boxSizing: "border-box",
                             color: theme.textSecondaryColor,
@@ -13470,19 +13279,10 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                         ...inputBaseStyle,
                         flex: 1,
                         minWidth: 0,
-                        // BE-109: the group owns the ONLY border — this input
-                        // must never paint one. `border: undefined` drops the
-                        // shared shorthand (whose error-time color flip used
-                        // to resurrect a width, the BE-103 trap mirrored), and
-                        // the lone constant borderWidth: 0 can never be reset
-                        // by anything. Phone-only exception: every other
-                        // field type keeps its own input border + radius.
                         border: undefined,
                         borderWidth: 0,
                         background: "transparent",
                         boxShadow: "none",
-                        // BE-120: shared padding everywhere except the left —
-                        // the typed digits sit flush against the dial slot.
                         paddingLeft: 0,
                         borderTopLeftRadius: 0,
                         borderBottomLeftRadius: 0,
@@ -13526,9 +13326,6 @@ const PhoneFieldControl = React.memo(function PhoneFieldControl(props: PhoneFiel
                                       ease: "easeOut",
                                   }}
                               >
-                          {/* BE-088: plain search row — icon + borderless input, no
-                              box-in-box. Autofocus stays (typing works on
-                              open); no visible ring (no be-input class). */}
                           <div
                               style={{
                                   display: "flex",
@@ -13757,11 +13554,7 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                 ? mergeStyleOverrides(field.choiceStyles, variantStyles)
                 : field.styles
     const fs = mergeStyleOverrides(globalFieldStyles, normalizeStyleOverrides(fieldStyleOverrides))
-    // SELECTED-STYLES (BE-024): nested subgroup first, flat legacy keys
-    // keep winning for stored canvases, engine defaults last.
     const fsSelected = normalizeStyleOverrides(fs?.selected)
-    // BE-126: selected padding clamps — huge values collapse the segmented
-    // thumb math and balloon selected options past their siblings.
     const fsSelectedPaddingAxes = (() => {
         const axes = paddingAxesFrom(fsSelected?.padding ?? "")
         if (!axes) return axes
@@ -13799,7 +13592,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         lineHeight: clampLineHeight(fs?.labelFont?.lineHeight) ?? 1.6,
         color: fs?.labelColor ?? theme.textPrimaryColor,
     }
-    // BE-126: blank labels render no element (an empty div kept its gap).
     const hasLabel = typeof field.label === "string" && field.label.trim() !== ""
     const labelEl = !hasLabel ? null : isChoiceFieldType ? (
         <div style={labelTextStyle}>{field.label}</div>
@@ -13818,8 +13610,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         />
     ) : null
 
-    // BE-052: canvas-only escalation for duplicate Primary-Name flags —
-    // rendered at the exact field site, spaced by the column gap.
     const duplicatePrimaryNotice =
         field.duplicatePrimaryName && RenderTarget.current() === RenderTarget.canvas ? (
             <output
@@ -13836,17 +13626,12 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
         ) : null
 
     const containerStyle: React.CSSProperties = {
-        // BE-091/BE-102: spans are config-only and width-agnostic — span 1 in
-        // a single-track grid still fills the whole row, so no measurement is
-        // ever needed here. Textarea always spans both tracks. BE-126: a
-        // trailing lone Half spans both tracks (no half-empty row).
         gridColumn:
             field.fieldType === "textarea" || field.width !== "half" || forceFullWidth
                 ? "span 2"
                 : "span 1",
         display: "flex",
         flexDirection: "column",
-        // BE-126: inner gap mirrors its 0-24 panel range at runtime.
         gap: clamp(fs?.spacing ?? 6, 0, 24),
         minWidth: 0,
     }
@@ -13857,8 +13642,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
     const reducedMotion = useReducedMotion() ?? false
 
     const fsFontSize = fontPixelSize(fs?.font?.fontSize)
-    // BE-126: field font mirrors a 10-28 panel range at runtime (coarse
-    // pointers keep their 16px legibility floor first).
     const fsInputFontSize = clampFontPx(
         isCoarsePointer ? Math.max(16, fsFontSize ?? inputFontSize) : (fsFontSize ?? inputFontSize),
         10,
@@ -14281,10 +14064,6 @@ const FieldRenderer = React.memo(function FieldRenderer(props: FieldRendererProp
                         onBlur={
                             field.fieldType === "number"
                                 ? (e) => {
-                                      // BE-100: Cal.com's blur cleanup for
-                                      // legacy/pasted plus signs (typing can
-                                      // never produce one). Value-only; the
-                                      // error surface follows the normal flow.
                                       const next = normalizeNumberOnBlur(e.target.value)
                                       if (next !== e.target.value) {
                                           onFieldChange(field.id, next)
@@ -15397,8 +15176,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
         return cut > 0 ? raw.slice(0, cut).trim() : raw
     }, [steps, values, timeZone])
 
-    // EXPORT-TITLE (BE-079): the Cal.com event title verbatim — no suffix
-    // is ever appended; no-title metadata failure keeps the ICS fallback.
     const calendarExportTitle = eventTitle?.trim() || DEFAULT_COPY_ICS_SUMMARY_FALLBACK
 
     const icsUri = React.useMemo(
@@ -15494,9 +15271,6 @@ const SuccessScreen = React.memo(function SuccessScreen(props: {
                 >
                     <div
                         style={{
-                            // BE-043: layered concentric circles (failure-mark
-                            // rhythm — faint halo ring, stronger inner wash,
-                            // glyph in the state color).
                             width: CHECKMARK_ICON_SIZE,
                             height: CHECKMARK_ICON_SIZE,
                             borderRadius: "50%",
@@ -15763,7 +15537,6 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
     retryHover?: ButtonInteractionState
     retryPressed?: ButtonInteractionState
     retryAnimate: boolean
-    /** BE-125: author-selected Transition Type for card/action enters. */
     transitionVariant: TransitionVariantId
 }) {
     const {
@@ -15871,7 +15644,6 @@ const ErrorScreen = React.memo(function ErrorScreen(props: {
                                 color: textPrimaryColor,
                                 marginTop: 0,
                                 marginBottom: 0,
-                                // FINAL-43 fix: outline:none removed (see .be-focus-target).
                             }}
                         >
                             {errorTitle}
@@ -16038,8 +15810,6 @@ function fieldStylesShadowControl(title: string = "Shadow") {
 }
 function shadowStyle(shadow: string | undefined): React.CSSProperties {
     if (isNoShadowValue(shadow) || !shadow || !shadow.trim()) return {}
-    // BE-126: shadow lengths clamp — huge spreads used to hard-clip at the
-    // form's 24px paint boundary.
     return { boxShadow: clampShadowLengths(shadow.trim(), SHADOW_LENGTH_MAX_ABS) }
 }
 
@@ -16068,9 +15838,6 @@ function makeInputFieldStylesControls() {
 }
 
 function makeSelectedStylesControls() {
-    // SELECTED-STYLES (BE-024): one full-vocabulary subgroup for the
-    // selected/active state of choice fields. Colors stay default-free so
-    // they track the live theme tokens (accent / accent foreground).
     return {
         font: fieldStylesFontControl("Font", {
             fontSize: "14px",
@@ -16090,8 +15857,6 @@ function makeSelectedStylesControls() {
 }
 
 function makeGlobalFieldStylesControls() {
-    // STYLES-ORDER: Shadows closes the set (BE-023) — after the
-    // Selected/Check rows, not with the base rows.
     return {
         ...makeInputFieldStylesControls(),
         selected: {
@@ -16152,8 +15917,6 @@ function makeButtonInteractionControls(borderDefaultColor: string) {
             type: ct(ControlType.Number),
             title: "Scale",
             defaultValue: 1,
-            // BE-126: narrowed so hover/pressed can never shrink the button
-            // under the cursor or blow up the footer row.
             min: 0.95,
             max: 1.05,
             step: 0.01,
@@ -16162,7 +15925,6 @@ function makeButtonInteractionControls(borderDefaultColor: string) {
             type: ct(ControlType.Number),
             title: "Opacity",
             defaultValue: 1,
-            // BE-126: never below 0.5 — no clickable ghost buttons.
             min: 0.5,
             max: 1,
             step: 0.01,
@@ -16409,8 +16171,6 @@ function resolveButtonText(...candidates: Array<string | undefined>): string {
     return ""
 }
 
-// BE-126: first non-blank string wins — clearing a copy row restores its
-// default instead of rendering a blank gap.
 function firstNonEmpty(...candidates: Array<string | undefined>): string | undefined {
     for (const candidate of candidates) {
         if (typeof candidate === "string" && candidate.trim() !== "") return candidate
@@ -16466,9 +16226,6 @@ function makeFieldObjectControls() {
         placeholder: {
             type: ct(ControlType.String),
             title: "Placeholder",
-            // BE-099: intentionally NO defaultValue — a never-set placeholder
-            // stays undefined (type default shows) while a cleared one stores
-            // "" (renders nothing). A "" default would fuse the two states.
             hidden: (p: FieldControlProps) =>
                 p?.fieldType === "calendar-widget" ||
                 p?.fieldType === "checkbox" ||
@@ -16480,11 +16237,6 @@ function makeFieldObjectControls() {
             title: "Required",
             defaultValue: false,
             hidden: (p: FieldControlProps) =>
-                // BE-039/BE-046: flagged TEXT names are always required - no toggle.
-                // (A stale flag on a non-text field is inert - text-only by design.)
-                // Email fields keep their Required row (only the FIRST email
-                // is forced; later emails obey their own toggle - a per-item
-                // hidden() cannot see siblings to hide first-only).
                 (p?.isPrimaryName === true && p?.fieldType === "text") ||
                 p?.fieldType === "calendar-widget",
         },
@@ -16554,8 +16306,6 @@ function makeFieldObjectControls() {
             optionTitles: ["Fill", "Half"],
             defaultValue: "full",
             displaySegmentedControl: true,
-            // BE-091: textarea is always full width (a tall half-width box
-            // next to a short field breaks the row) — no control, no choice.
             hidden: (p: FieldControlProps) =>
                 p?.fieldType === "calendar-widget" || p?.fieldType === "textarea",
         },
@@ -16580,8 +16330,6 @@ function makeFieldObjectControls() {
     }
 }
 
-// Preserves the specific ControlType member through object-literal inference
-// (plain `type: ControlType.X` widens to the whole enum and fails assignability).
 function ct<T extends ControlType>(t: T): T {
     return t
 }
@@ -16686,8 +16434,6 @@ addPropertyControls(BookingEngine, {
         icon: "color",
         buttonTitle: "Styles",
         controls: {
-            // BE-118: Text Align + Head Font + Body Font are one
-            // Header item opening a submenu (same rows/values, new nesting).
             header: {
                 type: ControlType.Object,
                 title: "Header",
@@ -16897,8 +16643,6 @@ addPropertyControls(BookingEngine, {
                     borderColor: "#222222",
                 }),
             },
-            // BUTTON-TEXTS (BE-027/BE-038): one submenu for the three
-            // editable labels. Every other label is a constant, not a row.
             buttonTexts: {
                 type: ControlType.Object,
                 title: "Button Texts",
@@ -16921,10 +16665,6 @@ addPropertyControls(BookingEngine, {
                         title: "Final Action",
                         defaultValue: "Book Now",
                     },
-                    // BE-083: the Manage menu-item label moved here from Copy.
-                    // BE-126: no maxLength — the installed String types reject
-                    // it (docs describe it, @types lag); the footer ellipsis
-                    // backstop below covers long stored values instead.
                     manageLinkLabel: {
                         type: ControlType.String,
                         title: "Manage Link",
@@ -16932,9 +16672,6 @@ addPropertyControls(BookingEngine, {
                     },
                 },
             },
-            // BUTTON-GROUPS-REMOVED (BE-027/BE-028): per-button
-            // Text-only groups are gone; stored objects remain
-            // readable as legacy style carriers (rule 142).
         },
     },
     progressBar: {
@@ -16973,7 +16710,6 @@ addPropertyControls(BookingEngine, {
                     (p?.showText ?? p?.showTextContent) === false ||
                     (p?.barVisible ?? p?.visible) === false,
             },
-            // BE-083: progress copy moved here from Copy (grouped with its control).
             content: {
                 type: ControlType.Object,
                 title: "Content",
@@ -17034,7 +16770,6 @@ addPropertyControls(BookingEngine, {
                 type: ControlType.Number,
                 title: "Thumb Stiffness",
                 defaultValue: 400,
-                // BE-126: narrowed — below crawls, above snaps (motion dead).
                 min: 150,
                 max: 600,
                 step: 10,
@@ -17045,7 +16780,6 @@ addPropertyControls(BookingEngine, {
                 type: ControlType.Number,
                 title: "Thumb Damping",
                 defaultValue: 38,
-                // BE-126: narrowed — below bounces violently past the edge.
                 min: 20,
                 max: 60,
                 step: 1,
